@@ -295,12 +295,15 @@ def run_portfolio_optimization(symbols, interval):
         all_results = []
         for symbol in symbols:
             df = get_binance_klines(symbol=symbol, interval=interval)
+            if df is None or df.empty:
+                continue
             df = generate_all_indicators(df, sma_period=50, ema_period=20, bb_period=bb_p, bb_std=bb_st)
-            df = generate_signals(df, use_rsi=True, rsi_buy=rsi_b, rsi_sell=rsi_s,
-                                  use_macd=True, use_bbands=True, use_adx=True, adx_threshold=25, signal_mode="Long Only")
+            df = generate_signals(df, use_rsi=True, use_macd=True, use_bb=True, use_adx=True,
+                                  rsi_buy=rsi_b, rsi_sell=rsi_s, adx_threshold=25, signal_mode="Long Only")
             results = backtest_signals(df)
-            if not results.empty:
+            if results is not None and not results.empty:
                 all_results.append(results)
+
         if all_results:
             portfolio_results = pd.concat(all_results)
             avg_return = portfolio_results['Getiri (%)'].mean()
@@ -316,6 +319,7 @@ def run_portfolio_optimization(symbols, interval):
     progress_bar.empty()
     return best_params, best_score
 
+
 # ------------------------------
 # Butonlar ve container yönetimi
 with st.sidebar:
@@ -329,7 +333,7 @@ with st.sidebar:
             'rsi_buy': rsi_buy,
             'rsi_sell': rsi_sell,
             'use_macd': use_macd,
-            'use_bbands': use_bbands,
+            'use_bbands': use_bbands,  # burası
             'use_adx': use_adx,
             'adx': adx_threshold,
             'signal_mode': signal_mode,
@@ -338,8 +342,10 @@ with st.sidebar:
             'cooldown_bars': cooldown_bars,
             'use_puzzle_bot': use_puzzle_bot
         }
+
         with results_section:
             run_portfolio_backtest(symbols, interval, strategy_params)
+
 
 # ------------------------------
 # Tek sembol için detaylı grafik & ML & Canlı sinyal
@@ -354,45 +360,47 @@ if len(symbols) == 1:
     ).start()
 
     df = get_binance_klines(symbol=symbol, interval=interval)
-    df = generate_all_indicators(df, sma_period, ema_period, bb_period, bb_std)
-    df = generate_signals(
-        df,
-        use_rsi=use_rsi,
-        use_macd=use_macd,
-        use_bb=use_bbands,
-        use_adx=use_adx,
-        use_puzzle_bot=use_puzzle_bot,
-        signal_mode=signal_mode
-    )
+    if df is not None and not df.empty:
+        df = generate_all_indicators(df, sma_period=sma_period, ema_period=ema_period, bb_period=bb_period, bb_std=bb_std)
+        df = generate_signals(
+            df,
+            use_rsi=use_rsi,
+            use_macd=use_macd,
+            use_bb=use_bbands,
+            use_adx=use_adx,
+            use_puzzle_bot=use_puzzle_bot,
+            signal_mode=signal_mode
+        )
 
-    fib_levels = calculate_fibonacci_levels(df)
+        fib_levels = calculate_fibonacci_levels(df)
 
-    if use_ml:
-        X, y, df = prepare_features(df, forward_window, target_thresh)
-        if len(X) > 20:
-            model = SignalML()
-            model.train(X, y)
-            df.loc[X.index, 'ML_Signal'] = model.predict_signals(X)
+        if use_ml:
+            X, y, df = prepare_features(df, forward_window, target_thresh)
+            if len(X) > 20:
+                model = SignalML()
+                model.train(X, y)
+                df.loc[X.index, 'ML_Signal'] = model.predict_signals(X)
+            else:
+                df['ML_Signal'] = 0
         else:
             df['ML_Signal'] = 0
+
+        last_price = df['Close'].iloc[-1]
+        st.subheader(f"Detaylı Grafik & ML Tahmini — Güncel Fiyat: {last_price:.2f} USDT")
+
+        options = {
+            "show_sma": show_sma,
+            "show_ema": show_ema,
+            "show_bbands": show_bbands,
+            "show_vwap": show_vwap,
+            "show_adx": show_adx,
+            "show_stoch": show_stoch,
+            "show_fibonacci": show_fibonacci,
+        }
+        st.plotly_chart(plot_chart(df, symbol, fib_levels, options, ml_signal=use_ml), use_container_width=True)
+        st.subheader("📌 Son 5 Sinyal")
+        st.dataframe(df[['Close', 'RSI', 'MACD', 'MACD_signal', 'Buy_Signal', 'Sell_Signal', 'ADX', 'ML_Signal']].tail(5), use_container_width=True)
     else:
-        df['ML_Signal'] = 0
+        st.warning(f"{symbol} için veri bulunamadı veya boş.")
 
-
-
-    last_price = df['Close'].iloc[-1]
-    st.subheader(f"Detaylı Grafik & ML Tahmini — Güncel Fiyat: {last_price:.2f} USDT")
-
-    options = {
-        "show_sma": show_sma,
-        "show_ema": show_ema,
-        "show_bbands": show_bbands,
-        "show_vwap": show_vwap,
-        "show_adx": show_adx,
-        "show_stoch": show_stoch,
-        "show_fibonacci": show_fibonacci,
-    }
-    st.plotly_chart(plot_chart(df, symbol, fib_levels, options, ml_signal=use_ml), use_container_width=True)
-    st.subheader("📌 Son 5 Sinyal")
-    st.dataframe(df[['Close', 'RSI', 'MACD', 'MACD_signal', 'Buy_Signal', 'Sell_Signal', 'ADX', 'ML_Signal']].tail(5), use_container_width=True)
 

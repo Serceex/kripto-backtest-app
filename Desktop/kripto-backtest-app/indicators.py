@@ -10,6 +10,11 @@ def calculate_vwap(df):
 
 def generate_all_indicators(df, sma_period=50, ema_period=20, bb_period=20, bb_std=2):
     df = df.copy()
+
+    # Yetersiz veri kontrolü (ADX için min 15-20 bar gerekir)
+    if len(df) < 20:
+        return df
+
     # RSI
     df['RSI'] = RSIIndicator(close=df['Close']).rsi()
 
@@ -18,9 +23,12 @@ def generate_all_indicators(df, sma_period=50, ema_period=20, bb_period=20, bb_s
     df['MACD'] = macd.macd()
     df['MACD_signal'] = macd.macd_signal()
 
-    # ADX
-    adx = ADXIndicator(high=df['High'], low=df['Low'], close=df['Close'])
-    df['ADX'] = adx.adx()
+    # ADX (yeterli veri kontrolü ile)
+    try:
+        adx = ADXIndicator(high=df['High'], low=df['Low'], close=df['Close'])
+        df['ADX'] = adx.adx()
+    except Exception:
+        df['ADX'] = None
 
     # Bollinger Bands
     bb = BollingerBands(close=df['Close'], window=bb_period, window_dev=bb_std)
@@ -41,3 +49,4 @@ def generate_all_indicators(df, sma_period=50, ema_period=20, bb_period=20, bb_s
     df['VWAP'] = calculate_vwap(df)
 
     return df
+

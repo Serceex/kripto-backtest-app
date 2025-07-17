@@ -60,12 +60,20 @@ def generate_signals(df,
             df['Buy_Signal'] = buy_df.any(axis=1)
             df['Sell_Signal'] = sell_df.any(axis=1)
     else:
-        # Eğer hiç koşul yoksa tümü False olsun
         df['Buy_Signal'] = False
         df['Sell_Signal'] = False
 
     return df
 
+
+def create_signal_column(df):
+    df['Signal'] = 'Bekle'  # Varsayılan sinyal
+
+    # Öncelik Sat sinyali (eğer Sell ve Buy aynı anda True ise)
+    df.loc[df['Buy_Signal'] == True, 'Signal'] = 'Al'
+    df.loc[df['Sell_Signal'] == True, 'Signal'] = 'Sat'
+
+    return df
 
 
 def backtest_signals(df):

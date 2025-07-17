@@ -6,11 +6,12 @@ import itertools
 import random
 import threading
 
+
 from utils import get_binance_klines, calculate_fibonacci_levels
 from indicators import generate_all_indicators
 from features import prepare_features
 from ml_model import SignalML
-from signals import generate_signals, backtest_signals
+from signals import generate_signals, backtest_signals, create_signal_column
 from plots import plot_chart
 from telegram_alert import send_telegram_message
 
@@ -49,18 +50,6 @@ with st.sidebar.expander("📊 Grafik Gösterge Seçenekleri", expanded=False):
             target_thresh = st.slider("🎯 Target Eşik (%)", 0.1, 5.0, 0.5, step=0.1, key="ml_threshold")
 
         st.markdown("---")
-        if st.button("🔍 Portföy Optimizasyon Başlat", key="optimize_button"):
-            best_params, best_score = run_portfolio_optimization(symbols, interval)
-            with optimize_section:
-                if best_params:
-                    st.success(f"""
-                    ✅ En iyi parametreler:
-                    - RSI Al: {best_params[0]}, RSI Sat: {best_params[1]}
-                    - BB Periyodu: {best_params[2]}, BB Std: {best_params[3]}
-                    - Ortalama Portföy Getiri: {best_score:.2f}%
-                    """)
-                else:
-                    st.warning("Hiç uygun sonuç bulunamadı.")
 
 st.sidebar.header("🔔 Sinyal Kriterleri Seçenekleri")
 col1, col2 = st.sidebar.columns(2)
@@ -68,7 +57,7 @@ use_rsi = col1.checkbox("RSI Sinyali", value=True)
 use_macd = col2.checkbox("MACD Sinyali", value=True)
 
 col3, col4 = st.sidebar.columns(2)
-use_bbands = col3.checkbox("Bollinger Sinyali", value=True)
+use_bb = col3.checkbox("Bollinger Sinyali", value=True)  # değişken adı use_bb olarak
 use_adx = col4.checkbox("ADX Sinyali", value=True)
 
 adx_threshold = st.sidebar.slider("ADX Eşiği", 10, 50, 25)
@@ -78,7 +67,6 @@ signal_mode = st.sidebar.selectbox("Sinyal Modu", ["Long Only", "Long & Short"],
 stop_loss_pct = st.sidebar.slider("Stop Loss (%)", 0.1, 10.0, 2.0, step=0.1)
 take_profit_pct = st.sidebar.slider("Take Profit (%)", 0.1, 20.0, 5.0, step=0.1)
 cooldown_bars = st.sidebar.slider("Cooldown (bar sayısı)", 0, 10, 3)
-
 
 # ------------------------------
 # Üst Ekran Seçimleri
@@ -109,21 +97,23 @@ def update_price_live(symbol, interval, placeholder):
     while True:
         try:
             df_latest = get_binance_klines(symbol=symbol, interval=interval, limit=20)
+            if df_latest is None or df_latest.empty:
+                placeholder.warning(f"{symbol} için canlı veri alınamıyor.")
+                time.sleep(5)
+                continue
+
             df_temp = generate_all_indicators(df_latest,
                                               sma_period=sma_period,
                                               ema_period=ema_period,
                                               bb_period=bb_period,
                                               bb_std=bb_std)
-            print("MACD:", 'MACD' in df.columns)
-            print("MACD_signal:", 'MACD_signal' in df.columns)
-
 
             df_temp = generate_signals(df_temp,
                                        use_rsi=use_rsi,
                                        rsi_buy=rsi_buy,
                                        rsi_sell=rsi_sell,
                                        use_macd=use_macd,
-                                       use_bbands=use_bbands,
+                                       use_bb=use_bb,
                                        use_adx=use_adx,
                                        adx_threshold=adx_threshold,
                                        signal_mode=signal_mode,
@@ -156,101 +146,92 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
     for symbol in symbols:
         st.write(f"🔍 {symbol} verisi indiriliyor ve strateji uygulanıyor...")
         df = get_binance_klines(symbol=symbol, interval=interval)
+        if df is not None and not df.empty:
+            df = generate_all_indicators(
+                df,
+                sma_period=strategy_params['sma'],
+                ema_period=strategy_params['ema'],
+                bb_period=strategy_params['bb_period'],
+                bb_std=strategy_params['bb_std']
+            )
+            df = generate_signals(
+                df,
+                use_rsi=strategy_params['use_rsi'],
+                use_macd=strategy_params['use_macd'],
+                use_bb=strategy_params['use_bb'],
+                use_adx=strategy_params['use_adx'],
+                use_puzzle_bot=strategy_params['use_puzzle_bot'],
+                signal_mode=strategy_params['signal_mode']
+            )
+            df = create_signal_column(df)  # <-- Mutlaka burayı ekle!
 
-        # Boş veya yetersiz veri kontrolü
-        if df is None or df.empty or len(df) < 20:
-            st.warning(f"{symbol} için yeterli veri yok veya veri bulunamadı.")
-            continue
+            # Buradan sonra open/close işlemleri için df['Signal'] kullanabilirsin
+            trades = []
+            position = None
+            entry_price = 0
+            entry_time = None
+            cooldown = 0
 
-        df = generate_all_indicators(df,
-                                     sma_period=strategy_params['sma'],
-                                     ema_period=strategy_params['ema'],
-                                     bb_period=strategy_params['bb_period'],
-                                     bb_std=strategy_params['bb_std'])
+            for i in range(len(df)):
+                if cooldown > 0:
+                    cooldown -= 1
+                    continue
 
-        df = generate_signals(
-            df,
-            use_rsi=strategy_params['use_rsi'],
-            use_macd=strategy_params['use_macd'],
-            use_bb=strategy_params['use_bbands'],
-            use_adx=strategy_params['use_adx'],
-            use_puzzle_bot=strategy_params['use_puzzle_bot'],
-            signal_mode=strategy_params['signal_mode']
-        )
+                signal = df['Signal'].iloc[i]
+                price = df['Close'].iloc[i]
+                time_idx = df.index[i]
 
-        trades = []
-        position = None
-        entry_price = 0
-        entry_time = None
-        cooldown = 0
+                if position is None:
+                    if signal == 'Al':
+                        position = 'Long'
+                        entry_price = price
+                        entry_time = time_idx
+                    elif signal == 'Short' and strategy_params['signal_mode'] == "Long & Short":
+                        position = 'Short'
+                        entry_price = price
+                        entry_time = time_idx
+                elif position == 'Long':
+                    ret = (price - entry_price) / entry_price * 100
+                    if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or (signal == 'Sat'):
+                        trades.append({
+                            'Pozisyon': 'Long',
+                            'Giriş Zamanı': entry_time,
+                            'Çıkış Zamanı': time_idx,
+                            'Giriş Fiyatı': entry_price,
+                            'Çıkış Fiyatı': price,
+                            'Getiri (%)': round(ret, 2)
+                        })
+                        position = None
+                        cooldown = strategy_params['cooldown_bars']
+                elif position == 'Short':
+                    ret = (entry_price - price) / entry_price * 100
+                    if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or (signal == 'Al'):
+                        trades.append({
+                            'Pozisyon': 'Short',
+                            'Giriş Zamanı': entry_time,
+                            'Çıkış Zamanı': time_idx,
+                            'Giriş Fiyatı': entry_price,
+                            'Çıkış Fiyatı': price,
+                            'Getiri (%)': round(ret, 2)
+                        })
+                        position = None
+                        cooldown = strategy_params['cooldown_bars']
 
-        # Burada son fiyat alımı güvenli şekilde:
-        last_price = df['Close'].iloc[-1] if not df.empty else None
-        if last_price is None:
-            st.warning(f"{symbol} için fiyat verisi alınamadı.")
-            continue
+            # Açık pozisyon varsa son olarak ekle
+            if position is not None:
+                trades.append({
+                    'Pozisyon': position,
+                    'Giriş Zamanı': entry_time,
+                    'Çıkış Zamanı': pd.NaT,
+                    'Giriş Fiyatı': entry_price,
+                    'Çıkış Fiyatı': np.nan,
+                    'Getiri (%)': np.nan
+                })
 
-        for i in range(len(df)):
-            if cooldown > 0:
-                cooldown -= 1
-                continue
-
-            signal_buy = df['Signal_Buy'].iloc[i] if 'Signal_Buy' in df.columns else False
-            signal_sell = df['Signal_Sell'].iloc[i] if 'Signal_Sell' in df.columns else False
-            price = df['Close'].iloc[i]
-            time_idx = df.index[i]
-
-            if position is None:
-                if signal_buy:
-                    position = 'Long'
-                    entry_price = price
-                    entry_time = time_idx
-                elif signal_sell and strategy_params['signal_mode'] == "Long & Short":
-                    position = 'Short'
-                    entry_price = price
-                    entry_time = time_idx
-            elif position == 'Long':
-                ret = (price - entry_price) / entry_price * 100
-                if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or signal_sell:
-                    trades.append({
-                        'Pozisyon': 'Long',
-                        'Giriş Zamanı': entry_time,
-                        'Çıkış Zamanı': time_idx,
-                        'Giriş Fiyatı': entry_price,
-                        'Çıkış Fiyatı': price,
-                        'Getiri (%)': round(ret, 2)
-                    })
-                    position = None
-                    cooldown = strategy_params['cooldown_bars']
-            elif position == 'Short':
-                ret = (entry_price - price) / entry_price * 100
-                if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or signal_buy:
-                    trades.append({
-                        'Pozisyon': 'Short',
-                        'Giriş Zamanı': entry_time,
-                        'Çıkış Zamanı': time_idx,
-                        'Giriş Fiyatı': entry_price,
-                        'Çıkış Fiyatı': price,
-                        'Getiri (%)': round(ret, 2)
-                    })
-                    position = None
-                    cooldown = strategy_params['cooldown_bars']
-
-        # Açık pozisyon varsa son olarak ekle
-        if position is not None:
-            trades.append({
-                'Pozisyon': position,
-                'Giriş Zamanı': entry_time,
-                'Çıkış Zamanı': pd.NaT,
-                'Giriş Fiyatı': entry_price,
-                'Çıkış Fiyatı': np.nan,
-                'Getiri (%)': np.nan
-            })
-
-        if trades:
-            results_df = pd.DataFrame(trades)
-            results_df['Sembol'] = symbol
-            all_results.append(results_df)
+            if trades:
+                results_df = pd.DataFrame(trades)
+                results_df['Sembol'] = symbol
+                all_results.append(results_df)
 
     if all_results:
         portfolio_results = pd.concat(all_results).sort_values("Giriş Zamanı")
@@ -319,30 +300,34 @@ def run_portfolio_optimization(symbols, interval):
     progress_bar.empty()
     return best_params, best_score
 
-
 # ------------------------------
+
+strategy_params = {
+                'sma': sma_period,
+                'ema': ema_period,
+                'bb_period': bb_period,
+                'bb_std': bb_std,
+                'use_rsi': use_rsi,
+                'rsi_buy': rsi_buy,
+                'rsi_sell': rsi_sell,
+                'use_macd': use_macd,
+                'use_bb': use_bb,
+                'use_adx': use_adx,
+                'adx': adx_threshold,
+                'signal_mode': signal_mode,
+                'stop_loss_pct': stop_loss_pct,
+                'take_profit_pct': take_profit_pct,
+                'cooldown_bars': cooldown_bars,
+                'use_puzzle_bot': use_puzzle_bot,
+                'use_ml': use_ml,
+                'forward_window': forward_window if use_ml else None,
+                'target_thresh': target_thresh if use_ml else None,
+            }
+
+
 # Butonlar ve container yönetimi
 with st.sidebar:
     if st.button("🚀 Portföy Backtest Başlat"):
-        strategy_params = {
-            'sma': sma_period,
-            'ema': ema_period,
-            'bb_period': bb_period,
-            'bb_std': bb_std,
-            'use_rsi': use_rsi,
-            'rsi_buy': rsi_buy,
-            'rsi_sell': rsi_sell,
-            'use_macd': use_macd,
-            'use_bbands': use_bbands,  # burası
-            'use_adx': use_adx,
-            'adx': adx_threshold,
-            'signal_mode': signal_mode,
-            'stop_loss_pct': stop_loss_pct,
-            'take_profit_pct': take_profit_pct,
-            'cooldown_bars': cooldown_bars,
-            'use_puzzle_bot': use_puzzle_bot
-        }
-
         with results_section:
             run_portfolio_backtest(symbols, interval, strategy_params)
 
@@ -364,18 +349,18 @@ if len(symbols) == 1:
         df = generate_all_indicators(df, sma_period=sma_period, ema_period=ema_period, bb_period=bb_period, bb_std=bb_std)
         df = generate_signals(
             df,
-            use_rsi=use_rsi,
-            use_macd=use_macd,
-            use_bb=use_bbands,
-            use_adx=use_adx,
-            use_puzzle_bot=use_puzzle_bot,
-            signal_mode=signal_mode
+            use_rsi=strategy_params['use_rsi'],
+            use_macd=strategy_params['use_macd'],
+            use_bb=strategy_params['use_bb'],
+            use_adx=strategy_params['use_adx'],
+            use_puzzle_bot=strategy_params['use_puzzle_bot'],
+            signal_mode=strategy_params['signal_mode']
         )
 
         fib_levels = calculate_fibonacci_levels(df)
 
-        if use_ml:
-            X, y, df = prepare_features(df, forward_window, target_thresh)
+        if strategy_params.get('use_ml', False):
+            X, y, df = prepare_features(df, strategy_params['forward_window'], strategy_params['target_thresh'])
             if len(X) > 20:
                 model = SignalML()
                 model.train(X, y)
@@ -397,10 +382,8 @@ if len(symbols) == 1:
             "show_stoch": show_stoch,
             "show_fibonacci": show_fibonacci,
         }
-        st.plotly_chart(plot_chart(df, symbol, fib_levels, options, ml_signal=use_ml), use_container_width=True)
+        st.plotly_chart(plot_chart(df, symbol, fib_levels, options, ml_signal=strategy_params.get('use_ml', False)), use_container_width=True)
         st.subheader("📌 Son 5 Sinyal")
         st.dataframe(df[['Close', 'RSI', 'MACD', 'MACD_signal', 'Buy_Signal', 'Sell_Signal', 'ADX', 'ML_Signal']].tail(5), use_container_width=True)
     else:
         st.warning(f"{symbol} için veri bulunamadı veya boş.")
-
-

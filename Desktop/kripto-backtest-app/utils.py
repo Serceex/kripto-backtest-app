@@ -1,18 +1,30 @@
+from binance.client import Client
 import pandas as pd
-import requests
+import streamlit as st
+
+# API bilgilerini streamlit secrets'tan al
+api_key = st.secrets["binance"]["api_key"]
+api_secret = st.secrets["binance"]["api_secret"]
+
+# Binance istemcisini oluştur
+client = Client(api_key, api_secret)
 
 def get_binance_klines(symbol="BTCUSDT", interval="1h", limit=1000):
-    url = "https://api.binance.com/api/v3/klines"
-    params = {"symbol": symbol, "interval": interval, "limit": limit}
-    data = requests.get(url, params=params).json()
+    """Binance API üzerinden OHLCV verisi çeker"""
+    klines = client.get_klines(symbol=symbol, interval=interval, limit=limit)
 
-    df = pd.DataFrame(data, columns=[
-        'time', 'Open', 'High', 'Low', 'Close', 'Volume',
-        '_', '_', '_', '_', '_', '_'
+    # DataFrame'e dönüştür
+    df = pd.DataFrame(klines, columns=[
+        'timestamp', 'Open', 'High', 'Low', 'Close', 'Volume',
+        'Close_time', 'Quote_asset_volume', 'Number_of_trades',
+        'Taker_buy_base_asset_volume', 'Taker_buy_quote_asset_volume', 'Ignore'
     ])
-    df['time'] = pd.to_datetime(df['time'], unit='ms')
-    df.set_index('time', inplace=True)
+
+    # Tip dönüşümleri ve timestamp düzenleme
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+    df.set_index('timestamp', inplace=True)
     df = df[['Open', 'High', 'Low', 'Close', 'Volume']].astype(float)
+
     return df
 
 def calculate_fibonacci_levels(df):

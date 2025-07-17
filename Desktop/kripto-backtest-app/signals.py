@@ -14,13 +14,12 @@ def generate_signals(df,
     conditions_buy = []
     conditions_sell = []
 
-    # Güvenlik kontrolü: eksik kolonları None olarak oluştur
+    # Eksik kolonları güvenlik için ekle
     safe_columns = {
         'RSI': None, 'MACD': None, 'MACD_signal': None,
         'bb_lband': None, 'bb_hband': None,
         'ADX': None, 'Stoch_k': None, 'Stoch_d': None
     }
-
     for col in safe_columns:
         if col not in df.columns:
             df[col] = safe_columns[col]
@@ -50,15 +49,23 @@ def generate_signals(df,
         conditions_buy.append((df['Stoch_k'] < 20) & (df['Stoch_k'] > df['Stoch_d']))
         conditions_sell.append((df['Stoch_k'] > 80) & (df['Stoch_k'] < df['Stoch_d']))
 
-    # Sinyal üretimi (AND veya OR)
-    if signal_mode == 'and':
-        df['Signal_Buy'] = pd.concat(conditions_buy, axis=1).all(axis=1)
-        df['Signal_Sell'] = pd.concat(conditions_sell, axis=1).all(axis=1)
+    # Sinyal üretimi
+    if conditions_buy:
+        buy_df = pd.concat(conditions_buy, axis=1)
+        sell_df = pd.concat(conditions_sell, axis=1)
+        if signal_mode == 'and':
+            df['Buy_Signal'] = buy_df.all(axis=1)
+            df['Sell_Signal'] = sell_df.all(axis=1)
+        else:
+            df['Buy_Signal'] = buy_df.any(axis=1)
+            df['Sell_Signal'] = sell_df.any(axis=1)
     else:
-        df['Signal_Buy'] = pd.concat(conditions_buy, axis=1).any(axis=1)
-        df['Signal_Sell'] = pd.concat(conditions_sell, axis=1).any(axis=1)
+        # Eğer hiç koşul yoksa tümü False olsun
+        df['Buy_Signal'] = False
+        df['Sell_Signal'] = False
 
     return df
+
 
 
 def backtest_signals(df):

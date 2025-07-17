@@ -161,16 +161,15 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
                                      ema_period=strategy_params['ema'],
                                      bb_period=strategy_params['bb_period'],
                                      bb_std=strategy_params['bb_std'])
-        df = generate_signals(df,
-                              use_rsi=strategy_params['use_rsi'],
-                              rsi_buy=strategy_params['rsi_buy'],
-                              rsi_sell=strategy_params['rsi_sell'],
-                              use_macd=strategy_params['use_macd'],
-                              use_bbands=strategy_params['use_bbands'],
-                              use_adx=strategy_params['use_adx'],
-                              adx_threshold=strategy_params['adx'],
-                              signal_mode=strategy_params['signal_mode'],
-                              use_puzzle_bot=strategy_params['use_puzzle_bot'])
+        df = generate_signals(
+            df,
+            use_rsi=use_rsi,
+            use_macd=use_macd,
+            use_bb=use_bbands,
+            use_adx=use_adx,
+            use_puzzle_bot=use_puzzle_bot,
+            signal_mode=signal_mode
+        )
 
         trades = []
         position = None
@@ -183,22 +182,32 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
                 cooldown -= 1
                 continue
 
-            signal = df['Signal'].iloc[i]
+            signal_buy = df['Buy_Signal'].iloc[i]
+            signal_sell = df['Sell_Signal'].iloc[i]
             price = df['Close'].iloc[i]
             time_idx = df.index[i]
+
+            # Burada sinyali belirle
+            if signal_buy:
+                signal = 'Al'
+            elif signal_sell:
+                signal = 'Sat'
+            else:
+                signal = None  # veya 'Bekle' vs.
 
             if position is None:
                 if signal == 'Al':
                     position = 'Long'
                     entry_price = price
                     entry_time = time_idx
-                elif signal == 'Short' and strategy_params['signal_mode'] == "Long & Short":
+                elif signal == 'Sat' and strategy_params['signal_mode'] == "Long & Short":
                     position = 'Short'
                     entry_price = price
                     entry_time = time_idx
             elif position == 'Long':
                 ret = (price - entry_price) / entry_price * 100
-                if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or (signal == 'Sat'):
+                if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or (
+                        signal == 'Sat'):
                     trades.append({
                         'Pozisyon': 'Long',
                         'Giriş Zamanı': entry_time,
@@ -211,7 +220,8 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
                     cooldown = strategy_params['cooldown_bars']
             elif position == 'Short':
                 ret = (entry_price - price) / entry_price * 100
-                if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or (signal == 'Al'):
+                if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or (
+                        signal == 'Al'):
                     trades.append({
                         'Pozisyon': 'Short',
                         'Giriş Zamanı': entry_time,
@@ -341,7 +351,16 @@ if len(symbols) == 1:
 
     df = get_binance_klines(symbol=symbol, interval=interval)
     df = generate_all_indicators(df, sma_period, ema_period, bb_period, bb_std)
-    df = generate_signals(df, use_rsi, rsi_buy, rsi_sell, use_macd, use_bbands, use_adx, adx_threshold, signal_mode=signal_mode, use_puzzle_bot=use_puzzle_bot)
+    df = generate_signals(
+        df,
+        use_rsi=use_rsi,
+        use_macd=use_macd,
+        use_bb=use_bbands,
+        use_adx=use_adx,
+        use_puzzle_bot=use_puzzle_bot,
+        signal_mode=signal_mode
+    )
+
     fib_levels = calculate_fibonacci_levels(df)
 
     if use_ml:
@@ -369,4 +388,5 @@ if len(symbols) == 1:
     }
     st.plotly_chart(plot_chart(df, symbol, fib_levels, options, ml_signal=use_ml), use_container_width=True)
     st.subheader("📌 Son 5 Sinyal")
-    st.dataframe(df[['Close', 'RSI', 'MACD', 'MACD_signal', 'Signal', 'ADX', 'ML_Signal']].tail(5), use_container_width=True)
+    st.dataframe(df[['Close', 'RSI', 'MACD', 'MACD_signal', 'Buy_Signal', 'Sell_Signal', 'ADX', 'ML_Signal']].tail(5), use_container_width=True)
+

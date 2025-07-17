@@ -29,8 +29,8 @@ def plot_chart(df, symbol, fib_levels, options, ml_signal=False):
                           annotation_position="right", line_color="gray", row=1, col=1)
 
     # Statik sinyaller
-    buy_signals = df[df['Signal'] == 'Al']
-    sell_signals = df[df['Signal'] == 'Sat']
+    buy_signals = df[df['Buy_Signal']]
+    sell_signals = df[df['Sell_Signal']]
     fig.add_trace(go.Scatter(
         x=buy_signals.index, y=buy_signals['Low']*0.995,
         mode='markers', marker=dict(color='green', size=12, symbol='arrow-up'),

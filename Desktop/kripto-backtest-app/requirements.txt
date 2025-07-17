@@ -9,3 +9,4 @@ xgboost
 prophet
 requests
 python-telegram-bot
+python-binance

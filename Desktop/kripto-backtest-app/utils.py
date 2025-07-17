@@ -7,7 +7,10 @@ api_key = st.secrets["binance"]["api_key"]
 api_secret = st.secrets["binance"]["api_secret"]
 
 # Binance istemcisini oluştur
-client = Client(api_key, api_secret)
+# client = Client(api_key, api_secret)
+client = Client(api_key, api_secret, testnet=True)
+client.API_URL = 'https://testnet.binance.vision/api'
+
 
 def get_binance_klines(symbol="BTCUSDT", interval="1h", limit=1000):
     """Binance API üzerinden OHLCV verisi çeker"""

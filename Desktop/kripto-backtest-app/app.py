@@ -114,6 +114,10 @@ def update_price_live(symbol, interval, placeholder):
                                               ema_period=ema_period,
                                               bb_period=bb_period,
                                               bb_std=bb_std)
+            print("MACD:", 'MACD' in df.columns)
+            print("MACD_signal:", 'MACD_signal' in df.columns)
+
+
             df_temp = generate_signals(df_temp,
                                        use_rsi=use_rsi,
                                        rsi_buy=rsi_buy,

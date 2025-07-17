@@ -15,7 +15,7 @@ from signals import generate_signals, backtest_signals, create_signal_column
 from plots import plot_chart
 from telegram_alert import send_telegram_message
 
-st.set_page_config(page_title="Kripto Portföy Backtest + ML + Optimizasyon + Puzzle Bot", layout="wide")
+st.set_page_config(page_title="Kripto Portföy Backtest", layout="wide")
 st.title("📊 Kripto Portföy Backtest + ML + Optimizasyon + Puzzle Bot")
 
 # ------------------------------

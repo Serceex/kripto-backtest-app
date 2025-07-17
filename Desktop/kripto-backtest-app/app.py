@@ -156,19 +156,26 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
     for symbol in symbols:
         st.write(f"🔍 {symbol} verisi indiriliyor ve strateji uygulanıyor...")
         df = get_binance_klines(symbol=symbol, interval=interval)
+
+        # Boş veya yetersiz veri kontrolü
+        if df is None or df.empty or len(df) < 20:
+            st.warning(f"{symbol} için yeterli veri yok veya veri bulunamadı.")
+            continue
+
         df = generate_all_indicators(df,
                                      sma_period=strategy_params['sma'],
                                      ema_period=strategy_params['ema'],
                                      bb_period=strategy_params['bb_period'],
                                      bb_std=strategy_params['bb_std'])
+
         df = generate_signals(
             df,
-            use_rsi=use_rsi,
-            use_macd=use_macd,
-            use_bb=use_bbands,
-            use_adx=use_adx,
-            use_puzzle_bot=use_puzzle_bot,
-            signal_mode=signal_mode
+            use_rsi=strategy_params['use_rsi'],
+            use_macd=strategy_params['use_macd'],
+            use_bb=strategy_params['use_bbands'],
+            use_adx=strategy_params['use_adx'],
+            use_puzzle_bot=strategy_params['use_puzzle_bot'],
+            signal_mode=strategy_params['signal_mode']
         )
 
         trades = []
@@ -177,37 +184,34 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
         entry_time = None
         cooldown = 0
 
+        # Burada son fiyat alımı güvenli şekilde:
+        last_price = df['Close'].iloc[-1] if not df.empty else None
+        if last_price is None:
+            st.warning(f"{symbol} için fiyat verisi alınamadı.")
+            continue
+
         for i in range(len(df)):
             if cooldown > 0:
                 cooldown -= 1
                 continue
 
-            signal_buy = df['Buy_Signal'].iloc[i]
-            signal_sell = df['Sell_Signal'].iloc[i]
+            signal_buy = df['Signal_Buy'].iloc[i] if 'Signal_Buy' in df.columns else False
+            signal_sell = df['Signal_Sell'].iloc[i] if 'Signal_Sell' in df.columns else False
             price = df['Close'].iloc[i]
             time_idx = df.index[i]
 
-            # Burada sinyali belirle
-            if signal_buy:
-                signal = 'Al'
-            elif signal_sell:
-                signal = 'Sat'
-            else:
-                signal = None  # veya 'Bekle' vs.
-
             if position is None:
-                if signal == 'Al':
+                if signal_buy:
                     position = 'Long'
                     entry_price = price
                     entry_time = time_idx
-                elif signal == 'Sat' and strategy_params['signal_mode'] == "Long & Short":
+                elif signal_sell and strategy_params['signal_mode'] == "Long & Short":
                     position = 'Short'
                     entry_price = price
                     entry_time = time_idx
             elif position == 'Long':
                 ret = (price - entry_price) / entry_price * 100
-                if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or (
-                        signal == 'Sat'):
+                if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or signal_sell:
                     trades.append({
                         'Pozisyon': 'Long',
                         'Giriş Zamanı': entry_time,
@@ -220,8 +224,7 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
                     cooldown = strategy_params['cooldown_bars']
             elif position == 'Short':
                 ret = (entry_price - price) / entry_price * 100
-                if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or (
-                        signal == 'Al'):
+                if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or signal_buy:
                     trades.append({
                         'Pozisyon': 'Short',
                         'Giriş Zamanı': entry_time,
@@ -267,6 +270,7 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
         """)
     else:
         st.warning("Hiç işlem bulunamadı.")
+
 
 # ------------------------------
 # Basit Optimizasyon fonksiyonu örneği
@@ -373,6 +377,8 @@ if len(symbols) == 1:
             df['ML_Signal'] = 0
     else:
         df['ML_Signal'] = 0
+
+
 
     last_price = df['Close'].iloc[-1]
     st.subheader(f"Detaylı Grafik & ML Tahmini — Güncel Fiyat: {last_price:.2f} USDT")

@@ -1,5 +1,5 @@
-pandas_ta
 streamlit
+pandas_ta
 pandas
 numpy
 matplotlib

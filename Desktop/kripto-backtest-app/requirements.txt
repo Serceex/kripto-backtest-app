@@ -1,4 +1,4 @@
-
+pandas_ta
 streamlit
 pandas
 numpy
@@ -10,4 +10,4 @@ prophet
 requests
 python-telegram-bot
 python-binance
-pantas_ta
+

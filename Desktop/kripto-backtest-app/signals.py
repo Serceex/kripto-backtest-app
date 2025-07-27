@@ -1,77 +1,88 @@
 import numpy as np
 import pandas as pd
-from telegram_alert import send_telegram_message
 
 
 def generate_signals(df,
                      use_rsi=True,
+                     rsi_buy=30,
+                     rsi_sell=70,
                      use_macd=True,
+                     macd_fast=12,
+                     macd_slow=26,
+                     macd_signal=9,
                      use_bb=True,
                      use_adx=True,
-                     use_puzzle_bot=True,
-                     signal_mode='and'):
+                     adx_threshold=25,
+                     signal_mode='or',
+                     signal_direction='Both',
+                     use_puzzle_bot=False):
     df = df.copy()
-    conditions_buy = []
-    conditions_sell = []
 
-    # Eksik kolonları güvenlik için ekle
-    safe_columns = {
-        'RSI': None, 'MACD': None, 'MACD_signal': None,
-        'bb_lband': None, 'bb_hband': None,
-        'ADX': None, 'Stoch_k': None, 'Stoch_d': None
-    }
-    for col in safe_columns:
+    # Eksik kolonları doldur
+    required_cols = ['RSI', 'MACD', 'MACD_signal', 'bb_lband', 'bb_hband', 'ADX']
+    for col in required_cols:
         if col not in df.columns:
-            df[col] = safe_columns[col]
+            df[col] = np.nan
 
-    # RSI
-    if use_rsi and 'RSI' in df.columns:
-        conditions_buy.append(df['RSI'] < 30)
-        conditions_sell.append(df['RSI'] > 70)
+    # Şart listeleri
+    buy_conditions = []
+    sell_conditions = []
 
-    # MACD
-    if use_macd and 'MACD' in df.columns and 'MACD_signal' in df.columns:
-        conditions_buy.append(df['MACD'] > df['MACD_signal'])
-        conditions_sell.append(df['MACD'] < df['MACD_signal'])
+    # Long (Al) sinyali şartları
+    if use_rsi:
+        buy_conditions.append(df['RSI'] < rsi_buy)
+    if use_macd:
+        buy_conditions.append(df['MACD'] > df['MACD_signal'])
+    if use_bb:
+        buy_conditions.append(df['Close'] < df['bb_lband'])
+    if use_adx:
+        buy_conditions.append(df['ADX'] > adx_threshold)
 
-    # Bollinger Bands
-    if use_bb and 'bb_lband' in df.columns and 'bb_hband' in df.columns:
-        conditions_buy.append(df['Close'] < df['bb_lband'])
-        conditions_sell.append(df['Close'] > df['bb_hband'])
+    # Short (Sat) sinyali şartları
+    if use_rsi:
+        sell_conditions.append(df['RSI'] > rsi_sell)
+    if use_macd:
+        sell_conditions.append(df['MACD'] < df['MACD_signal'])
+    if use_bb:
+        sell_conditions.append(df['Close'] > df['bb_hband'])
+    if use_adx:
+        sell_conditions.append(df['ADX'] > adx_threshold)
 
-    # ADX
-    if use_adx and 'ADX' in df.columns:
-        conditions_buy.append(df['ADX'] > 25)
-        conditions_sell.append(df['ADX'] < 20)
-
-    # Puzzle Bot (örnek kurallar)
-    if use_puzzle_bot and 'Stoch_k' in df.columns and 'Stoch_d' in df.columns:
-        conditions_buy.append((df['Stoch_k'] < 20) & (df['Stoch_k'] > df['Stoch_d']))
-        conditions_sell.append((df['Stoch_k'] > 80) & (df['Stoch_k'] < df['Stoch_d']))
-
-    # Sinyal üretimi
-    if conditions_buy:
-        buy_df = pd.concat(conditions_buy, axis=1)
-        sell_df = pd.concat(conditions_sell, axis=1)
+    # Koşulları birleştirme fonksiyonu
+    def combine_conditions(conditions):
+        if not conditions:
+            return pd.Series([False] * len(df), index=df.index)
         if signal_mode == 'and':
-            df['Buy_Signal'] = buy_df.all(axis=1)
-            df['Sell_Signal'] = sell_df.all(axis=1)
+            return pd.concat(conditions, axis=1).all(axis=1)
         else:
-            df['Buy_Signal'] = buy_df.any(axis=1)
-            df['Sell_Signal'] = sell_df.any(axis=1)
-    else:
-        df['Buy_Signal'] = False
-        df['Sell_Signal'] = False
+            return pd.concat(conditions, axis=1).any(axis=1)
 
-    return df
+    # Al ve Sat sinyalleri üret
+    df['Buy_Signal'] = combine_conditions(buy_conditions)
+    df['Sell_Signal'] = combine_conditions(sell_conditions)
 
+    # Ana Signal kolonu üretimi
+    df['Signal'] = 'Bekle'
+    if signal_direction == 'Long':
+        df.loc[df['Buy_Signal'], 'Signal'] = 'Al'
+        df.loc[df['Sell_Signal'], 'Signal'] = 'Sat'  # Long pozisyon kapama
+    elif signal_direction == 'Short':
+        df.loc[df['Sell_Signal'], 'Signal'] = 'Sat'
+        df.loc[df['Buy_Signal'], 'Signal'] = 'Al'  # Short kapama
+    else:  # Both
+        df.loc[df['Buy_Signal'], 'Signal'] = 'Al'
+        df.loc[df['Sell_Signal'], 'Signal'] = 'Sat'
 
-def create_signal_column(df):
-    df['Signal'] = 'Bekle'  # Varsayılan sinyal
+    # Güvenlik: Signal kolonu numeric değilse sayısal karşılığı da üret (opsiyonel)
+    df['Signal_Value'] = df['Signal'].map({'Al': 1, 'Sat': -1, 'Bekle': 0})
 
-    # Öncelik Sat sinyali (eğer Sell ve Buy aynı anda True ise)
-    df.loc[df['Buy_Signal'] == True, 'Signal'] = 'Al'
-    df.loc[df['Sell_Signal'] == True, 'Signal'] = 'Sat'
+    # Uyarı: Hiçbir sinyal oluşmamışsa bilgilendirme
+    if (df['Signal'] == 'Bekle').all():
+        print("⚠️ Hiçbir sinyal üretilmedi. Seçilen göstergelerden hiçbiri tetiklenmedi.")
+
+    # Sinyal istatistikleri
+    print(f"📈 Al sinyali sayısı: {df['Buy_Signal'].sum()}")
+    print(f"📉 Sat sinyali sayısı: {df['Sell_Signal'].sum()}")
 
     return df
 
@@ -87,40 +98,45 @@ def backtest_signals(df):
         price = df['Close'].iloc[i]
         time_idx = df.index[i]
 
-        if signal == 'Al' and position is None:
-            position = 'Long'
-            entry_price = price
-            entry_time = time_idx
-        elif signal == 'Sat' and position == 'Long':
-            exit_price = price
-            ret = (exit_price - entry_price) / entry_price * 100
-            trades.append({
-                'Pozisyon': 'Long',
-                'Giriş Zamanı': entry_time,
-                'Çıkış Zamanı': time_idx,
-                'Giriş Fiyatı': entry_price,
-                'Çıkış Fiyatı': exit_price,
-                'Getiri (%)': round(ret, 2)
-            })
-            position = None
-        elif signal == 'Short' and position is None:
-            position = 'Short'
-            entry_price = price
-            entry_time = time_idx
-        elif signal == 'Al' and position == 'Short':
-            exit_price = price
-            ret = (entry_price - exit_price) / entry_price * 100
-            trades.append({
-                'Pozisyon': 'Short',
-                'Giriş Zamanı': entry_time,
-                'Çıkış Zamanı': time_idx,
-                'Giriş Fiyatı': entry_price,
-                'Çıkış Fiyatı': exit_price,
-                'Getiri (%)': round(ret, 2)
-            })
-            position = None
+        if position is None:
+            if signal == 'Al':
+                position = 'Long'
+                entry_price = price
+                entry_time = time_idx
+            elif signal == 'Sat':
+                position = 'Short'
+                entry_price = price
+                entry_time = time_idx
 
-    # Eğer pozisyon açık kalmışsa son olarak ekle
+        elif position == 'Long':
+            if signal == 'Sat':
+                exit_price = price
+                ret = (exit_price - entry_price) / entry_price * 100
+                trades.append({
+                    'Pozisyon': 'Long',
+                    'Giriş Zamanı': entry_time,
+                    'Çıkış Zamanı': time_idx,
+                    'Giriş Fiyatı': entry_price,
+                    'Çıkış Fiyatı': exit_price,
+                    'Getiri (%)': round(ret, 2)
+                })
+                position = None
+
+        elif position == 'Short':
+            if signal == 'Al':
+                exit_price = price
+                ret = (entry_price - exit_price) / entry_price * 100
+                trades.append({
+                    'Pozisyon': 'Short',
+                    'Giriş Zamanı': entry_time,
+                    'Çıkış Zamanı': time_idx,
+                    'Giriş Fiyatı': entry_price,
+                    'Çıkış Fiyatı': exit_price,
+                    'Getiri (%)': round(ret, 2)
+                })
+                position = None
+
+    # Pozisyon açık kalırsa son kaydı ekle
     if position is not None:
         trades.append({
             'Pozisyon': position,
@@ -132,3 +148,12 @@ def backtest_signals(df):
         })
 
     return pd.DataFrame(trades)
+
+
+def create_signal_column(df):
+    df['Signal'] = 'Bekle'
+    df.loc[df['Buy_Signal'] == True, 'Signal'] = 'Al'
+    df.loc[df['Sell_Signal'] == True, 'Signal'] = 'Sat'
+    return df
+
+

@@ -10,3 +10,4 @@ prophet
 requests
 python-telegram-bot
 python-binance
+pantas_ta

@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import json
 import time
 import itertools
 import random
@@ -15,8 +16,40 @@ from plots import plot_chart
 from telegram_alert import send_telegram_message
 from alarm_log import log_alarm, get_alarm_history
 
+
+CONFIG_FILE = "config.json"
+
+def load_config():
+    """config.json dosyasından ayarları yükler."""
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # Eğer dosya yoksa veya bozuksa, varsayılan bir yapı döndür
+        return {
+            "live_tracking_enabled": False,
+            "telegram_enabled": False,
+            "symbols": ["BTCUSDT"],
+            "interval": "1h",
+            "strategy_params": {}
+        }
+
+def save_config(config):
+    """Verilen ayarları config.json dosyasına kaydeder."""
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
+
+
 st.set_page_config(page_title="Kripto Portföy Backtest", layout="wide")
 st.title("📊 Kripto Portföy Backtest + ML + Optimizasyon + Puzzle Bot")
+
+
+# Session state'i kullanarak config'i bir kere yükle
+if 'config' not in st.session_state:
+    st.session_state.config = load_config()
+
+config = st.session_state.config
+
 
 st.sidebar.header("🔎 Menü Seçimi")
 page = st.sidebar.radio("Sayfa", ["Portföy Backtest", "Canlı İzleme", "Optimizasyon"])
@@ -44,7 +77,7 @@ with st.sidebar.expander("🔧 Diğer Parametreler (Genişletmek için tıklayı
     use_puzzle_bot = st.checkbox("Puzzle Strateji Botunu Kullan", value=False, key="puzzle_bot")
 
     st.subheader("📡 Telegram Bildirimleri")
-    use_telegram = st.checkbox("Telegram Bildirimlerini Aç", value=False, key="telegram_alerts")
+    use_telegram = st.checkbox("Telegram Bildirimlerini Aç", value=True, key="telegram_alerts")
 
     st.subheader("🤖 ML Tahmin Parametreleri")
     use_ml = st.checkbox("Makine Öğrenmesi Tahmini Kullan", value=False, key="ml_toggle")
@@ -63,8 +96,8 @@ use_rsi = col1.checkbox("RSI Sinyali", value=True, key='use_rsi')
 use_macd = col2.checkbox("MACD Sinyali", value=True, key='use_macd')
 
 col3, col4 = st.sidebar.columns(2)
-use_bb = col3.checkbox("Bollinger Sinyali", value=True, key='use_bb')
-use_adx = col4.checkbox("ADX Sinyali", value=True, key='use_adx')
+use_bb = col3.checkbox("Bollinger Sinyali", value=False, key='use_bb')
+use_adx = col4.checkbox("ADX Sinyali", value=False, key='use_adx')
 
 if use_rsi:
     rsi_period = st.sidebar.number_input("RSI Periyodu", min_value=2, max_value=100, value=14)
@@ -562,84 +595,47 @@ if page == "Portföy Backtest":
 elif page == "Canlı İzleme":
     st.header("📡 Canlı Sinyal İzleme")
 
-    if "live_tracking" not in st.session_state:
-        st.session_state.live_tracking = False
+    st.info("""
+    Bu sayfa, arka planda çalışan `worker.py` script'ini kontrol eder. 
+    Worker'ı başlatmak için terminalde `python worker.py` komutunu çalıştırdığınızdan emin olun.
+    """)
 
-    if st.session_state.live_tracking:
-        st.success("🔔 Durum: Sinyal İzleniyor")
-    else:
-        st.warning("⏹️ Durum: İzleme Kapalı")
+    # Worker'ın durumunu config dosyasından oku
+    is_worker_running = config.get("live_tracking_enabled", False)
+    status_color = "green" if is_worker_running else "red"
+    status_text = "AKTİF" if is_worker_running else "DURDURULDU"
 
-    if "selected_symbols" in st.session_state:
-        symbols = st.session_state.selected_symbols
-        st.markdown(f"**🎯 İzlenen Semboller:** {', '.join(symbols)}")
-    else:
-        st.error("ℹ️ Lütfen önce Ana Sayfadan sembolleri girin ve Backtest yapın.")
+    st.markdown(f"**Worker Durumu:** <font color='{status_color}'>{status_text}</font>", unsafe_allow_html=True)
+    st.markdown(f"**Takip Edilen Semboller:** `{', '.join(config.get('symbols', []))}`")
+    st.markdown(f"**Zaman Dilimi:** `{config.get('interval')}`")
 
     col1, col2 = st.columns(2)
-    if col1.button("▶️ Başlat"):
-        if "selected_symbols" in st.session_state:
-            st.session_state.live_tracking = True
-            st.success("🔁 Canlı sinyal takibi başlatıldı.")
-        else:
-            st.warning("Önce sembolleri girip backtest başlatmalısınız.")
 
-    if col2.button("⏹️ Durdur"):
-        st.session_state.live_tracking = False
-        st.info("⏸️ İzleme durduruldu.")
+    if col1.button("▶️ Canlı İzlemeyi Başlat/Güncelle"):
+        # Arayüzdeki güncel ayarları config dosyasına yaz
+        config["live_tracking_enabled"] = True
+        config["telegram_enabled"] = use_telegram
+        config["symbols"] = symbols
+        config["interval"] = interval
+        config["strategy_params"] = strategy_params
+        save_config(config)
+        st.session_state.config = config  # Session state'i de güncelle
+        st.success("Worker'a 'BAŞLAT' komutu gönderildi. Ayarlar güncellendi.")
+        st.rerun()
 
-        if "live_running" not in st.session_state:
-            st.session_state.live_running = False
-        if "live_thread" not in st.session_state:
-            st.session_state.live_thread = None
+    if col2.button("⏹️ Canlı İzlemeyi Durdur"):
+        config["live_tracking_enabled"] = False
+        save_config(config)
+        st.session_state.config = config  # Session state'i de güncelle
+        st.warning("Worker'a 'DURDUR' komutu gönderildi.")
+        st.rerun()
 
-        col1, col2 = st.columns(2)
-        start_clicked = col1.button("▶️ Canlı İzlemeyi Başlat")
-        stop_clicked = col2.button("⏹️ Canlı İzlemeyi Durdur")
-
-        placeholder = st.empty()
-
-        if start_clicked and not st.session_state.live_running:
-            st.session_state.live_running = True
-
-
-            def live_thread_func():
-                while st.session_state.live_running:
-                    try:
-                        live_data = []
-                        for symbol in symbols:
-                            df_latest = get_binance_klines(symbol, interval="1m", limit=20)
-                            if df_latest is None or df_latest.empty:
-                                continue
-                            last_price = df_latest['Close'].iloc[-1]
-                            signal = "Al" if last_price % 2 == 0 else "Sat"
-                            live_data.append({
-                                "Sembol": symbol,
-                                "Fiyat": f"{last_price:.2f}",
-                                "Sinyal": signal
-                            })
-                        if live_data:
-                            placeholder.dataframe(live_data, use_container_width=True)
-                        else:
-                            placeholder.info("Veri alınamadı.")
-                        time.sleep(3)
-                    except Exception as e:
-                        placeholder.error(f"Hata: {e}")
-                        break
-
-
-            import threading
-
-            t = threading.Thread(target=live_thread_func, daemon=True)
-            t.start()
-            st.session_state.live_thread = t
-
-        if stop_clicked and st.session_state.live_running:
-            st.session_state.live_running = False
-            st.session_state.live_thread = None
-            placeholder.empty()
-            st.success("⛔ Canlı izleme durduruldu.")
-
+    st.subheader("🔔 Son Alarmlar (Worker Tarafından Üretilen)")
+    alarm_history = get_alarm_history(limit=10)  # alarm_log.py'dan fonksiyon
+    if alarm_history is not None and not alarm_history.empty:
+        st.dataframe(alarm_history, use_container_width=True)
+    else:
+        st.info("Henüz worker tarafından üretilmiş bir alarm yok veya `alarm_history.csv` bulunamadı.")
 
 
 

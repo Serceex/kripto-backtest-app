@@ -73,4 +73,6 @@ def generate_all_indicators(
     except Exception:
         df_copy['VWAP'] = pd.NA
 
+    df_copy['ATR'] = ta.atr(df_copy['High'], df_copy['Low'], df_copy['Close'], length=14)
+
     return df_copy

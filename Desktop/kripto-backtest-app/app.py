@@ -176,25 +176,26 @@ optimize_section = st.container()
 
 st.header("⚙️ Strateji Gelişmiş Ayarlar")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     signal_mode = st.selectbox("Sinyal Modu", ["Long Only", "Short Only", "Long & Short"], index=2)
-
-    signal_direction = {
-        "Long Only": "Long",
-        "Short Only": "Short",
-        "Long & Short": "Both"
-    }[signal_mode]
+    signal_direction = {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode]
 
 with col2:
-    stop_loss_pct = st.slider("Stop Loss (%)", 0.1, 10.0, 2.0, step=0.1)
+    st.subheader("Zarar Durdur (Stop-Loss)")
+    sl_type = st.radio("Stop-Loss Türü", ["Yüzde (%)", "ATR"], index=1, horizontal=True)
+    if sl_type == "Yüzde (%)":
+        stop_loss_pct = st.slider("Stop Loss (%)", 0.0, 10.0, 2.0, step=0.1)
+        atr_multiplier = 0 # Kullanılmadığı için 0 yapıyoruz
+    else: # ATR Seçiliyse
+        atr_multiplier = st.slider("ATR Çarpanı", 1.0, 5.0, 2.0, step=0.1, help="Giriş anındaki ATR değerinin kaç katı uzağa stop konulacağını belirler.")
+        stop_loss_pct = 0 # Kullanılmadığı için 0 yapıyoruz
 
 with col3:
-    take_profit_pct = st.slider("Take Profit (%)", 0.1, 20.0, 5.0, step=0.1)
-
-with col4:
-    cooldown_bars = st.slider("Cooldown (bar sayısı)", 0, 10, 3)
+    st.subheader("Kâr Al & Bekleme")
+    take_profit_pct = st.slider("Take Profit (%)", 0.0, 20.0, 5.0, step=0.1)
+    cooldown_bars = st.slider("İşlem Arası Bekleme (bar)", 0, 10, 3)
 
 # Strateji parametrelerini hazırla
 strategy_params = {
@@ -216,7 +217,8 @@ strategy_params = {
     'use_bb': use_bb,
     'use_adx': use_adx,
 
-    'stop_loss_pct': stop_loss_pct,
+    'stop_loss_pct': stop_loss_pct,      # Yüzde SL için bu kalıyor
+    'atr_multiplier': atr_multiplier,    # Yeni ATR çarpanını ekliyoruz
     'take_profit_pct': take_profit_pct,
     'cooldown_bars': cooldown_bars,
 
@@ -344,44 +346,77 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
             df = filter_signals_with_trend(df)
 
         # 5. Stop-Loss ve Take-Profit ile backtest yap
-        trades = []
-        position = None
-        entry_price = 0
-        entry_time = None
-        cooldown = 0
-        for k in range(len(df)):
-            if cooldown > 0:
-                cooldown -= 1
-                continue
+            # 5. Stop-Loss ve Take-Profit ile backtest yap
+            trades = []
+            position = None
+            entry_price = 0
+            entry_time = None
+            stop_loss_price = 0  # Pozisyon için dinamik SL fiyatını tutacak
+            cooldown = 0
 
-            signal = df['Signal'].iloc[k]
-            price = df['Close'].iloc[k]
-            time_idx = df.index[k]
+            for k in range(len(df)):
+                if cooldown > 0:
+                    cooldown -= 1
+                    continue
 
-            if position is None:
-                if signal == 'Al' and strategy_params['signal_direction'] != 'Short':
-                    position, entry_price, entry_time = 'Long', price, time_idx
-                elif signal == 'Sat' and strategy_params['signal_direction'] != 'Long':
-                    position, entry_price, entry_time = 'Short', price, time_idx
-            else:
-                ret = ((price - entry_price) / entry_price * 100) if position == 'Long' else (
-                            (entry_price - price) / entry_price * 100)
+                # O anki barın verileri
+                current_row = df.iloc[k]
+                signal = current_row['Signal']
+                price = current_row['Close']
+                low_price = current_row['Low']
+                high_price = current_row['High']
+                time_idx = df.index[k]
 
-                exit_condition = False
-                sl_triggered = ret <= -strategy_params['stop_loss_pct'] and strategy_params['stop_loss_pct'] > 0
-                tp_triggered = ret >= strategy_params['take_profit_pct'] and strategy_params['take_profit_pct'] > 0
+                # POZİSYON AÇMA MANTIĞI
+                if position is None:
+                    if signal == 'Al' and strategy_params['signal_direction'] != 'Short':
+                        position, entry_price, entry_time = 'Long', price, time_idx
+                        # GİRİŞ ANINDA STOP SEVİYESİNİ HESAPLA
+                        if strategy_params['atr_multiplier'] > 0:
+                            stop_loss_price = price - (current_row['ATR'] * strategy_params['atr_multiplier'])
+                        else:  # Yüzde SL
+                            stop_loss_price = price * (1 - strategy_params['stop_loss_pct'] / 100)
 
-                if position == 'Long' and (sl_triggered or tp_triggered or signal == 'Sat'):
-                    exit_condition = True
-                elif position == 'Short' and (sl_triggered or tp_triggered or signal == 'Al'):
-                    exit_condition = True
+                    elif signal == 'Sat' and strategy_params['signal_direction'] != 'Long':
+                        position, entry_price, entry_time = 'Short', price, time_idx
+                        # GİRİŞ ANINDA STOP SEVİYESİNİ HESAPLA
+                        if strategy_params['atr_multiplier'] > 0:
+                            stop_loss_price = price + (current_row['ATR'] * strategy_params['atr_multiplier'])
+                        else:  # Yüzde SL
+                            stop_loss_price = price * (1 + strategy_params['stop_loss_pct'] / 100)
 
-                if exit_condition:
-                    trades.append({
-                        'Pozisyon': position, 'Giriş Zamanı': entry_time, 'Çıkış Zamanı': time_idx,
-                        'Giriş Fiyatı': entry_price, 'Çıkış Fiyatı': price, 'Getiri (%)': round(ret, 2)
-                    })
-                    position, cooldown = None, strategy_params['cooldown_bars']
+                # AÇIK POZİSYONU YÖNETME MANTIĞI
+                else:
+                    exit_condition = False
+
+                    # Take Profit kontrolü
+                    tp_price_long = entry_price * (1 + strategy_params['take_profit_pct'] / 100)
+                    tp_price_short = entry_price * (1 - strategy_params['take_profit_pct'] / 100)
+
+                    if position == 'Long':
+                        # Stop-loss, karşı sinyal veya take-profit kontrolü
+                        if low_price <= stop_loss_price or signal == 'Sat' or high_price >= tp_price_long:
+                            exit_condition = True
+
+                    elif position == 'Short':
+                        # Stop-loss, karşı sinyal veya take-profit kontrolü
+                        if high_price >= stop_loss_price or signal == 'Al' or low_price <= tp_price_short:
+                            exit_condition = True
+
+                    if exit_condition:
+                        # Pozisyondan çıkış fiyatını, tetiklenen seviyeye en yakın olanla belirle
+                        exit_price = price
+                        if position == 'Long' and low_price <= stop_loss_price: exit_price = stop_loss_price
+                        if position == 'Short' and high_price >= stop_loss_price: exit_price = stop_loss_price
+
+                        ret = ((exit_price - entry_price) / entry_price * 100) if position == 'Long' else (
+                                    (entry_price - exit_price) / entry_price * 100)
+
+                        trades.append({
+                            'Pozisyon': position, 'Giriş Zamanı': entry_time, 'Çıkış Zamanı': time_idx,
+                            'Giriş Fiyatı': entry_price, 'Çıkış Fiyatı': exit_price, 'Getiri (%)': round(ret, 2)
+                        })
+                        position, cooldown = None, strategy_params['cooldown_bars']
 
         if trades:
             trades_df = pd.DataFrame(trades)

@@ -11,7 +11,7 @@ from utils import get_binance_klines, calculate_fibonacci_levels
 from indicators import generate_all_indicators
 from features import prepare_features
 from ml_model import SignalML
-from signals import generate_signals, backtest_signals, create_signal_column
+from signals import generate_signals, filter_signals_with_trend, add_higher_timeframe_trend, backtest_signals
 from plots import plot_chart
 from telegram_alert import send_telegram_message
 from alarm_log import log_alarm, get_alarm_history
@@ -71,6 +71,38 @@ with st.sidebar.expander("📊 Grafik Gösterge Seçenekleri", expanded=False):
     show_adx = st.checkbox("ADX Göster", value=False)
     show_stoch = st.checkbox("Stochastic Göster", value=False)
     show_fibonacci = st.checkbox("Fibonacci Göster", value=False)
+
+with st.sidebar.expander("⏳ Çoklu Zaman Dilimi Analizi (MTA)", expanded=True):
+    use_mta = st.checkbox("Ana Trend Filtresini Kullan", value=True,
+                          help="Daha üst bir zaman dilimindeki ana trend yönünde sinyal üretir. Başarı oranını artırır.")
+    if use_mta:
+        # Mevcut işlem zaman dilimine göre mantıklı bir üst zaman dilimi öner
+        timeframe_map = {"15m": "1h", "1h": "4h", "4h": "1d"}
+        # 'interval' session_state'de yoksa varsayılan olarak '1h' kullan
+        current_interval = st.session_state.get('interval', '1h')
+        default_higher_tf = timeframe_map.get(current_interval, "4h")
+
+        higher_tf_options = ["1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"]
+
+        # Önerilen üst zaman diliminin index'ini bul, bulamazsa varsayılan olarak 2 (4h) kullan
+        try:
+            default_index = higher_tf_options.index(default_higher_tf)
+        except ValueError:
+            default_index = 2
+
+        higher_timeframe = st.selectbox(
+            "Ana Trend için Üst Zaman Dilimi",
+            options=higher_tf_options,
+            index=default_index
+        )
+        trend_ema_period = st.slider(
+            "Trend EMA Periyodu", 20, 200, 50,
+            help="Üst zaman diliminde trendi belirlemek için kullanılacak EMA periyodu."
+        )
+    else:
+        higher_timeframe = None
+        trend_ema_period = 50
+
 
 with st.sidebar.expander("🔧 Diğer Parametreler (Genişletmek için tıklayın)", expanded=False):
     st.subheader("🧩 Puzzle Strateji Botu")
@@ -191,7 +223,10 @@ strategy_params = {
     'signal_mode': signal_mode,
     'signal_direction': signal_direction,
     'use_puzzle_bot': use_puzzle_bot,
-    'use_ml': use_ml
+    'use_ml': use_ml,
+    'use_mta': use_mta,
+    'higher_timeframe': higher_timeframe,
+    'trend_ema_period': trend_ema_period
 }
 
 # ------------------------------
@@ -276,115 +311,93 @@ def update_price_live(symbol, interval, placeholder):
 def run_portfolio_backtest(symbols, interval, strategy_params):
     all_results = []
     st.session_state.backtest_data = {}
+    progress_bar = st.progress(0)
+    status_text = st.empty()
 
-    for symbol in symbols:
-        st.write(f"🔍 {symbol} verisi indiriliyor ve strateji uygulanıyor...")
+    for i, symbol in enumerate(symbols):
+        status_text.text(f"🔍 {symbol} verisi indiriliyor ve strateji uygulanıyor... ({i + 1}/{len(symbols)})")
 
-        df = get_binance_klines(symbol=symbol, interval=interval)
-        if df is not None and not df.empty:
+        # 1. Ana zaman dilimi verisini çek
+        df = get_binance_klines(symbol=symbol, interval=interval, limit=1000)
+        if df is None or df.empty:
+            st.warning(f"{symbol} için ana zaman dilimi ({interval}) verisi alınamadı.")
+            continue
 
-            df = generate_all_indicators(
-                df,
-                strategy_params['sma'],
-                strategy_params['ema'],
-                strategy_params['bb_period'],
-                strategy_params['bb_std'],
-                strategy_params['rsi_period'],
-                strategy_params['macd_fast'],
-                strategy_params['macd_slow'],
-                strategy_params['macd_signal'],
-                strategy_params['adx_period']
-            )
+        # 2. MTA aktifse, üst zaman dilimi verisini çek
+        df_higher = None
+        current_use_mta = strategy_params['use_mta']
+        if current_use_mta:
+            df_higher = get_binance_klines(symbol=symbol, interval=strategy_params['higher_timeframe'], limit=1000)
+            if df_higher is None or df_higher.empty:
+                st.warning(
+                    f"-> {symbol} için üst zaman dilimi ({strategy_params['higher_timeframe']}) verisi alınamadı. Bu sembol için MTA devre dışı.")
+                current_use_mta = False  # Sadece bu sembol için MTA'yı kapat
 
-            df = generate_signals(
-                df,
-                use_rsi=strategy_params["use_rsi"],
-                rsi_buy=strategy_params["rsi_buy"],
-                rsi_sell=strategy_params["rsi_sell"],
-                use_macd=strategy_params["use_macd"],
-                use_bb=strategy_params["use_bb"],
-                use_adx=strategy_params["use_adx"],
-                adx_threshold=strategy_params["adx_threshold"],
-                signal_mode=strategy_params["signal_mode"],
-                signal_direction=strategy_params["signal_direction"],
-                use_puzzle_bot=strategy_params["use_puzzle_bot"]
-            )
+        # 3. Göstergeleri ve ham sinyalleri hesapla
+        df = generate_all_indicators(df, **strategy_params)
+        df = generate_signals(df, **strategy_params)
 
-            trades = []
-            position = None
-            entry_price = 0
-            entry_time = None
-            cooldown = 0
+        # 4. MTA aktifse, sinyalleri trende göre filtrele
+        if current_use_mta and df_higher is not None:
+            st.write(f"-> {symbol} için ana trend filtresi uygulanıyor...")
+            df = add_higher_timeframe_trend(df, df_higher, strategy_params['trend_ema_period'])
+            df = filter_signals_with_trend(df)
 
-            for i in range(len(df)):
-                if cooldown > 0:
-                    cooldown -= 1
-                    continue
+        # 5. Stop-Loss ve Take-Profit ile backtest yap
+        trades = []
+        position = None
+        entry_price = 0
+        entry_time = None
+        cooldown = 0
+        for k in range(len(df)):
+            if cooldown > 0:
+                cooldown -= 1
+                continue
 
-                signal = df['Signal'].iloc[i] if 'Signal' in df.columns else 'Bekle'
-                price = df['Close'].iloc[i]
-                time_idx = df.index[i]
+            signal = df['Signal'].iloc[k]
+            price = df['Close'].iloc[k]
+            time_idx = df.index[k]
 
-                if position is None:
-                    if signal == 'Al' and strategy_params['signal_direction'] != 'Short':
-                        position = 'Long'
-                        entry_price = price
-                        entry_time = time_idx
-                    elif signal == 'Sat' and strategy_params['signal_direction'] != 'Long':
-                        position = 'Short'
-                        entry_price = price
-                        entry_time = time_idx
-
-                elif position == 'Long':
-                    ret = (price - entry_price) / entry_price * 100
-                    if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or (
-                            signal == 'Sat'):
-                        trades.append({
-                            'Pozisyon': 'Long',
-                            'Giriş Zamanı': entry_time,
-                            'Çıkış Zamanı': time_idx,
-                            'Giriş Fiyatı': entry_price,
-                            'Çıkış Fiyatı': price,
-                            'Getiri (%)': round(ret, 2)
-                        })
-                        position = None
-                        cooldown = strategy_params['cooldown_bars']
-
-                elif position == 'Short':
-                    ret = (entry_price - price) / entry_price * 100
-                    if (ret <= -strategy_params['stop_loss_pct']) or (ret >= strategy_params['take_profit_pct']) or (
-                            signal == 'Al'):
-                        trades.append({
-                            'Pozisyon': 'Short',
-                            'Giriş Zamanı': entry_time,
-                            'Çıkış Zamanı': time_idx,
-                            'Giriş Fiyatı': entry_price,
-                            'Çıkış Fiyatı': price,
-                            'Getiri (%)': round(ret, 2)
-                        })
-                        position = None
-                        cooldown = strategy_params['cooldown_bars']
-
-            if position is not None:
-                trades.append({
-                    'Pozisyon': position,
-                    'Giriş Zamanı': entry_time,
-                    'Çıkış Zamanı': pd.NaT,
-                    'Giriş Fiyatı': entry_price,
-                    'Çıkış Fiyatı': np.nan,
-                    'Getiri (%)': np.nan
-                })
-
-            if trades:
-                results_df = pd.DataFrame(trades)
-                results_df['Sembol'] = symbol
-                all_results.append(results_df)
-
-            if all_results:
-                portfolio_results = pd.concat(all_results).sort_values("Giriş Zamanı")
-                st.session_state['backtest_results'] = portfolio_results
+            if position is None:
+                if signal == 'Al' and strategy_params['signal_direction'] != 'Short':
+                    position, entry_price, entry_time = 'Long', price, time_idx
+                elif signal == 'Sat' and strategy_params['signal_direction'] != 'Long':
+                    position, entry_price, entry_time = 'Short', price, time_idx
             else:
-                st.session_state['backtest_results'] = pd.DataFrame()
+                ret = ((price - entry_price) / entry_price * 100) if position == 'Long' else (
+                            (entry_price - price) / entry_price * 100)
+
+                exit_condition = False
+                sl_triggered = ret <= -strategy_params['stop_loss_pct'] and strategy_params['stop_loss_pct'] > 0
+                tp_triggered = ret >= strategy_params['take_profit_pct'] and strategy_params['take_profit_pct'] > 0
+
+                if position == 'Long' and (sl_triggered or tp_triggered or signal == 'Sat'):
+                    exit_condition = True
+                elif position == 'Short' and (sl_triggered or tp_triggered or signal == 'Al'):
+                    exit_condition = True
+
+                if exit_condition:
+                    trades.append({
+                        'Pozisyon': position, 'Giriş Zamanı': entry_time, 'Çıkış Zamanı': time_idx,
+                        'Giriş Fiyatı': entry_price, 'Çıkış Fiyatı': price, 'Getiri (%)': round(ret, 2)
+                    })
+                    position, cooldown = None, strategy_params['cooldown_bars']
+
+        if trades:
+            trades_df = pd.DataFrame(trades)
+            trades_df['Sembol'] = symbol
+            all_results.append(trades_df)
+
+        st.session_state.backtest_data[symbol] = df
+        progress_bar.progress((i + 1) / len(symbols))
+
+    status_text.success("🚀 Backtest tamamlandı!")
+
+    if all_results:
+        portfolio_results = pd.concat(all_results, ignore_index=True).sort_values("Giriş Zamanı")
+        st.session_state['backtest_results'] = portfolio_results
+    else:
+        st.session_state['backtest_results'] = pd.DataFrame()
 
 
 def live_signal_loop(symbols, interval, params, delay=60):
@@ -656,110 +669,56 @@ elif page == "Optimizasyon":
 
 if len(symbols) == 1:
     symbol = symbols[0]
-    price_placeholder = st.empty()
+    st.subheader(f"Detaylı Grafik & Sinyaller — {symbol}")
 
-    # Canlı fiyat güncellemesi için thread (bu kısım aynı kalabilir)
-    if 'live_running_chart' not in st.session_state:
-        st.session_state.live_running_chart = True
-    threading.Thread(
-        target=update_price_live,
-        args=(symbol, interval, price_placeholder),
-        daemon=True
-    ).start()
+    df_chart = None
+    # Backtest çalıştırıldıysa, hafızadaki işlenmiş veriyi kullan
+    if symbol in st.session_state.get('backtest_data', {}):
+        df_chart = st.session_state.backtest_data[symbol]
+        st.info("Backtest verisi üzerinden grafik çiziliyor.")
 
-    df = get_binance_klines(symbol=symbol, interval=interval)
-    if df is not None and not df.empty:
-        # 1. Tüm göstergeleri hesapla
-        df = generate_all_indicators(
-            df,
-            sma_period=sma_period, ema_period=ema_period, bb_period=bb_period, bb_std=bb_std,
-            rsi_period=rsi_period, macd_fast=macd_fast, macd_slow=macd_slow,
-            macd_signal=macd_signal, adx_period=14
-        )
+    # Eğer backtest verisi yoksa, grafik için veriyi yeniden indir ve işle
+    if df_chart is None or df_chart.empty:
+        st.info("Grafik için canlı veri indiriliyor...")
+        df_chart = get_binance_klines(symbol=symbol, interval=interval, limit=1000)
+        if df_chart is not None and not df_chart.empty:
+            df_chart = generate_all_indicators(df_chart, **strategy_params)
+            df_chart = generate_signals(df_chart, **strategy_params)
 
-        # 2. Sinyalleri Hesapla
-        df = generate_signals(
-            df,
-            use_rsi=strategy_params["use_rsi"],
-            rsi_buy=strategy_params["rsi_buy"],
-            rsi_sell=strategy_params["rsi_sell"],
-            use_macd=strategy_params["use_macd"],
-            use_bb=strategy_params["use_bb"],
-            use_adx=strategy_params["use_adx"],
-            adx_threshold=strategy_params["adx_threshold"],
-            signal_mode=strategy_params["signal_mode"],
-            signal_direction=strategy_params["signal_direction"],
-            use_puzzle_bot=strategy_params["use_puzzle_bot"]
-        )
+            # MTA aktifse, grafik verisine de trendi uygula
+            if strategy_params['use_mta']:
+                df_higher_chart = get_binance_klines(symbol, strategy_params['higher_timeframe'], limit=1000)
+                if df_higher_chart is not None and not df_higher_chart.empty:
+                    df_chart = add_higher_timeframe_trend(df_chart, df_higher_chart,
+                                                          strategy_params['trend_ema_period'])
+                    df_chart = filter_signals_with_trend(df_chart)
 
-        fib_levels = calculate_fibonacci_levels(df)
-
-        if strategy_params.get('use_ml', False):
-            X, y, df = prepare_features(df, forward_window, target_thresh)
-            if len(X) > 20:
-                model = SignalML()
-                model.train(X, y)
-                df.loc[X.index, 'ML_Signal'] = model.predict_signals(X)
-            else:
-                df['ML_Signal'] = 0
-        else:
-            df['ML_Signal'] = 0
-
-        last_price = df['Close'].iloc[-1]
-        st.subheader(f"Detaylı Grafik & ML Tahmini — Güncel Fiyat: {last_price:.2f} USDT")
-
+    if df_chart is not None and not df_chart.empty:
+        fib_levels = calculate_fibonacci_levels(df_chart)
         options = {
             "show_sma": show_sma, "show_ema": show_ema, "show_bbands": show_bbands,
             "show_vwap": show_vwap, "show_adx": show_adx, "show_stoch": show_stoch,
             "show_fibonacci": show_fibonacci,
         }
-        st.plotly_chart(plot_chart(df, symbol, fib_levels, options, ml_signal=strategy_params.get('use_ml', False)),
-                        use_container_width=True)
 
-        # --- YENİ VE GELİŞTİRİLMİŞ "SON SİNYALLER" BÖLÜMÜ ---
-        st.subheader("📌 Son Gerçekleşen 5 Sinyal")
+        # plot_chart fonksiyonu Buy_Signal ve Sell_Signal kolonlarını bekler.
+        # Bu kolonları 'Signal' kolonuna göre oluşturalım.
+        df_chart['Buy_Signal'] = (df_chart['Signal'] == 'Al')
+        df_chart['Sell_Signal'] = (df_chart['Signal'] == 'Sat')
 
-        # Sadece 'Al' veya 'Sat' olan sinyalleri filtrele
-        recent_signals = df[df['Signal'].isin(['Al', 'Sat'])].tail(5)
+        st.plotly_chart(
+            plot_chart(df_chart, symbol, fib_levels, options, ml_signal=strategy_params.get('use_ml', False)),
+            use_container_width=True)
 
-        if not recent_signals.empty:
-            # Gösterim için yeni bir DataFrame oluştur
-            display_df = recent_signals[['Signal', 'Close', 'RSI', 'MACD', 'ADX']].copy()
-
-            # Kolon isimlerini Türkçeleştir
-            display_df.rename(columns={
-                'Signal': 'Sinyal',
-                'Close': 'Fiyat (USDT)',
-                'RSI': 'RSI Değeri',
-                'MACD': 'MACD Değeri',
-                'ADX': 'ADX Değeri'
-            }, inplace=True)
-
-            # Zaman damgasını okunabilir formatta ekle
-            display_df['Zaman'] = display_df.index.strftime('%Y-%m-%d %H:%M:%S')
-
-            # Kolon sırasını ayarla
-            display_df = display_df[['Zaman', 'Sinyal', 'Fiyat (USDT)', 'RSI Değeri', 'MACD Değeri', 'ADX Değeri']]
-
-
-            # Sinyale göre satırları renklendirecek fonksiyon
-            def style_signals(row):
-                color = ''
-                if row.Sinyal == 'Al':
-                    color = 'background-color: #2a523b; color: white'  # Yeşil tonu
-                elif row.Sinyal == 'Sat':
-                    color = 'background-color: #602a3a; color: white'  # Kırmızı tonu
-                return [color] * len(row)
-
-
-            # Stilli DataFrame'i göster
-            st.dataframe(display_df.style.apply(style_signals, axis=1), use_container_width=True)
-        else:
-            st.info("Gösterilecek 'Al' veya 'Sat' sinyali bulunamadı.")
-        # --- YENİ BÖLÜM SONU ---
-
+        # Ana Trend bilgisini grafiğin altında göster
+        if 'Trend' in df_chart.columns:
+            last_trend = df_chart['Trend'].iloc[-1]
+            trend_color = "green" if last_trend == "Up" else "red"
+            st.markdown(
+                f"### Ana Trend ({strategy_params['higher_timeframe']}): <font color='{trend_color}'>{last_trend}</font>",
+                unsafe_allow_html=True)
     else:
-        st.warning(f"{symbol} için veri bulunamadı veya boş.")
+        st.warning(f"{symbol} için grafik verisi bulunamadı veya işlenemedi.")
 
 # ------------------------------
 # Alarmlar ve Telegram Durumu Paneli

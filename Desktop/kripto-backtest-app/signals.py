@@ -15,7 +15,12 @@ def generate_signals(df,
                      adx_threshold=25,
                      signal_mode='or',
                      signal_direction='Both',
-                     use_puzzle_bot=False):
+                     use_puzzle_bot=False,
+                     **kwargs):  # <-- BU SATIRI EKLEYİN
+    """
+    Bu, orijinal sinyal üretme fonksiyonunuzdur.
+    Çoklu Zaman Dilimi Analizi (MTA) filtresi OLMADAN çalışır.
+    """
     df = df.copy()
 
     # Eksik kolonları doldur
@@ -81,8 +86,8 @@ def generate_signals(df,
         print("⚠️ Hiçbir sinyal üretilmedi. Seçilen göstergelerden hiçbiri tetiklenmedi.")
 
     # Sinyal istatistikleri
-    print(f"📈 Al sinyali sayısı: {df['Buy_Signal'].sum()}")
-    print(f"📉 Sat sinyali sayısı: {df['Sell_Signal'].sum()}")
+    print(f"📈 Ham Al sinyali sayısı: {df['Buy_Signal'].sum()}")
+    print(f"📉 Ham Sat sinyali sayısı: {df['Sell_Signal'].sum()}")
 
     return df
 
@@ -157,3 +162,63 @@ def create_signal_column(df):
     return df
 
 
+# --- YENİ EKLENEN FONKSİYONLAR ---
+
+def add_higher_timeframe_trend(df_lower, df_higher, trend_ema_period=50):
+    """
+    Üst zaman dilimindeki trendi hesaplar ve alt zaman dilimi verisine ekler.
+
+    Args:
+        df_lower (pd.DataFrame): Alt zaman dilimi verisi (örn: 1h).
+        df_higher (pd.DataFrame): Üst zaman dilimi verisi (örn: 4h).
+        trend_ema_period (int): Trendi belirlemek için kullanılacak EMA periyodu.
+
+    Returns:
+        pd.DataFrame: Trend bilgisini içeren alt zaman dilimi verisi.
+    """
+    # Üst zaman diliminde trendi belirle
+    df_higher['Trend_EMA'] = pd.Series.ewm(df_higher['Close'], span=trend_ema_period, adjust=False).mean()
+    df_higher['Trend'] = np.where(df_higher['Close'] > df_higher['Trend_EMA'], 'Up', 'Down')
+
+    # Sadece trend bilgisini ve zaman damgasını al
+    df_trend = df_higher[['Trend']].copy()
+
+    # Alt zaman dilimi verisine, kendi zaman damgasına en yakın olan
+    # üst zaman dilimi trend bilgisini ekle.
+    # 'asof' metodu, her bir alt zaman dilimi barı için, o andaki veya
+    # hemen önceki üst zaman dilimi trendini bulur.
+    df_merged = pd.merge_asof(df_lower.sort_index(),
+                              df_trend.sort_index(),
+                              left_index=True,
+                              right_index=True,
+                              direction='backward')
+
+    # Olası NaN değerleri bir önceki geçerli trend ile doldur
+    df_merged['Trend'] = df_merged['Trend'].ffill()
+
+    return df_merged
+
+
+def filter_signals_with_trend(df):
+    """
+    Mevcut sinyalleri üst zaman dilimi trendine göre filtreler.
+
+    Args:
+        df (pd.DataFrame): 'Signal' ve 'Trend' kolonlarını içeren DataFrame.
+
+    Returns:
+        pd.DataFrame: Trende göre filtrelenmiş sinyal kolonunu içeren DataFrame.
+    """
+    # Trend "Up" iken "Sat" sinyali gelirse, bunu "Bekle" olarak değiştir.
+    # Ancak "Al" sinyallerine dokunma.
+    df.loc[(df['Trend'] == 'Up') & (df['Signal'] == 'Sat'), 'Signal'] = 'Bekle'
+
+    # Trend "Down" iken "Al" sinyali gelirse, bunu "Bekle" olarak değiştir.
+    # Ancak "Sat" sinyallerine dokunma (Short pozisyonlar için).
+    df.loc[(df['Trend'] == 'Down') & (df['Signal'] == 'Al'), 'Signal'] = 'Bekle'
+
+    # Sinyal istatistiklerini güncelle
+    print(f"📈 Trend Filtresi Sonrası Al sinyali sayısı: {df[df['Signal'] == 'Al'].shape[0]}")
+    print(f"📉 Trend Filtresi Sonrası Sat sinyali sayısı: {df[df['Signal'] == 'Sat'].shape[0]}")
+
+    return df

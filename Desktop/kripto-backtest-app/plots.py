@@ -72,3 +72,39 @@ def plot_chart(df, symbol, fib_levels, options, ml_signal=False):
 
     fig.update_layout(height=1000, showlegend=True, xaxis_rangeslider_visible=False)
     return fig
+
+
+
+def plot_performance_summary(equity_curve, drawdown_series):
+    """
+    Sermaye eğrisini ve düşüş dönemlerini gösteren bir özet grafiği oluşturur.
+    """
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1,
+        subplot_titles=('Sermaye Eğrisi (Equity Curve)', 'Düşüş Grafiği (Drawdown)')
+    )
+
+    # Sermaye Eğrisi
+    fig.add_trace(go.Scatter(
+        x=equity_curve.index, y=equity_curve['equity'],
+        mode='lines', name='Sermaye',
+        line=dict(color='blue', width=2)
+    ), row=1, col=1)
+
+    # Düşüş Grafiği
+    fig.add_trace(go.Scatter(
+        x=drawdown_series.index, y=drawdown_series * 100,  # Yüzde olarak göstermek için 100 ile çarp
+        mode='lines', name='Düşüş',
+        fill='tozeroy', line=dict(color='red', width=1)
+    ), row=2, col=1)
+
+    fig.update_layout(
+        height=600,
+        showlegend=False,
+        yaxis1_title="Sermaye",
+        yaxis2_title="Düşüş (%)",
+        yaxis1_tickprefix="$",
+        yaxis2_ticksuffix="%"
+    )
+
+    return fig

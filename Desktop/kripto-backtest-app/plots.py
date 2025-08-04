@@ -70,7 +70,8 @@ def plot_chart(df, symbol, fib_levels, options, ml_signal=False):
 
     fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Hacim', marker_color='lightblue'), row=4, col=1)
 
-    fig.update_layout(height=1000, showlegend=True, xaxis_rangeslider_visible=False)
+    #fig.update_layout(height=1000, showlegend=True, xaxis_rangeslider_visible=False)
+    fig.update_layout(showlegend=True, xaxis_rangeslider_visible=False)
     return fig
 
 

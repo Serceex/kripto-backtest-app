@@ -174,48 +174,50 @@ interval = st.selectbox("⏳ Zaman Dilimi Seçin", options=["15m", "1h", "4h"], 
 results_section = st.container()
 optimize_section = st.container()
 
-st.header("⚙️ Strateji Gelişmiş Ayarlar")
+# --- YENİ ve KÜÇÜLTÜLMÜŞ HALİ ---
 
-col1, col2, col3 = st.columns(3)
+with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
+    col1, col2, col3 = st.columns(3)
 
-with col1:
-    signal_mode = st.selectbox("Sinyal Modu", ["Long Only", "Short Only", "Long & Short"], index=2)
-    signal_direction = {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode]
+    with col1:
 
-    st.subheader("İşlem Maliyetleri")
-    commission_pct = st.slider(
-        "İşlem Başına Komisyon (%)", 0.0, 0.5, 0.1, step=0.01,
-        key="commission_pct_key",
-        help="Her alım veya satım işlemi için ödenecek komisyon oranı. Binance için genellikle %0.1'dir."
-    )
+        signal_mode = st.selectbox("Sinyal Modu", ["Long Only", "Short Only", "Long & Short"], index=2,
+                                   key="signal_mode_key")
+        signal_direction = {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode]
 
-with col2:
-    st.subheader("Zarar Durdur (Stop-Loss)")
-    sl_type = st.radio("Stop-Loss Türü", ["Yüzde (%)", "ATR"], index=1, horizontal=True, key="sl_type_key")
-    if sl_type == "Yüzde (%)":
-        stop_loss_pct = st.slider("Stop Loss (%)", 0.0, 10.0, 2.0, step=0.1)
-        atr_multiplier = 0 # Kullanılmadığı için 0 yapıyoruz
-    else: # ATR Seçiliyse
-        atr_multiplier = st.slider("ATR Çarpanı", 1.0, 5.0, 2.0, step=0.1, help="Giriş anındaki ATR değerinin kaç katı uzağa stop konulacağını belirler.", key="atr_multiplier_key")
-        stop_loss_pct = 0 # Kullanılmadığı için 0 yapıyoruz
+        #st.subheader("İşlem Arası Bekleme")
+        st.markdown("**İşlem Arası Bekleme**")
+        cooldown_bars = st.slider("Bekleme (bar)", 0, 10, 3, key="cooldown_bars_key", label_visibility="collapsed")
 
-with col3:
-    st.subheader("Kâr Al & Bekleme")
-    use_trailing_stop = st.checkbox("İz Süren Stop (ATR) Kullan", value=True,
-                                    help="Aktifse, sabit Take Profit yerine fiyatı ATR mesafesinden takip eden dinamik bir stop kullanılır. Bu, büyük trendleri yakalamayı hedefler.")
+    with col2:
+        st.markdown("**Zarar Durdur (Stop-Loss)**")
+        sl_type = st.radio("Stop-Loss Türü", ["Yüzde (%)", "ATR"], index=1, horizontal=True, key="sl_type_key")
+        if sl_type == "Yüzde (%)":
+            stop_loss_pct = st.slider("Stop Loss (%)", 0.0, 10.0, 2.0, step=0.1)
+            atr_multiplier = 0
+        else:  # ATR Seçiliyse
+            atr_multiplier = st.slider("ATR Çarpanı", 1.0, 5.0, 2.0, step=0.1,
+                                       help="Giriş anındaki ATR değerinin kaç katı uzağa stop konulacağını belirler.",
+                                       key="atr_multiplier_key")
+            stop_loss_pct = 0
 
-    # app.py -> "Strateji Gelişmiş Ayarlar" -> col3'ün içine ekleyin
-    # (Örneğin, "Kâr Al & Bekleme" subheader'ının hemen altına)
+    with col3:
+        st.markdown("**Kâr Al & Maliyet**")
+        use_trailing_stop = st.checkbox("İz Süren Stop (ATR) Kullan", value=True,
+                                        help="Aktifse, sabit Take Profit yerine fiyatı ATR mesafesinden takip eden dinamik bir stop kullanılır.",
+                                        key="trailing_stop_key")
 
+        take_profit_pct = st.slider(
+            "Take Profit (%)", 0.0, 20.0, 5.0, step=0.1,
+            key="take_profit_pct_key",
+            disabled=use_trailing_stop
+        )
 
-    # Eğer İz Süren Stop kullanılmıyorsa, sabit Take Profit seçeneğini göster
-    take_profit_pct = st.slider(
-        "Take Profit (%)", 0.0, 20.0, 5.0, step=0.1,
-        key="take_profit_pct_key",
-        disabled=use_trailing_stop  # Trailing Stop aktifse bunu devre dışı bırak
-    )
-
-    cooldown_bars = st.slider("İşlem Arası Bekleme (bar)", 0, 10, 3)
+        commission_pct = st.slider(
+            "İşlem Başına Komisyon (%)", 0.0, 0.5, 0.1, step=0.01,
+            key="commission_pct_key",
+            help="Her alım veya satım işlemi için ödenecek komisyon oranı. Binance için genellikle %0.1'dir."
+        )
 
 
 

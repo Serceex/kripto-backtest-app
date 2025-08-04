@@ -1,0 +1,11 @@
+﻿streamlit
+pandas
+numpy
+pandas-ta==0.3.14b0
+matplotlib
+plotly
+ta
+xgboost
+requests
+python-binance
+websocket-client

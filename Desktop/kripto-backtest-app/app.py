@@ -182,6 +182,13 @@ with col1:
     signal_mode = st.selectbox("Sinyal Modu", ["Long Only", "Short Only", "Long & Short"], index=2)
     signal_direction = {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode]
 
+    st.subheader("İşlem Maliyetleri")
+    commission_pct = st.slider(
+        "İşlem Başına Komisyon (%)", 0.0, 0.5, 0.1, step=0.01,
+        key="commission_pct_key",
+        help="Her alım veya satım işlemi için ödenecek komisyon oranı. Binance için genellikle %0.1'dir."
+    )
+
 with col2:
     st.subheader("Zarar Durdur (Stop-Loss)")
     sl_type = st.radio("Stop-Loss Türü", ["Yüzde (%)", "ATR"], index=1, horizontal=True, key="sl_type_key")
@@ -197,6 +204,10 @@ with col3:
     use_trailing_stop = st.checkbox("İz Süren Stop (ATR) Kullan", value=True,
                                     help="Aktifse, sabit Take Profit yerine fiyatı ATR mesafesinden takip eden dinamik bir stop kullanılır. Bu, büyük trendleri yakalamayı hedefler.")
 
+    # app.py -> "Strateji Gelişmiş Ayarlar" -> col3'ün içine ekleyin
+    # (Örneğin, "Kâr Al & Bekleme" subheader'ının hemen altına)
+
+
     # Eğer İz Süren Stop kullanılmıyorsa, sabit Take Profit seçeneğini göster
     take_profit_pct = st.slider(
         "Take Profit (%)", 0.0, 20.0, 5.0, step=0.1,
@@ -205,6 +216,8 @@ with col3:
     )
 
     cooldown_bars = st.slider("İşlem Arası Bekleme (bar)", 0, 10, 3)
+
+
 
 # Strateji parametrelerini hazırla
 strategy_params = {
@@ -238,6 +251,7 @@ strategy_params = {
     'use_mta': use_mta,
     'higher_timeframe': higher_timeframe,
     'trend_ema_period': trend_ema_period,
+'commission_pct': commission_pct,
     'use_trailing_stop': use_trailing_stop
 }
 
@@ -426,8 +440,14 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
 
                 # Eğer bir çıkış koşulu oluştuysa, işlemi kaydet
                 if exit_price is not None:
-                    ret = ((exit_price - entry_price) / entry_price * 100) if position == 'Long' else (
+                    # Brüt getiriyi hesapla
+                    gross_ret = ((exit_price - entry_price) / entry_price * 100) if position == 'Long' else (
                                 (entry_price - exit_price) / entry_price * 100)
+
+                    # Komisyonu düşerek net getiriyi hesapla (1 alım + 1 satım)
+                    commission_cost = strategy_params['commission_pct'] * 2
+                    ret = gross_ret - commission_cost
+
                     trades.append({
                         'Pozisyon': position, 'Giriş Zamanı': entry_time, 'Çıkış Zamanı': time_idx,
                         'Giriş Fiyatı': entry_price, 'Çıkış Fiyatı': exit_price, 'Getiri (%)': round(ret, 2)
@@ -648,8 +668,14 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
                                 exit_price = open_price
 
                         if exit_price is not None:
-                            ret = ((exit_price - entry_price) / entry_price * 100) if position == 'Long' else (
+                            # Brüt getiriyi hesapla
+                            gross_ret = ((exit_price - entry_price) / entry_price * 100) if position == 'Long' else (
                                         (entry_price - exit_price) / entry_price * 100)
+
+                            # Komisyonu düşerek net getiriyi hesapla
+                            commission_cost = current_params['commission_pct'] * 2
+                            ret = gross_ret - commission_cost
+
                             trades.append({'Pozisyon': position, 'Giriş Zamanı': entry_time, 'Çıkış Zamanı': time_idx,
                                            'Giriş Fiyatı': entry_price, 'Çıkış Fiyatı': exit_price,
                                            'Getiri (%)': round(ret, 2)})

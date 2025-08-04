@@ -706,50 +706,110 @@ if page == "Portföy Backtest":
     else:
         st.info("Backtest sonuçları burada görünecek. Lütfen 'Portföy Backtest Başlat' butonuna basın.")
 
+# elif page == "Canlı İzleme": bloğunun yerine bunu yapıştırın
+
 elif page == "Canlı İzleme":
-    st.header("📡 Canlı Sinyal İzleme")
+    st.header("📡 Canlı Strateji Yönetim Paneli")
 
     st.info("""
-    Bu sayfa, arka planda çalışan `worker.py` script'ini kontrol eder. 
-    Worker'ı başlatmak için terminalde `python worker.py` komutunu çalıştırdığınızdan emin olun.
+    Bu panelden, kenar çubuğunda (sidebar) yapılandırdığınız ayarlarla birden fazla canlı izleme stratejisi başlatabilirsiniz.
+    Arka planda **`multi_worker.py`** script'ini çalıştırdığınızdan emin olun.
     """)
 
-    # Worker'ın durumunu config dosyasından oku
-    is_worker_running = config.get("live_tracking_enabled", False)
-    status_color = "green" if is_worker_running else "red"
-    status_text = "AKTİF" if is_worker_running else "DURDURULDU"
+    STRATEGIES_FILE = "strategies.json"
 
-    st.markdown(f"**Worker Durumu:** <font color='{status_color}'>{status_text}</font>", unsafe_allow_html=True)
-    st.markdown(f"**Takip Edilen Semboller:** `{', '.join(config.get('symbols', []))}`")
-    st.markdown(f"**Zaman Dilimi:** `{config.get('interval')}`")
 
-    col1, col2 = st.columns(2)
+    # --- Yardımcı Fonksiyonlar ---
+    def load_strategies():
+        """strategies.json dosyasını güvenli bir şekilde okur."""
+        try:
+            with open(STRATEGIES_FILE, 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []  # Dosya yoksa veya bozuksa boş liste döndür
 
-    if col1.button("▶️ Canlı İzlemeyi Başlat/Güncelle"):
-        # Arayüzdeki güncel ayarları config dosyasına yaz
-        config["live_tracking_enabled"] = True
-        config["telegram_enabled"] = use_telegram
-        config["symbols"] = symbols
-        config["interval"] = interval
-        config["strategy_params"] = strategy_params
-        save_config(config)
-        st.session_state.config = config  # Session state'i de güncelle
-        st.success("Worker'a 'BAŞLAT' komutu gönderildi. Ayarlar güncellendi.")
-        st.rerun()
 
-    if col2.button("⏹️ Canlı İzlemeyi Durdur"):
-        config["live_tracking_enabled"] = False
-        save_config(config)
-        st.session_state.config = config  # Session state'i de güncelle
-        st.warning("Worker'a 'DURDUR' komutu gönderildi.")
-        st.rerun()
+    def save_strategies(strategies):
+        """Strateji listesini dosyaya kaydeder."""
+        with open(STRATEGIES_FILE, 'w') as f:
+            json.dump(strategies, f, indent=2)
 
-    st.subheader("🔔 Son Alarmlar (Worker Tarafından Üretilen)")
-    alarm_history = get_alarm_history(limit=10)  # alarm_log.py'dan fonksiyon
+
+    # --- 1. Yeni Strateji Ekleme Paneli ---
+    with st.expander("➕ Yeni Canlı İzleme Stratejisi Ekle", expanded=True):
+
+        # Stratejiye özel bir isim al
+        new_strategy_name = st.text_input(
+            "Strateji Adı",
+            placeholder="Örn: BTC/ETH Trend Takip Stratejisi"
+        )
+
+        st.write("**Mevcut Ayarlarınız:**")
+        st.write(f"- **Semboller:** `{', '.join(symbols)}`")
+        st.write(f"- **Zaman Dilimi:** `{interval}`")
+        st.write(f"- **Sinyal Modu:** `{strategy_params['signal_mode']}`")
+
+        if st.button("🚀 Yeni Stratejiyi Canlı İzlemeye Al", type="primary"):
+            if not new_strategy_name:
+                st.error("Lütfen stratejiye bir isim verin.")
+            elif not symbols:
+                st.error("Lütfen en az bir sembol seçin.")
+            else:
+                # Yeni strateji nesnesini oluştur
+                new_strategy = {
+                    "id": f"strategy_{int(time.time())}",  # Benzersiz ID
+                    "name": new_strategy_name,
+                    "status": "running",
+                    "symbols": symbols,
+                    "interval": interval,
+                    "strategy_params": strategy_params
+                }
+
+                # Mevcut stratejileri oku, yenisini ekle ve kaydet
+                strategies = load_strategies()
+                strategies.append(new_strategy)
+                save_strategies(strategies)
+
+                st.success(f"'{new_strategy_name}' stratejisi başarıyla canlı izlemeye alındı!")
+                st.rerun()  # Sayfayı yenileyerek listeyi güncelle
+
+    # --- 2. Çalışan Stratejileri Listeleme Paneli ---
+    st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
+
+    running_strategies = load_strategies()
+
+    if not running_strategies:
+        st.info("Şu anda çalışan hiçbir canlı strateji yok. Yukarıdaki panelden yeni bir tane ekleyebilirsiniz.")
+    else:
+        # Her strateji için bir kart oluştur
+        for strategy in running_strategies:
+            with st.container(border=True):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown(f"**Ad:** `{strategy['name']}`")
+                    st.markdown(f"**ID:** `{strategy['id']}`")
+                    st.markdown(f"**Semboller:** `{', '.join(strategy['symbols'])}`")
+                    st.markdown(f"**Zaman Dilimi:** `{strategy['interval']}`")
+
+                with col2:
+                    # Her butonun kendine özel bir anahtarı (key) olmalı
+                    if st.button("⏹️ Bu Stratejiyi Durdur", key=f"stop_{strategy['id']}", type="secondary"):
+                        # Durdurulacak stratejiyi listeden çıkar
+                        strategies_to_keep = [s for s in running_strategies if s['id'] != strategy['id']]
+                        save_strategies(strategies_to_keep)
+
+                        st.warning(f"'{strategy['name']}' stratejisi durduruldu.")
+                        st.rerun()  # Sayfayı yenile
+
+    # --- 3. Son Alarmlar Paneli ---
+    st.subheader("🔔 Son Alarmlar (Tüm Stratejilerden)")
+    alarm_history = get_alarm_history(limit=20)
     if alarm_history is not None and not alarm_history.empty:
+        # Sinyal sütunundaki strateji adını daha okunabilir yap
+        alarm_history['Sinyal'] = alarm_history['Sinyal'].str.replace(r'\(strategy_\d+\)', '', regex=True)
         st.dataframe(alarm_history, use_container_width=True)
     else:
-        st.info("Henüz worker tarafından üretilmiş bir alarm yok veya `alarm_history.csv` bulunamadı.")
+        st.info("Henüz worker tarafından üretilmiş bir alarm yok.")
 
 
 

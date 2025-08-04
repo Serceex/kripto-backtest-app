@@ -1,19 +1,24 @@
+# telegram_alert.py (Güvenli ve Güncellenmiş Hali)
+
+import requests
+import streamlit as st  # Streamlit secrets'a erişim için eklendi
+
+
+# telegram_alert.py (Nihai ve Doğru Hali)
 import requests
 
-# Telegram bot token ve chat_id bilgilerini ayarlayın
-TELEGRAM_TOKEN = "8144073534:AAHH8R79sAfoV6qjeHxuCAt1pYHq4Ezg9EY"
-CHAT_ID = "1012868061"
+# ARTIK GLOBAL DEĞİŞKEN YOK
 
-def send_telegram_message(message: str):
+def send_telegram_message(message: str, token: str, chat_id: str):
     """
-    Telegram'a düz metin mesaj gönderir.
+    Telegram'a parametre olarak verilen token ve chat_id ile mesaj gönderir.
     """
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
+    if not token or not chat_id:
+        print("Telegram token veya chat_id eksik. Gönderim atlandı.")
+        return
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
 
     try:
         response = requests.post(url, json=payload)
@@ -22,17 +27,14 @@ def send_telegram_message(message: str):
     except Exception as e:
         print(f"Telegram gönderim hatası: {e}")
 
+
+# Not: send_trade_signal fonksiyonu artık doğrudan send_telegram_message'ı
+# kullandığı için ek bir değişikliğe ihtiyaç duymaz.
 def send_trade_signal(symbol: str, signal: str, price: float, timestamp: str):
     """
     Al/Sat sinyali için biçimlendirilmiş mesaj gönderimi
     """
-    emoji_map = {
-        "Al": "🟢",
-        "Sat": "🔴",
-        "Short": "🔴",
-        "Bekle": "⏸️"
-    }
-
+    emoji_map = {"Al": "🟢", "Sat": "🔴", "Short": "🔴", "Bekle": "⏸️"}
     emoji = emoji_map.get(signal, "⏸️")
     msg = (
         f"{emoji} *{symbol}* sinyali geldi!\n\n"

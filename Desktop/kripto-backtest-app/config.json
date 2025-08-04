@@ -15,11 +15,13 @@
     "SHIBUSDT",
     "AVAXUSDT",
     "UNIUSDT",
-    "LINKUSDT",
-    "FTMUSDT",
-    "CHZUSDT"
+    "ALGOUSDT",
+    "BCHUSDT",
+    "FILUSDT",
+    "ICPUSDT",
+    "AAVEUSDT"
   ],
-  "interval": "4h",
+  "interval": "1h",
   "strategy_params": {
     "sma": 50,
     "ema": 20,
@@ -33,17 +35,22 @@
     "macd_signal": 9,
     "adx_period": 14,
     "adx_threshold": 25,
-    "use_rsi": false,
+    "use_rsi": true,
     "use_macd": true,
     "use_bb": false,
     "use_adx": false,
-    "stop_loss_pct": 2.0,
+    "stop_loss_pct": 0,
+    "atr_multiplier": 2.0,
     "take_profit_pct": 5.0,
-    "cooldown_bars": 0,
+    "cooldown_bars": 3,
     "signal_mode": "Long & Short",
     "signal_direction": "Both",
     "use_puzzle_bot": false,
-    "use_ml": false
+    "use_ml": false,
+    "use_mta": true,
+    "higher_timeframe": "4h",
+    "trend_ema_period": 50,
+    "use_trailing_stop": true
   },
   "telegram_enabled": true
 }

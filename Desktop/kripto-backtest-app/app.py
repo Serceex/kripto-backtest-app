@@ -40,8 +40,8 @@ def save_config(config):
         json.dump(config, f, indent=2)
 
 
-st.set_page_config(page_title="Kripto Portföy Backtest", layout="wide")
-st.title("📊 Kripto Portföy Backtest + ML + Optimizasyon + Puzzle Bot")
+st.set_page_config(page_title="Veritas Point Labs", layout="wide")
+st.title("📊 Veritas Point Labs")
 
 
 # Session state'i kullanarak config'i bir kere yükle
@@ -355,7 +355,7 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
             df = add_higher_timeframe_trend(df, df_higher, strategy_params['trend_ema_period'])
             df = filter_signals_with_trend(df)
 
-    
+
         # 5. Stop-Loss ve Take-Profit ile backtest yap
         trades = []
         position = None

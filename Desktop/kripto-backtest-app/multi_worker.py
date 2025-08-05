@@ -88,15 +88,28 @@ class StrategyRunner:
                 return
 
             kline = data['k']
-            if not kline['x']: return
+            if not kline['x']: return # Sadece kapanmış mumlarla işlem yap
 
             print(f"-> Yeni mum: {symbol} ({self.name})")
 
+            # Gelen yeni veriyi DataFrame formatına hazırla
             new_kline_df = pd.DataFrame([{'timestamp': pd.to_datetime(kline['t'], unit='ms'), 'Open': float(kline['o']),
                                           'High': float(kline['h']), 'Low': float(kline['l']),
                                           'Close': float(kline['c']), 'Volume': float(kline['v']),
                                           }]).set_index('timestamp')
-            df = pd.concat([self.portfolio_data[symbol]['df'], new_kline_df])
+
+            df = self.portfolio_data[symbol]['df']
+
+            # --- Mükerrer Index Hatası için Düzeltme ---
+            # Gelen yeni mumun zaman damgası mevcut DataFrame'de var mı diye kontrol et.
+            if new_kline_df.index[0] in df.index:
+                # Eğer varsa, mevcut satırı yeni veriyle güncelle. Bu, mükerrer veri eklemeyi önler.
+                df.loc[new_kline_df.index] = new_kline_df.values
+            else:
+                # Eğer yoksa, yeni satırı ekle (concat).
+                df = pd.concat([df, new_kline_df])
+            # --- Düzeltme Sonu ---
+
             if len(df) > 201: df = df.iloc[1:]
             self.portfolio_data[symbol]['df'] = df
 
@@ -107,18 +120,19 @@ class StrategyRunner:
             signal = last_row['Signal']
             price = last_row['Close']
 
-            if signal in ["Al", "Sat"] and self.portfolio_data[symbol]['last_signal'] != signal:
+            if signal in ["Al", "Sat"] and self.portfolio_data[symbol].get('last_signal') != signal:
                 self.portfolio_data[symbol]['last_signal'] = signal
 
                 message_text = f"🔔 SİNYAL ({self.name})\nSembol: {symbol}\nSinyal: {signal}\nFiyat: {price:.4f} USDT"
                 print(f"!!! {message_text} !!!")
                 log_alarm(symbol, f"{signal} ({self.name})")
 
-                # Strateji parametrelerinden telegram ayarlarını ve secret'ları alarak güvenli gönderim yap
+                # Strateji parametrelerinden telegram ayarlarını alarak güvenli gönderim yap
                 if self.params.get("telegram_enabled", False):
                     token = self.params.get("telegram_token")
                     chat_id = self.params.get("telegram_chat_id")
-                    send_telegram_message(message_text, token, chat_id)
+                    if token and chat_id:
+                        send_telegram_message(message_text, token, chat_id)
 
         except json.JSONDecodeError:
             print(f"HATA ({symbol}, {self.name}): Binance'ten gelen veri JSON formatında değil.")
@@ -141,6 +155,7 @@ def main_manager():
             disk_ids = {s['id'] for s in strategies_on_disk}
             running_ids = set(running_strategies.keys())
 
+            # Yeni eklenen stratejileri başlat
             new_ids = disk_ids - running_ids
             for strategy_config in strategies_on_disk:
                 if strategy_config['id'] in new_ids:
@@ -148,6 +163,7 @@ def main_manager():
                     running_strategies[runner.id] = runner
                     runner.start()
 
+            # Kaldırılan stratejileri durdur
             removed_ids = running_ids - disk_ids
             for strategy_id in removed_ids:
                 if strategy_id in running_strategies:
@@ -164,7 +180,7 @@ def main_manager():
         except Exception as e:
             print(f"Yönetici döngüsünde beklenmedik bir hata oluştu: {e}")
 
-        time.sleep(5)
+        time.sleep(5) # Strateji dosyasını kontrol etme sıklığı
 
 
 if __name__ == "__main__":

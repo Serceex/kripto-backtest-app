@@ -1,45 +1,50 @@
-# telegram_alert.py (Güvenli ve Güncellenmiş Hali)
+# telegram_alert.py (Güvenli ve Güncellenmiş Nihai Hali)
 
 import requests
-import streamlit as st  # Streamlit secrets'a erişim için eklendi
+import logging
 
+# Hata günlüğü için temel yapılandırma
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# telegram_alert.py (Nihai ve Doğru Hali)
-import requests
-
-# ARTIK GLOBAL DEĞİŞKEN YOK
 
 def send_telegram_message(message: str, token: str, chat_id: str):
     """
     Telegram'a parametre olarak verilen token ve chat_id ile mesaj gönderir.
+    Hata durumlarını loglar.
     """
     if not token or not chat_id:
-        print("Telegram token veya chat_id eksik. Gönderim atlandı.")
+        logging.warning("Telegram token veya chat_id eksik. Mesaj gönderimi atlandı.")
         return
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+    payload = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
 
     try:
         response = requests.post(url, json=payload)
-        if response.status_code != 200:
-            print(f"Telegram hata: {response.text}")
+        response.raise_for_status()  # HTTP hata kodları için bir exception fırlatır (4xx veya 5xx)
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Telegram mesajı gönderilemedi: {e}")
     except Exception as e:
-        print(f"Telegram gönderim hatası: {e}")
+        logging.error(f"Telegram gönderimi sırasında beklenmedik bir hata oluştu: {e}")
 
 
-# Not: send_trade_signal fonksiyonu artık doğrudan send_telegram_message'ı
-# kullandığı için ek bir değişikliğe ihtiyaç duymaz.
-def send_trade_signal(symbol: str, signal: str, price: float, timestamp: str):
+def send_trade_signal(symbol: str, signal: str, price: float, token: str, chat_id: str):
     """
-    Al/Sat sinyali için biçimlendirilmiş mesaj gönderimi
+    Al/Sat sinyali için biçimlendirilmiş bir mesaj hazırlar ve gönderir.
     """
     emoji_map = {"Al": "🟢", "Sat": "🔴", "Short": "🔴", "Bekle": "⏸️"}
-    emoji = emoji_map.get(signal, "⏸️")
+    emoji = emoji_map.get(signal, "🎯")  # Bilinmeyen sinyaller için varsayılan emoji
+
+    # Zaman damgası eklemek yerine mesajı daha sade tutabiliriz
+    # veya anlık zamanı kullanabiliriz. Şimdilik sade bırakalım.
     msg = (
-        f"{emoji} *{symbol}* sinyali geldi!\n\n"
-        f"📡 Sinyal: *{signal}*\n"
-        f"💰 Fiyat: `{price:.2f} USDT`\n"
-        f"🕒 Zaman: `{timestamp}`"
+        f"{emoji} *{symbol} Sinyali*\n\n"
+        f"📡 **Sinyal:** `{signal}`\n"
+        f"💰 **Fiyat:** `{price:.4f} USDT`"
     )
-    send_telegram_message(msg)
+
+    send_telegram_message(msg, token, chat_id)

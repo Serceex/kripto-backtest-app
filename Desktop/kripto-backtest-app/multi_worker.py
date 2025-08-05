@@ -61,22 +61,36 @@ class StrategyRunner:
         self._stop_event.set()
 
     def _run_websocket(self, symbol):
-        """Tek bir sembol için WebSocket'i çalıştıran fonksiyon."""
+        """
+        Tek bir sembol için WebSocket'i çalıştıran ve kesinti durumunda
+        üstel geri çekilme (exponential backoff) ile yeniden bağlanan fonksiyon.
+        """
         stream_url = f"wss://stream.binance.com:9443/ws/{symbol.lower()}@kline_{self.interval}"
+        reconnect_delay = 5  # Başlangıçtaki bekleme süresi (saniye)
+        max_reconnect_delay = 60  # Maksimum bekleme süresi (saniye)
+
         while not self._stop_event.is_set():
             try:
                 ws = websocket.WebSocketApp(
                     stream_url,
-                    on_open=lambda ws: print(f" Bağlantı açıldı: {symbol} ({self.name})"),
+                    on_open=lambda ws: print(f"✅ Bağlantı açıldı: {symbol} ({self.name})"),
                     on_message=lambda ws, msg: self._on_message(ws, msg, symbol),
-                    on_error=lambda ws, err: print(f"Hata ({self.name}): {symbol} - {err}"),
-                    on_close=lambda ws, code, msg: print(f"Bağlantı kapandı: {symbol} ({self.name})")
+                    on_error=lambda ws, err: print(f"❌ Hata ({self.name}): {symbol} - {err}"),
+                    on_close=lambda ws, code, msg: print(f"🔌 Bağlantı kapandı: {symbol} ({self.name}). Yeniden bağlanma denenecek...")
                 )
+                # run_forever() başarılı bir şekilde başlarsa, yeniden bağlanma gecikmesini sıfırla
+                # Bu, başarılı bir bağlantıdan sonraki olası bir kopmada bekleme süresinin en baştan başlamasını sağlar.
+                reconnect_delay = 5
                 ws.run_forever(ping_interval=60, ping_timeout=10)
+
             except Exception as e:
-                print(f"Beklenmedik Hata ({symbol}, {self.name}): {e}. 10 saniye sonra yeniden denenecek.")
+                print(f"CRITICAL WebSocket Hatası ({symbol}, {self.name}): {e}")
+
             if not self._stop_event.is_set():
-                time.sleep(10)
+                print(f"-> {reconnect_delay} saniye sonra yeniden bağlanma denemesi yapılacak: {symbol}")
+                time.sleep(reconnect_delay)
+                # Bir sonraki deneme için bekleme süresini artır (maksimum değeri geçmeyecek şekilde)
+                reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
 
     def _on_message(self, ws, message, symbol):
         """WebSocket mesajlarını işleyen ve pozisyon durumunu yöneten ana mantık."""

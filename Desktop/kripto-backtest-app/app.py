@@ -1118,6 +1118,3 @@ if alarms is not None and not alarms.empty:
 else:
     st.sidebar.write("Henüz alarm yok.")
 
-st.sidebar.markdown("---")
-last_signal = st.session_state.get('last_signal', 'Henüz sinyal yok.')
-st.sidebar.write(f"ℹ️ Son Sinyal: {last_signal}")

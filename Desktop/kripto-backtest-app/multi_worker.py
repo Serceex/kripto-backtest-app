@@ -172,7 +172,7 @@ class StrategyRunner:
             f"{emoji} *{signal_type}* \n\n"
             f"🔹 *Strateji:* `{self.name}`\n"
             f"📈 *Sembol:* `{symbol}`\n"
-            f"💰 *Fiyat:* `{price:.7f} USDT`"
+            f"💰 *Fiyat:* `{price:.7f} USDT`" 
             f"{pnl_text}"
         )
 

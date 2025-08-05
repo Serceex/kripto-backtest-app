@@ -895,11 +895,34 @@ elif page == "Canlı İzleme":
     st.subheader("🔔 Son Alarmlar (Tüm Stratejilerden)")
     alarm_history = get_alarm_history(limit=20)
     if alarm_history is not None and not alarm_history.empty:
-        # Sinyal sütunundaki strateji adını daha okunabilir yap
-        alarm_history['Sinyal'] = alarm_history['Sinyal'].str.replace(r'\(strategy_\d+\)', '', regex=True)
-        st.dataframe(alarm_history, use_container_width=True)
+        # DataFrame yerine daha okunaklı bir liste gösterimi
+        for _, row in alarm_history.iterrows():
+            fiyat_str = f" @ `{row['Fiyat']:.7f}`" if pd.notna(row['Fiyat']) else ""
+
+            # Sinyal türüne göre emoji ve renk belirle
+            signal_text = row['Sinyal']
+            if "KAPAT" in signal_text:
+                emoji = "✅"
+                color = "gray"
+            elif "LONG" in signal_text:
+                emoji = "🟢"
+                color = "green"
+            elif "SHORT" in signal_text:
+                emoji = "🔴"
+                color = "red"
+            else:
+                emoji = "🔔"
+                color = "orange"
+
+            st.markdown(f"""
+               <div style="border-left: 5px solid {color}; padding: 10px; border-radius: 5px; margin-bottom: 10px; background-color: #040D1E;">
+                   {emoji} **{row['Sembol']}** - {signal_text} {fiyat_str}<br>
+                   <small style="color: #555;">🕰️ {row['Zaman']}</small>
+               </div>
+               """, unsafe_allow_html=True)
     else:
         st.info("Henüz worker tarafından üretilmiş bir alarm yok veya `alarm_history.csv` dosyası bulunamadı.")
+
 
 
 
@@ -1074,10 +1097,27 @@ elif page == "Optimizasyon":
 st.sidebar.header("🔔 Son Alarmlar")
 alarms = get_alarm_history(limit=5)
 if alarms is not None and not alarms.empty:
-    for idx, row in alarms.iterrows():
-        st.sidebar.write(f"{row['timestamp']} - {row['symbol']} - {row['signal']}")
+    for _, row in alarms.iterrows():
+        # Fiyat bilgisini de formatlayarak ekliyoruz
+        fiyat_str = f" @ {row['Fiyat']:.7f}" if pd.notna(row['Fiyat']) else ""
+
+        # Sinyal türüne göre emoji belirle
+        signal_text = row['Sinyal']
+        if "KAPAT" in signal_text:
+            emoji = "✅"
+        elif "LONG" in signal_text:
+            emoji = "🟢"
+        elif "SHORT" in signal_text:
+            emoji = "🔴"
+        else:
+            emoji = "🔔"
+
+        st.sidebar.write(f"{emoji} **{row['Sembol']}**: {signal_text}{fiyat_str}")
+        st.sidebar.caption(f"🕰️ {row['Zaman']}")
+
 else:
     st.sidebar.write("Henüz alarm yok.")
 
 st.sidebar.markdown("---")
-st.sidebar.write(f"🟢 Son Sinyal: {st.session_state.last_signal}")
+last_signal = st.session_state.get('last_signal', 'Henüz sinyal yok.')
+st.sidebar.write(f"ℹ️ Son Sinyal: {last_signal}")

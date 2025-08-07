@@ -790,8 +790,6 @@ if page == "Portföy Backtest":
 
 # app.py dosyanızda bu bloğu bulun ve içeriğini aşağıdakilerle değiştirin.
 
-# app.py dosyanızdaki mevcut 'elif page == "Canlı İzleme":' bloğunu silip yerine bunu yapıştırın.
-
 elif page == "Canlı İzleme":
     st.header("📡 Canlı Strateji Yönetim Paneli")
 

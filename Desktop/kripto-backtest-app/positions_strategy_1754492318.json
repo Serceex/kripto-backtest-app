@@ -1,0 +1,38 @@
+{
+    "BTCUSDT": {
+        "position": "Long",
+        "entry_price": 115423.22
+    },
+    "ETHUSDT": {
+        "position": "Long",
+        "entry_price": 3677.09
+    },
+    "SOLUSDT": {
+        "position": "Long",
+        "entry_price": 168.53
+    },
+    "FTTUSDT": {
+        "position": "Long",
+        "entry_price": 0.8991
+    },
+    "1INCHUSDT": {
+        "position": "Long",
+        "entry_price": 0.2664
+    },
+    "BATUSDT": {
+        "position": "Long",
+        "entry_price": 0.1508
+    },
+    "KAVAUSDT": {
+        "position": "Long",
+        "entry_price": 0.387
+    },
+    "SNXUSDT": {
+        "position": "Long",
+        "entry_price": 0.598
+    },
+    "FTMUSDT": {
+        "position": null,
+        "entry_price": 0
+    }
+}

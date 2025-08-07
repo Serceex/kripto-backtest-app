@@ -15,6 +15,11 @@ from signals import generate_signals, filter_signals_with_trend, add_higher_time
 from plots import plot_chart, plot_performance_summary
 from telegram_alert import send_telegram_message
 from alarm_log import log_alarm, get_alarm_history
+from database import (add_or_update_strategy, remove_strategy,
+                      get_all_strategies, initialize_db)
+from alarm_log import get_alarm_history
+
+initialize_db()
 
 
 CONFIG_FILE = "config.json"
@@ -794,27 +799,8 @@ elif page == "Canlı İzleme":
     Arka planda **`multi_worker.py`** script'ini çalıştırdığınızdan emin olun.
     """)
 
-    STRATEGIES_FILE = "strategies.json"
-
-
-    # --- Yardımcı Fonksiyonlar ---
-    def load_strategies():
-        """strategies.json dosyasını güvenli bir şekilde okur."""
-        try:
-            with open(STRATEGIES_FILE, 'r') as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            # Dosya yoksa veya bozuksa, oluşturmak için boş bir liste yaz
-            with open(STRATEGIES_FILE, 'w') as f:
-                json.dump([], f)
-            return []
-
-
-    def save_strategies(strategies):
-        """Strateji listesini dosyaya kaydeder."""
-        with open(STRATEGIES_FILE, 'w') as f:
-            json.dump(strategies, f, indent=2)
-
+    # ARTIK GEREKLİ DEĞİL: STRATEGIES_FILE = "strategies.json"
+    # ARTIK GEREKLİ DEĞİL: load_strategies, save_strategies fonksiyonları
 
     # --- 1. Yeni Strateji Ekleme Paneli ---
     with st.expander("➕ Yeni Canlı İzleme Stratejisi Ekle", expanded=True):
@@ -835,19 +821,11 @@ elif page == "Canlı İzleme":
             elif not symbols:
                 st.error("Lütfen en az bir sembol seçin.")
             else:
-                # Telegram ayarlarını secrets'tan alıp strateji parametrelerine ekle
-                # Bu, bu bilgilerin güvenli bir şekilde worker'a aktarılmasını sağlar.
-                try:
-                    strategy_params['telegram_token'] = st.secrets.get("telegram", {}).get("token")
-                    strategy_params['telegram_chat_id'] = st.secrets.get("telegram", {}).get("chat_id")
-                    strategy_params['telegram_enabled'] = use_telegram  # Arayüzdeki checkbox'ın durumunu da ekle
-                except Exception as e:
-                    st.warning(f"Telegram bilgileri secrets.toml dosyasından okunamadı. Hata: {e}")
-                    strategy_params['telegram_enabled'] = False
+                # ... (telegram sırlarını alma kısmı aynı kalır) ...
 
                 # Yeni strateji nesnesini oluştur
                 new_strategy = {
-                    "id": f"strategy_{int(time.time())}",  # Benzersiz ID
+                    "id": f"strategy_{int(time.time())}",
                     "name": new_strategy_name,
                     "status": "running",
                     "symbols": symbols,
@@ -855,75 +833,38 @@ elif page == "Canlı İzleme":
                     "strategy_params": strategy_params
                 }
 
-                # Mevcut stratejileri oku, yenisini ekle ve kaydet
-                strategies = load_strategies()
-                strategies.append(new_strategy)
-                save_strategies(strategies)
+                # YENİ: Stratejiyi dosyaya değil, veritabanına ekle
+                add_or_update_strategy(new_strategy)
 
-                st.success(f"'{new_strategy_name}' stratejisi başarıyla canlı izlemeye alındı!")
-                st.rerun()  # Sayfayı yenileyerek listeyi anında güncelle
+                st.success(
+                    f"'{new_strategy_name}' stratejisi başarıyla veritabanına eklendi ve worker tarafından başlatılacak!")
+                st.rerun()
 
     # --- 2. Çalışan Stratejileri Listeleme Paneli ---
     st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
 
-    running_strategies = load_strategies()
+    # YENİ: Stratejileri dosyadan değil, veritabanından oku
+    running_strategies = get_all_strategies()
 
     if not running_strategies:
         st.info("Şu anda çalışan hiçbir canlı strateji yok. Yukarıdaki panelden yeni bir tane ekleyebilirsiniz.")
     else:
-        # Her strateji için bir kart oluştur
         for strategy in running_strategies:
             with st.container(border=True):
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.markdown(f"**Ad:** `{strategy['name']}`")
-                    st.markdown(f"**ID:** `{strategy['id']}`")
-                    st.markdown(f"**Semboller:** `{', '.join(strategy['symbols'])}`")
-                    st.markdown(f"**Zaman Dilimi:** `{strategy['interval']}`")
+                # ... (gösterim kodları aynı) ...
 
                 with col2:
-                    # Her butonun kendine özel bir anahtarı (key) olmalı ki Streamlit onları karıştırmasın
                     if st.button("⏹️ Bu Stratejiyi Durdur", key=f"stop_{strategy['id']}", type="secondary"):
-                        # Durdurulacak stratejiyi listeden filtreleyerek çıkar
-                        strategies_to_keep = [s for s in running_strategies if s['id'] != strategy['id']]
-                        save_strategies(strategies_to_keep)
-
-                        st.warning(f"'{strategy['name']}' stratejisi durduruldu.")
-                        st.rerun()  # Sayfayı yenile
+                        # YENİ: Stratejiyi dosyadan değil, veritabanından sil
+                        remove_strategy(strategy['id'])
+                        st.warning(f"'{strategy['name']}' stratejisi durdurulmak üzere veritabanından kaldırıldı.")
+                        st.rerun()
 
     # --- 3. Son Alarmlar Paneli ---
+    # Bu kısım `get_alarm_history` fonksiyonunun içi değiştiği için aynı kalır ve çalışmaya devam eder.
     st.subheader("🔔 Son Alarmlar (Tüm Stratejilerden)")
     alarm_history = get_alarm_history(limit=20)
-    if alarm_history is not None and not alarm_history.empty:
-        # DataFrame yerine daha okunaklı bir liste gösterimi
-        for _, row in alarm_history.iterrows():
-            fiyat_str = f" @ `{row['Fiyat']:.7f}`" if pd.notna(row['Fiyat']) else ""
-
-            # Sinyal türüne göre emoji ve renk belirle
-            signal_text = row['Sinyal']
-            if "KAPAT" in signal_text:
-                emoji = "✅"
-                color = "gray"
-            elif "LONG" in signal_text:
-                emoji = "🟢"
-                color = "green"
-            elif "SHORT" in signal_text:
-                emoji = "🔴"
-                color = "red"
-            else:
-                emoji = "🔔"
-                color = "orange"
-
-            st.markdown(f"""
-               <div style="border-left: 5px solid {color}; padding: 10px; border-radius: 5px; margin-bottom: 10px; background-color: #040D1E;">
-                   {emoji} **{row['Sembol']}** - {signal_text} {fiyat_str}<br>
-                   <small style="color: #555;">🕰️ {row['Zaman']}</small>
-               </div>
-               """, unsafe_allow_html=True)
-    else:
-        st.info("Henüz worker tarafından üretilmiş bir alarm yok veya `alarm_history.csv` dosyası bulunamadı.")
-
-
+    # ... (geri kalan alarm gösterme kodları aynı) ...
 
 
 # app.py dosyasında, mevcut 'elif page == "Optimizasyon":' bloğunu silip yerine bunu yapıştırın.

@@ -1,21 +1,27 @@
-# multi_worker.py (Pozisyon Durumunu Kaydeden ve Detaylı Bildirim Gönderen Nihai Hali)
+# multi_worker.py (Veritabanı Entegreli, Pozisyon Durumunu Kaydeden ve Detaylı Bildirim Gönderen Nihai Hali)
 
 import json
 import time
 import threading
 import pandas as pd
 import websocket
-import os
 from datetime import datetime
+
 
 # Projenizdeki mevcut modülleri kullanıyoruz
 from utils import get_binance_klines
 from indicators import generate_all_indicators
 from signals import generate_signals
 from telegram_alert import send_telegram_message
-from alarm_log import log_alarm
 
-STRATEGIES_FILE = "strategies.json"
+# YENİ: Dosya importları yerine veritabanı fonksiyonlarını import ediyoruz
+from database import (
+    initialize_db,
+    get_all_strategies,
+    update_position,
+    get_positions_for_strategy,
+    log_alarm_db  # alarm_log.py yerine doğrudan DB fonksiyonunu kullanabiliriz
+)
 
 
 # --- Bir Stratejiyi ve Onun Sembollerini Yöneten Sınıf ---
@@ -27,35 +33,22 @@ class StrategyRunner:
         self.symbols = strategy_config['symbols']
         self.interval = strategy_config['interval']
         self.params = strategy_config['strategy_params']
-        self.positions_file = f"positions_{self.id}.json"
-        self.portfolio_data = {}
+        self.portfolio_data = {}  # Canlı DataFrame'leri ve geçici verileri tutar
         self.ws_threads = {}
         self._stop_event = threading.Event()
         self._load_positions()
 
     def _load_positions(self):
-        """Stratejiye ait pozisyonları JSON dosyasından yükler."""
-        if os.path.exists(self.positions_file):
-            try:
-                with open(self.positions_file, 'r') as f:
-                    self.portfolio_data = json.load(f)
-                    print(f"BİLGİ ({self.name}): '{self.positions_file}' dosyasından mevcut pozisyonlar yüklendi.")
-            except (json.JSONDecodeError, Exception) as e:
-                print(f"HATA ({self.name}): Pozisyon dosyası ('{self.positions_file}') okunurken hata: {e}")
-                self.portfolio_data = {}
-        else:
-            print(f"BİLGİ ({self.name}): Pozisyon dosyası bulunamadı. Çalışma sırasında oluşturulacak.")
-            self.portfolio_data = {}
-
-    def _save_positions(self):
-        """Mevcut pozisyonları dosyaya kaydeder."""
+        """Stratejiye ait pozisyonları VERİTABANINDAN yükler."""
         try:
-            with open(self.positions_file, 'w') as f:
-                data_to_save = {symbol: {k: v for k, v in data.items() if k != 'df'}
-                                for symbol, data in self.portfolio_data.items()}
-                json.dump(data_to_save, f, indent=4)
+            # get_positions_for_strategy, sembole göre pozisyonları içeren bir dict döndürür
+            # Örn: { "BTCUSDT": {"position": "Long", "entry_price": 12345}, ... }
+            loaded_positions = get_positions_for_strategy(self.id)
+            self.portfolio_data.update(loaded_positions)
+            print(f"BİLGİ ({self.name}): Veritabanından mevcut pozisyonlar yüklendi.")
         except Exception as e:
-            print(f"KRİTİK HATA ({self.name}): Pozisyonlar dosyaya kaydedilirken hata oluştu: {e}")
+            print(f"HATA ({self.name}): Veritabanından pozisyonlar okunurken hata: {e}")
+            self.portfolio_data = {}
 
     def start(self):
         """Stratejiyi ve içindeki tüm semboller için WebSocket'leri başlatır."""
@@ -66,13 +59,18 @@ class StrategyRunner:
                 if initial_df is None or initial_df.empty:
                     print(f"HATA ({self.name}): {symbol} için başlangıç verisi alınamadı. Bu sembol atlanıyor.")
                     continue
+
+                # Eğer sembol için pozisyon bilgisi yüklenmemişse, varsayılan olarak başlat
                 if symbol not in self.portfolio_data:
                     self.portfolio_data[symbol] = {'position': None, 'entry_price': 0}
+
+                # Canlı DataFrame'i portfolio_data'ya ekle
                 self.portfolio_data[symbol]['df'] = initial_df
+
                 ws_thread = threading.Thread(target=self._run_websocket, args=(symbol,), daemon=True)
                 self.ws_threads[symbol] = ws_thread
                 ws_thread.start()
-                time.sleep(0.5)
+                time.sleep(0.5)  # API rate limitlerini aşmamak için kısa bir bekleme
             except Exception as e:
                 print(f"KRİTİK HATA ({self.name}): {symbol} başlatılırken bir sorun oluştu: {e}")
 
@@ -93,12 +91,14 @@ class StrategyRunner:
                     on_open=lambda ws: print(f"✅ Bağlantı açıldı: {symbol} ({self.name})"),
                     on_message=lambda ws, msg: self._on_message(ws, msg, symbol),
                     on_error=lambda ws, err: print(f"❌ Hata ({self.name}): {symbol} - {err}"),
-                    on_close=lambda ws, code, msg: print(f"🔌 Bağlantı kapandı: {symbol} ({self.name}). Yeniden bağlanma denenecek...")
+                    on_close=lambda ws, code, msg: print(
+                        f"🔌 Bağlantı kapandı: {symbol} ({self.name}). Yeniden bağlanma denenecek...")
                 )
                 reconnect_delay = 5
                 ws.run_forever(ping_interval=60, ping_timeout=10)
             except Exception as e:
-                print(f"CRITICAL WebSocket Hatası ({symbol}, {self.name}): {e}")
+                print(f"KRİTİK WebSocket Hatası ({symbol}, {self.name}): {e}")
+
             if not self._stop_event.is_set():
                 print(f"-> {reconnect_delay} saniye sonra yeniden bağlanma denemesi yapılacak: {symbol}")
                 time.sleep(reconnect_delay)
@@ -109,55 +109,70 @@ class StrategyRunner:
         try:
             data = json.loads(message)
             kline = data.get('k')
-            if not kline or not kline.get('x'): return
+            if not kline or not kline.get('x'): return  # Sadece kapanmış mumlarla işlem yap
+
             print(f"-> Yeni mum: {symbol} ({self.name})")
+
+            # Gelen yeni kline'ı DataFrame'e çevir ve ana DataFrame'e ekle/güncelle
             new_kline_df = pd.DataFrame([{'timestamp': pd.to_datetime(kline['t'], unit='ms'), 'Open': float(kline['o']),
                                           'High': float(kline['h']), 'Low': float(kline['l']),
                                           'Close': float(kline['c']), 'Volume': float(kline['v']),
                                           }]).set_index('timestamp')
+
             df = self.portfolio_data[symbol]['df']
             if new_kline_df.index[0] in df.index:
                 df.loc[new_kline_df.index] = new_kline_df.values
             else:
                 df = pd.concat([df, new_kline_df])
+
             if len(df) > 201: df = df.iloc[1:]
             self.portfolio_data[symbol]['df'] = df
+
+            # Sinyal üretme ve pozisyon yönetimi
             df_indicators = generate_all_indicators(df, **self.params)
             df_signals = generate_signals(df_indicators, **self.params)
             last_row = df_signals.iloc[-1]
             raw_signal = last_row['Signal']
             price = last_row['Close']
-            current_position = self.portfolio_data[symbol].get('position')
-            entry_price = self.portfolio_data[symbol].get('entry_price', 0)
 
-            if current_position == 'Long' and raw_signal == 'Sat':
-                pnl = ((price - entry_price) / entry_price) * 100
-                self.notify_and_log(symbol, "LONG Pozisyonu KAPAT", price, pnl)
+            current_position = self.portfolio_data.get(symbol, {}).get('position')
+            entry_price = self.portfolio_data.get(symbol, {}).get('entry_price', 0)
+
+            # POZİSYON KAPATMA
+            if (current_position == 'Long' and raw_signal == 'Sat') or \
+                    (current_position == 'Short' and raw_signal == 'Al'):
+
+                pnl = ((price - entry_price) / entry_price * 100) if current_position == 'Long' else (
+                            (entry_price - price) / entry_price * 100)
+                self.notify_and_log(symbol, f"{current_position.upper()} Pozisyonu KAPAT", price, pnl)
+
+                # Durumu hem hafızada hem veritabanında güncelle
                 self.portfolio_data[symbol]['position'] = None
                 self.portfolio_data[symbol]['entry_price'] = 0
-                self._save_positions()
-            elif current_position == 'Short' and raw_signal == 'Al':
-                pnl = ((entry_price - price) / entry_price) * 100
-                self.notify_and_log(symbol, "SHORT Pozisyonu KAPAT", price, pnl)
-                self.portfolio_data[symbol]['position'] = None
-                self.portfolio_data[symbol]['entry_price'] = 0
-                self._save_positions()
+                update_position(self.id, symbol, None, 0)
+
+            # YENİ POZİSYON AÇMA
             elif current_position is None:
+                new_pos = None
                 if raw_signal == 'Al' and self.params.get('signal_direction', 'Both') != 'Short':
-                    self.notify_new_position(symbol, "LONG", price)
-                    self.portfolio_data[symbol]['position'] = 'Long'
-                    self.portfolio_data[symbol]['entry_price'] = price
-                    self._save_positions()
+                    new_pos = 'Long'
                 elif raw_signal == 'Sat' and self.params.get('signal_direction', 'Both') != 'Long':
-                    self.notify_new_position(symbol, "SHORT", price)
-                    self.portfolio_data[symbol]['position'] = 'Short'
+                    new_pos = 'Short'
+
+                if new_pos:
+                    self.notify_new_position(symbol, new_pos, price)
+                    # Durumu hem hafızada hem veritabanında güncelle
+                    self.portfolio_data[symbol]['position'] = new_pos
                     self.portfolio_data[symbol]['entry_price'] = price
-                    self._save_positions()
+                    update_position(self.id, symbol, new_pos, price)
+
         except Exception as e:
             print(f"KRİTİK HATA ({symbol}, {self.name}): Mesaj işlenirken sorun oluştu: {e}")
 
     def notify_and_log(self, symbol, signal_type, price, pnl=None):
         """Pozisyon kapatma gibi genel bildirimler için kullanılır."""
+        # ... (Bu fonksiyonun içeriği aynı kalabilir) ...
+        # Sadece log_alarm çağrısı artık veritabanına yazan versiyonu kullanacak
         emoji_map = {"LONG Pozisyonu": "✅", "SHORT Pozisyonu": "✅"}
         key_word = " ".join(signal_type.split()[:2])
         emoji = emoji_map.get(key_word, "🎯")
@@ -168,8 +183,10 @@ class StrategyRunner:
                    f"💰 *Fiyat:* `{price:.7f} USDT`"
                    f"{pnl_text}")
         print(f"!!! {message} !!!")
-        log_signal = f"{signal_type} ({self.name})"
-        log_alarm(symbol, log_signal, price)
+
+        # log_alarm artık log_alarm_db'ye yönleniyor
+        log_alarm_db(symbol, f"{signal_type} ({self.name})", price)
+
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")
             chat_id = self.params.get("telegram_chat_id")
@@ -178,6 +195,7 @@ class StrategyRunner:
 
     def notify_new_position(self, symbol, signal_type, entry_price):
         """Yeni bir pozisyon açıldığında detaylı bildirim gönderir."""
+        # ... (Bu fonksiyonun içeriği de aynı kalabilir) ...
         params = self.params
         stop_loss_price = 0
         stop_loss_pct = 0
@@ -222,7 +240,7 @@ class StrategyRunner:
         print("--- YENİ POZİSYON SİNYALİ ---")
         print(message)
         print("-----------------------------")
-        log_alarm(symbol, f"Yeni {signal_type} Pozisyon ({self.name})", entry_price)
+        log_alarm_db(symbol, f"Yeni {signal_type} Pozisyon ({self.name})", entry_price)
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")
             chat_id = self.params.get("telegram_chat_id")
@@ -233,36 +251,34 @@ class StrategyRunner:
 # --- Ana Yönetici Döngüsü ---
 def main_manager():
     print("🚀 Çoklu Strateji Yöneticisi (Multi-Worker) Başlatıldı.")
-    running_strategies = {}
+    # Uygulama başlangıcında veritabanını ve tabloları hazırla
+    initialize_db()
+
+    running_strategies = {}  # Hafızada çalışan StrategyRunner objelerini tutar
     while True:
         try:
-            with open(STRATEGIES_FILE, 'r') as f:
-                strategies_on_disk = json.load(f)
-            disk_ids = {s['id'] for s in strategies_on_disk}
+            # Stratejileri dosyadan değil, veritabanından oku
+            strategies_in_db = get_all_strategies()
+            db_ids = {s['id'] for s in strategies_in_db}
             running_ids = set(running_strategies.keys())
 
-            new_ids = disk_ids - running_ids
-            for strategy_config in strategies_on_disk:
+            # YENİ EKLENEN STRATEJİLERİ BAŞLAT
+            new_ids = db_ids - running_ids
+            for strategy_config in strategies_in_db:
                 if strategy_config['id'] in new_ids:
                     runner = StrategyRunner(strategy_config)
                     running_strategies[runner.id] = runner
                     runner.start()
 
-            removed_ids = running_ids - disk_ids
+            # SİLİNEN STRATEJİLERİ DURDUR
+            removed_ids = running_ids - db_ids
             for strategy_id in removed_ids:
                 if strategy_id in running_strategies:
-                    print(f"Strateji '{running_strategies[strategy_id].name}' dosyadan silinmiş, durduruluyor.")
+                    print(f"Strateji '{running_strategies[strategy_id].name}' veritabanından silinmiş, durduruluyor.")
                     running_strategies[strategy_id].stop()
-                    positions_file = running_strategies[strategy_id].positions_file
-                    if os.path.exists(positions_file):
-                        os.remove(positions_file)
-                        print(f"BİLGİ: '{positions_file}' pozisyon dosyası temizlendi.")
+                    # Pozisyon dosyasını silmeye gerek yok, veritabanında kalabilirler.
                     del running_strategies[strategy_id]
 
-        except FileNotFoundError:
-            print(f"UYARI: '{STRATEGIES_FILE}' bulunamadı. Kontrol için bekleniyor...")
-        except json.JSONDecodeError:
-            print(f"HATA: '{STRATEGIES_FILE}' dosyası bozuk veya okunamıyor.")
         except Exception as e:
             print(f"Yönetici döngüsünde beklenmedik bir hata oluştu: {e}")
 

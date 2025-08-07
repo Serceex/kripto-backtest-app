@@ -787,9 +787,10 @@ if page == "Portföy Backtest":
     else:
         st.info("Backtest sonuçları burada görünecek. Lütfen 'Portföy Backtest Başlat' butonuna basın.")
 
-# elif page == "Canlı İzleme": bloğunun yerine bunu yapıştırın
 
 # app.py dosyanızda bu bloğu bulun ve içeriğini aşağıdakilerle değiştirin.
+
+# app.py dosyanızdaki mevcut 'elif page == "Canlı İzleme":' bloğunu silip yerine bunu yapıştırın.
 
 elif page == "Canlı İzleme":
     st.header("📡 Canlı Strateji Yönetim Paneli")
@@ -798,9 +799,6 @@ elif page == "Canlı İzleme":
     Bu panelden, kenar çubuğunda (sidebar) yapılandırdığınız ayarlarla birden fazla canlı izleme stratejisi başlatabilirsiniz.
     Arka planda **`multi_worker.py`** script'ini çalıştırdığınızdan emin olun.
     """)
-
-    # ARTIK GEREKLİ DEĞİL: STRATEGIES_FILE = "strategies.json"
-    # ARTIK GEREKLİ DEĞİL: load_strategies, save_strategies fonksiyonları
 
     # --- 1. Yeni Strateji Ekleme Paneli ---
     with st.expander("➕ Yeni Canlı İzleme Stratejisi Ekle", expanded=True):
@@ -821,8 +819,6 @@ elif page == "Canlı İzleme":
             elif not symbols:
                 st.error("Lütfen en az bir sembol seçin.")
             else:
-                # ... (telegram sırlarını alma kısmı aynı kalır) ...
-
                 # Yeni strateji nesnesini oluştur
                 new_strategy = {
                     "id": f"strategy_{int(time.time())}",
@@ -833,38 +829,50 @@ elif page == "Canlı İzleme":
                     "strategy_params": strategy_params
                 }
 
-                # YENİ: Stratejiyi dosyaya değil, veritabanına ekle
+                # Stratejiyi veritabanına ekle
                 add_or_update_strategy(new_strategy)
 
                 st.success(
                     f"'{new_strategy_name}' stratejisi başarıyla veritabanına eklendi ve worker tarafından başlatılacak!")
-                st.rerun()
+                st.rerun() # Sayfayı yeniden yükleyerek listenin güncellenmesini sağla
 
     # --- 2. Çalışan Stratejileri Listeleme Paneli ---
     st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
 
-    # YENİ: Stratejileri dosyadan değil, veritabanından oku
+    # Stratejileri veritabanından oku
     running_strategies = get_all_strategies()
 
     if not running_strategies:
         st.info("Şu anda çalışan hiçbir canlı strateji yok. Yukarıdaki panelden yeni bir tane ekleyebilirsiniz.")
     else:
         for strategy in running_strategies:
+            # Her strateji için ayrı bir container oluştur
             with st.container(border=True):
-                # ... (gösterim kodları aynı) ...
+                # DÜZELTME: Sütunları döngünün içine taşı
+                col1, col2 = st.columns([4, 1])
+
+                with col1:
+                    st.subheader(f"{strategy.get('name', 'İsimsiz Strateji')}")
+                    strategy_symbols = strategy.get('symbols', [])
+                    st.caption(f"**ID:** `{strategy.get('id')}` | **Zaman Dilimi:** `{strategy.get('interval')}` | **Semboller:** `{len(strategy_symbols)}`")
+                    st.code(f"{', '.join(strategy_symbols)}", language="text")
+
 
                 with col2:
-                    if st.button("⏹️ Bu Stratejiyi Durdur", key=f"stop_{strategy['id']}", type="secondary"):
-                        # YENİ: Stratejiyi dosyadan değil, veritabanından sil
+                    # Stratejiyi durdurma butonu
+                    if st.button("⏹️ Stratejiyi Durdur", key=f"stop_{strategy['id']}", type="secondary"):
                         remove_strategy(strategy['id'])
                         st.warning(f"'{strategy['name']}' stratejisi durdurulmak üzere veritabanından kaldırıldı.")
-                        st.rerun()
+                        st.rerun() # Sayfayı yeniden yükle
 
     # --- 3. Son Alarmlar Paneli ---
-    # Bu kısım `get_alarm_history` fonksiyonunun içi değiştiği için aynı kalır ve çalışmaya devam eder.
     st.subheader("🔔 Son Alarmlar (Tüm Stratejilerden)")
     alarm_history = get_alarm_history(limit=20)
-    # ... (geri kalan alarm gösterme kodları aynı) ...
+
+    if alarm_history is not None and not alarm_history.empty:
+        st.dataframe(alarm_history, use_container_width=True)
+    else:
+        st.info("Veritabanında henüz kayıtlı bir alarm yok.")
 
 
 # app.py dosyasında, mevcut 'elif page == "Optimizasyon":' bloğunu silip yerine bunu yapıştırın.

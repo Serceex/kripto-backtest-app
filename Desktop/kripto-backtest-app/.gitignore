@@ -1,0 +1,13 @@
+# Python cache  
+__pycache__/  
+  
+# Sanal Ortam KlasîrÅ  
+venv/  
+  
+# öretilen Veri ve Log Dosyalarç  
+*.db  
+*.csv  
+*.json  
+  
+# IDE klasîrleri  
+.idea/ 

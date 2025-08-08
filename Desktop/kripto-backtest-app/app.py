@@ -22,6 +22,10 @@ from alarm_log import get_alarm_history
 
 initialize_db()
 
+# Kullanıcının giriş durumunu saklamak için session_state'i başlat
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+
 
 CONFIG_FILE = "config.json"
 
@@ -57,8 +61,12 @@ if 'config' not in st.session_state:
 config = st.session_state.config
 
 
-st.sidebar.header("🔎 Menü Seçimi")
-page = st.sidebar.radio("Sayfa", ["Portföy Backtest", "Canlı İzleme", "Optimizasyon"])
+st.sidebar.header("🔎 Sayfa Seçimi")
+page = st.sidebar.radio(
+    "Sayfa",
+    ["Portföy Backtest", "Detaylı Grafik Analizi", "Canlı İzleme", "Optimizasyon"]
+)
+
 
 if "live_tracking" not in st.session_state:
     st.session_state.live_tracking = False  # Başlangıçta izleme kapalı
@@ -795,84 +803,123 @@ if page == "Portföy Backtest":
 
 
 elif page == "Canlı İzleme":
-    st.info("📡 Canlı Strateji Yönetim Paneli")
+    # --- ŞİFRE KONTROL MANTIĞI ---
 
-    # --- 1. Yeni Strateji Ekleme Paneli ---
-    with st.expander("➕ Yeni Canlı İzleme Stratejisi Ekle", expanded=True):
+    # Şifrenin secrets.toml dosyasında ayarlanıp ayarlanmadığını kontrol et
+    try:
+        correct_password = st.secrets["app"]["password"]
+    except (KeyError, FileNotFoundError):
+        st.error("Uygulama şifresi '.streamlit/secrets.toml' dosyasında ayarlanmamış. Lütfen kurulumu tamamlayın.")
+        st.stop()  # Şifre yoksa sayfayı tamamen durdur
 
-        new_strategy_name = st.text_input(
-            "Strateji Adı",
-            placeholder="Örn: BTC/ETH Trend Takip Stratejisi"
-        )
+    # Kullanıcı giriş yapmamışsa, şifre sorma ekranını göster
+    if not st.session_state.get('authenticated', False):
+        st.header("🔒 Giriş Gerekli")
+        st.info("Canlı İzleme paneline erişmek için lütfen şifreyi girin.")
 
-        st.write("**Mevcut Kenar Çubuğu Ayarları:**")
-        st.write(f"- **Semboller:** `{', '.join(symbols) if symbols else 'Hiçbiri'}`")
-        st.write(f"- **Zaman Dilimi:** `{interval}`")
-        st.write(f"- **Sinyal Modu:** `{strategy_params['signal_mode']}`")
+        password_input = st.text_input("Şifre", type="password", key="password_input")
 
-        if st.button("🚀 Yeni Stratejiyi Canlı İzlemeye Al", type="primary"):
-            if not new_strategy_name:
-                st.error("Lütfen stratejiye bir isim verin.")
-            elif not symbols:
-                st.error("Lütfen en az bir sembol seçin.")
+        if st.button("Giriş Yap"):
+            if password_input == correct_password:
+                st.session_state.authenticated = True
+                st.rerun()  # Sayfayı yeniden yükleyerek içeriği göster
             else:
-                # Strateji parametrelerine Telegram bilgilerini ekle
-                current_strategy_params = strategy_params.copy()
-                if use_telegram:
-                    try:
-                        current_strategy_params["telegram_token"] = st.secrets["telegram"]["token"]
-                        current_strategy_params["telegram_chat_id"] = st.secrets["telegram"]["chat_id"]
-                        current_strategy_params["telegram_enabled"] = True
-                    except Exception as e:
-                        st.warning(f"Telegram bilgileri okunamadı (.streamlit/secrets.toml kontrol edin): {e}")
-                        current_strategy_params["telegram_enabled"] = False
-                else:
-                    current_strategy_params["telegram_enabled"] = False
+                st.error("Girilen şifre yanlış.")
 
-                new_strategy = {
-                    "id": f"strategy_{int(time.time())}",
-                    "name": new_strategy_name,
-                    "status": "running",
-                    "symbols": symbols,
-                    "interval": interval,
-                    "strategy_params": current_strategy_params
-                }
-                add_or_update_strategy(new_strategy)
-                st.success(f"'{new_strategy_name}' stratejisi başarıyla eklendi!")
+    # Kullanıcı başarıyla giriş yapmışsa, sayfanın asıl içeriğini göster
+    else:
+        # --- YENİ DÜZENLEME: BAŞLIK VE BUTON İÇİN SÜTUNLAR ---
+        col1, col2 = st.columns([5, 1])  # Sütunları 5'e 1 oranında ayır
+
+        with col1:
+            # Başlığı sol sütuna yerleştir
+            st.header("📡 Canlı Strateji Yönetim Paneli")
+
+        with col2:
+            # Butonu sağ sütuna yerleştir ve ".sidebar" kısmını kaldır
+            if st.button("🔒 Çıkış Yap"):
+                st.session_state.authenticated = False
                 st.rerun()
 
-    # --- 2. Çalışan Stratejileri Listeleme Paneli ---
-    st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
+        st.info("""
+        Bu panelden, kenar çubuğunda (sidebar) yapılandırdığınız ayarlarla birden fazla canlı izleme stratejisi başlatabilirsiniz.
+        Arka planda **`multi_worker.py`** script'ini çalıştırdığınızdan emin olun.
+        """)
 
-    running_strategies = get_all_strategies()
+        # --- 1. Yeni Strateji Ekleme Paneli ---
+        with st.expander("➕ Yeni Canlı İzleme Stratejisi Ekle", expanded=True):
 
-    if not running_strategies:
-        st.info("Şu anda çalışan hiçbir canlı strateji yok. Yukarıdaki panelden yeni bir tane ekleyebilirsiniz.")
-    else:
-        for strategy in running_strategies:
-            with st.container(border=True):
-                col1, col2 = st.columns([4, 1])
+            new_strategy_name = st.text_input(
+                "Strateji Adı",
+                placeholder="Örn: BTC/ETH Trend Takip Stratejisi"
+            )
 
-                with col1:
-                    st.subheader(f"{strategy.get('name', 'İsimsiz Strateji')}")
-                    strategy_symbols = strategy.get('symbols', [])
-                    st.caption(f"**ID:** `{strategy.get('id')}` | **Zaman Dilimi:** `{strategy.get('interval')}` | **Semboller:** `{len(strategy_symbols)}`")
-                    st.code(f"{', '.join(strategy_symbols)}", language="text")
+            st.write("**Mevcut Kenar Çubuğu Ayarları:**")
+            st.write(f"- **Semboller:** `{', '.join(symbols) if symbols else 'Hiçbiri'}`")
+            st.write(f"- **Zaman Dilimi:** `{interval}`")
+            st.write(f"- **Sinyal Modu:** `{strategy_params['signal_mode']}`")
 
-                with col2:
-                    if st.button("⏹️ Stratejiyi Durdur", key=f"stop_{strategy['id']}", type="secondary"):
-                        remove_strategy(strategy['id'])
-                        st.warning(f"'{strategy['name']}' stratejisi durduruldu.")
+            if st.button("🚀 Yeni Stratejiyi Canlı İzlemeye Al", type="primary"):
+                if not new_strategy_name:
+                    st.error("Lütfen stratejiye bir isim verin.")
+                elif not symbols:
+                    st.error("Lütfen en az bir sembol seçin.")
+                else:
+                    current_strategy_params = strategy_params.copy()
+                    if use_telegram:
+                        try:
+                            current_strategy_params["telegram_token"] = st.secrets["telegram"]["token"]
+                            current_strategy_params["telegram_chat_id"] = st.secrets["telegram"]["chat_id"]
+                            current_strategy_params["telegram_enabled"] = True
+                        except Exception as e:
+                            st.warning(f"Telegram bilgileri okunamadı (.streamlit/secrets.toml kontrol edin): {e}")
+                            current_strategy_params["telegram_enabled"] = False
+                    else:
+                        current_strategy_params["telegram_enabled"] = False
 
+                    new_strategy = {
+                        "id": f"strategy_{int(time.time())}",
+                        "name": new_strategy_name,
+                        "status": "running",
+                        "symbols": symbols,
+                        "interval": interval,
+                        "strategy_params": current_strategy_params
+                    }
+                    add_or_update_strategy(new_strategy)
+                    st.success(f"'{new_strategy_name}' stratejisi başarıyla eklendi!")
+                    st.rerun()
 
-    # --- 3. Son Alarmlar Paneli ---
-    st.subheader("🔔 Son Alarmlar (Tüm Stratejilerden)")
-    alarm_history = get_alarm_history(limit=20)
+        # --- 2. Çalışan Stratejileri Listeleme Paneli ---
+        st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
 
-    if alarm_history is not None and not alarm_history.empty:
-        st.dataframe(alarm_history, use_container_width=True)
-    else:
-        st.info("Veritabanında henüz kayıtlı bir alarm yok.")
+        running_strategies = get_all_strategies()
+
+        if not running_strategies:
+            st.info("Şu anda çalışan hiçbir canlı strateji yok. Yukarıdaki panelden yeni bir tane ekleyebilirsiniz.")
+        else:
+            for strategy in running_strategies:
+                with st.container(border=True):
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.subheader(f"{strategy.get('name', 'İsimsiz Strateji')}")
+                        strategy_symbols = strategy.get('symbols', [])
+                        st.caption(
+                            f"**ID:** `{strategy.get('id')}` | **Zaman Dilimi:** `{strategy.get('interval')}` | **Semboller:** `{len(strategy_symbols)}`")
+                        st.code(f"{', '.join(strategy_symbols)}", language="text")
+                    with col2:
+                        if st.button("⏹️ Stratejiyi Durdur", key=f"stop_{strategy['id']}", type="secondary"):
+                            remove_strategy(strategy['id'])
+                            st.warning(f"'{strategy['name']}' stratejisi durduruldu.")
+                            st.rerun()  # Butona basıldığında listenin güncellenmesi için burada rerun gerekli ve güvenlidir.
+
+        # --- 3. Son Alarmlar Paneli ---
+        st.subheader("🔔 Son Alarmlar (Tüm Stratejilerden)")
+        alarm_history = get_alarm_history(limit=20)
+
+        if alarm_history is not None and not alarm_history.empty:
+            st.dataframe(alarm_history, use_container_width=True)
+        else:
+            st.info("Veritabanında henüz kayıtlı bir alarm yok.")
 
 
 # app.py dosyasında, mevcut 'elif page == "Optimizasyon":' bloğunu silip yerine bunu yapıştırın.
@@ -1041,6 +1088,47 @@ elif page == "Optimizasyon":
             args=(results_df.loc[selected_index],)  # args'ı bir tuple olarak göndermeyi unutmayın (sonunda virgül var)
         )
 
+
+# app.py dosyasındaki if/elif yapısının sonuna bu bloğu ekleyin
+
+elif page == "Detaylı Grafik Analizi":
+    st.header("📈 Detaylı Grafik Analizi")
+
+    st.info("""
+    Bu sayfada, "Portföy Backtest" sayfasında çalıştırdığınız son backtestin sonuçlarını sembol bazında detaylı olarak inceleyebilirsiniz.
+    Grafik üzerindeki göstergeleri (SMA, EMA, Bollinger vb.) kenar çubuğundaki **"📊 Grafik Gösterge Seçenekleri"** menüsünden kontrol edebilirsiniz.
+    """)
+
+    # Backtest verisinin var olup olmadığını kontrol et
+    if 'backtest_data' not in st.session_state or not st.session_state.backtest_data:
+        st.warning("Lütfen önce 'Portföy Backtest' sayfasından bir backtest çalıştırın.")
+    else:
+        # Backtesti yapılan sembollerden birini seçmek için bir dropdown oluştur
+        backtested_symbols = list(st.session_state.backtest_data.keys())
+        selected_symbol = st.selectbox("Analiz edilecek sembolü seçin:", backtested_symbols)
+
+        if selected_symbol:
+            # Seçilen sembolün DataFrame'ini al
+            df = st.session_state.backtest_data[selected_symbol]
+
+            # Kenar çubuğundaki "Göster" checkbox'larının değerlerini bir sözlükte topla
+            chart_options = {
+                "show_sma": show_sma,
+                "show_ema": show_ema,
+                "show_bbands": show_bbands,
+                "show_vwap": show_vwap,
+                "show_adx": show_adx,
+                "show_stoch": show_stoch,
+                "show_fibonacci": show_fibonacci
+            }
+
+            # Fibonacci seviyelerini hesapla (eğer gösterilecekse)
+            fib_levels = calculate_fibonacci_levels(df) if show_fibonacci else {}
+
+            # Atıl durumdaki plot_chart fonksiyonunu burada çağırıyoruz!
+            fig = plot_chart(df, selected_symbol, fib_levels, chart_options)
+
+            st.plotly_chart(fig, use_container_width=True)
 # ------------------------------
 # Alarmlar ve Telegram Durumu Paneli
 

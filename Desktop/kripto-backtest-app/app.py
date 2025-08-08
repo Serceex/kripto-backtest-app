@@ -19,12 +19,6 @@ from database import (add_or_update_strategy, remove_strategy,
                       get_all_strategies, initialize_db)
 from alarm_log import get_alarm_history
 
-# --- GEÇİCİ TEST KODU BAŞLANGICI ---
-st.header("GEÇİCİ BAĞLANTI TESTİ")
-if st.button("BU BİR TEST BUTONUDUR"):
-    print("\n\n\n\n--- BAĞLANTI BAŞARILI! TEST BUTONU ÇALIŞTI! ---\n\n\n\n")
-# --- GEÇİCİ TEST KODU SONU ---
-
 
 initialize_db()
 
@@ -858,23 +852,6 @@ elif page == "Canlı İzleme":
 
                 # Sayfayı yeniden yükleyerek listenin güncellenmesini sağla
                 st.rerun()
-
-    # --- 2. Çalışan Stratejileri Listeleme Paneli ---
-    st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
-
-    running_strategies = get_all_strategies()
-
-    # app.py -> "Canlı İzleme" bloğu içinde
-
-    st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
-
-    running_strategies = get_all_strategies()
-
-    # --- HATA AYIKLAMA KODUNU BURAYA EKLEYİN ---
-    st.write("--- VERİTABANINDAN GELEN HAM VERİ ---")
-    st.write(running_strategies)
-    st.write("-----------------------------------")
-    # --- HATA AYIKLAMA KODU SONU ---
 
 
     if not running_strategies:

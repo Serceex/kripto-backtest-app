@@ -853,7 +853,6 @@ elif page == "Canlı İzleme":
                 # Sayfayı yeniden yükleyerek listenin güncellenmesini sağla
                 st.rerun()
 
-
     if not running_strategies:
         st.info("Şu anda çalışan hiçbir canlı strateji yok. Yukarıdaki panelden yeni bir tane ekleyebilirsiniz.")
     else:

@@ -19,14 +19,11 @@ from database import (add_or_update_strategy, remove_strategy,
                       get_all_strategies, initialize_db)
 from alarm_log import get_alarm_history
 
-
 # --- GEÇİCİ TEST KODU BAŞLANGICI ---
 st.header("GEÇİCİ BAĞLANTI TESTİ")
 if st.button("BU BİR TEST BUTONUDUR"):
     print("\n\n\n\n--- BAĞLANTI BAŞARILI! TEST BUTONU ÇALIŞTI! ---\n\n\n\n")
 # --- GEÇİCİ TEST KODU SONU ---
-
-
 
 
 initialize_db()

@@ -733,69 +733,69 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
 
 if page == "Portföy Backtest":
 
-    st.header("🚀 Portföy Backtest")
 
+    # Seçilen sembolleri session_state'e kaydet (opsiyonel ama iyi bir pratik)
     st.session_state.selected_symbols = symbols
 
-    if st.button("Portföy Backtest Başlat"):
+    if st.button("🚀 Portföy Backtest Başlat"):
+        # run_portfolio_backtest fonksiyonu, sonuçları st.session_state['backtest_results']'e kaydeder
         run_portfolio_backtest(symbols, interval, strategy_params)
 
+    # Backtest sonuçları varsa, sonuçları göster
     if 'backtest_results' in st.session_state and not st.session_state['backtest_results'].empty:
         portfolio_results = st.session_state['backtest_results'].copy()
 
-        # 'Çıkış Zamanı' NaT olanları (açık pozisyonları) analizden çıkar
+        # Analiz için 'Çıkış Zamanı' olmayan (açık) pozisyonları çıkar
         analysis_df = portfolio_results.dropna(subset=['Çıkış Zamanı'])
 
         if not analysis_df.empty:
-            # Yeni analiz fonksiyonunu çağır (artık 3 değer döndürüyor)
+            # Analiz fonksiyonu 3 değer döndürür: metrikler, sermaye eğrisi, düşüş serisi
             performance_metrics, equity_curve, drawdown_series = analyze_backtest_results(analysis_df)
 
             st.subheader("📊 Portföy Performans Metrikleri")
 
-        metric_tooltips = {
-            "Toplam İşlem": "Backtest süresince yapılan toplam alım-satım işlemi sayısı.",
-            "Kazançlı İşlem Oranı (%)": "Toplam işlemlerin yüzde kaçının kâr ile sonuçlandığı.",
-            "Toplam Getiri (%)": "Tüm işlemlerden elde edilen net kâr/zarar yüzdesi. (Sadece işlem getirileri, bileşik değil)",
-            "Ortalama Kazanç (%)": "Sadece kârlı işlemlerin ortalama getiri yüzdesi.",
-            "Ortalama Kayıp (%)": "Sadece zararlı işlemlerin ortalama getiri yüzdesi.",
-            "Risk/Ödül Oranı (Payoff)": "Ortalama kazancın ortalama kayba oranı. 1'den büyük olması istenir.",
-            "Maksimum Düşüş (Drawdown) (%)": "Stratejinin geçmişte yaşadığı en büyük tepeden-dibe sermaye erimesi yüzdesi. Stratejinin potansiyel riskini gösterir.",
-            "Sharpe Oranı (Yıllık)": "Stratejinin aldığı riske (volatiliteye) göre ne kadar getiri ürettiğini ölçer. Yüksek olması daha verimlidir.",
-            "Sortino Oranı (Yıllık)": "Sharpe Oranı'na benzer, ancak sadece aşağı yönlü (negatif) riski dikkate alır. Trader'lar için daha anlamlı olabilir.",
-            "Calmar Oranı": "Yıllıklandırılmış getirinin maksimum düşüşe oranıdır. Stratejinin getirisinin, yaşadığı en kötü düşüşe göre ne kadar iyi olduğunu gösterir."
-        }
+            # Metrikleri ve açıklamalarını tanımla
+            metric_tooltips = {
+                "Toplam İşlem": "Backtest süresince yapılan toplam alım-satım işlemi sayısı.",
+                "Kazançlı İşlem Oranı (%)": "Toplam işlemlerin yüzde kaçının kâr ile sonuçlandığı.",
+                "Toplam Getiri (%)": "Tüm işlemlerden elde edilen net kâr/zarar yüzdesi.",
+                "Ortalama Kazanç (%)": "Sadece kârlı işlemlerin ortalama getiri yüzdesi.",
+                "Ortalama Kayıp (%)": "Sadece zararlı işlemlerin ortalama getiri yüzdesi.",
+                "Risk/Ödül Oranı (Payoff)": "Ortalama kazancın ortalama kayba oranı. 1'den büyük olması istenir.",
+                "Maksimum Düşüş (Drawdown) (%)": "Stratejinin geçmişte yaşadığı en büyük tepeden-dibe sermaye erimesi yüzdesi.",
+                "Sharpe Oranı (Yıllık)": "Stratejinin aldığı riske (volatiliteye) göre ne kadar getiri ürettiğini ölçer.",
+                "Sortino Oranı (Yıllık)": "Sharpe Oranı'na benzer, ancak sadece aşağı yönlü (negatif) riski dikkate alır.",
+                "Calmar Oranı": "Yıllıklandırılmış getirinin maksimum düşüşe oranıdır."
+            }
 
-        col1, col2 = st.columns(2)
-        metrics_list = list(performance_metrics.items())
-        mid_point = (len(metrics_list) + 1) // 2
+            # Metrikleri iki sütun halinde göster
+            col1, col2 = st.columns(2)
+            metrics_list = list(performance_metrics.items())
+            mid_point = (len(metrics_list) + 1) // 2
 
-        with col1:
-            for key, value in metrics_list[:mid_point]:
-                st.metric(label=key, value=value, help=metric_tooltips.get(key, ""))
-        with col2:
-            for key, value in metrics_list[mid_point:]:
-                st.metric(label=key, value=value, help=metric_tooltips.get(key, ""))
+            with col1:
+                for key, value in metrics_list[:mid_point]:
+                    st.metric(label=key, value=value, help=metric_tooltips.get(key, ""))
+            with col2:
+                for key, value in metrics_list[mid_point:]:
+                    st.metric(label=key, value=value, help=metric_tooltips.get(key, ""))
 
-        # --- YENİ EKLENEN BÖLÜM: PERFORMANS GRAFİĞİ ---
-        st.subheader("📈 Strateji Performans Grafiği")
-        if equity_curve is not None and drawdown_series is not None:
-            performance_fig = plot_performance_summary(equity_curve, drawdown_series)
-            st.plotly_chart(performance_fig, use_container_width=True)
-        # --- GRAFİK BÖLÜMÜ SONU ---
+            # Performans grafiğini göster
+            st.subheader("📈 Strateji Performans Grafiği")
+            if equity_curve is not None and drawdown_series is not None:
+                performance_fig = plot_performance_summary(equity_curve, drawdown_series)
+                st.plotly_chart(performance_fig, use_container_width=True)
 
+        # Tüm işlemlerin tablosunu göster
         st.subheader("📋 Tüm İşlemler")
-        st.dataframe(portfolio_results)
+        st.dataframe(portfolio_results, use_container_width=True)
+
     else:
         st.info("Backtest sonuçları burada görünecek. Lütfen 'Portföy Backtest Başlat' butonuna basın.")
 
 
 elif page == "Canlı İzleme":
-    st.header("📡 Canlı Strateji Yönetim Paneli")
-
-    st.info("""
-    Bu panelden, kenar çubuğunda (sidebar) yapılandırdığınız ayarlarla birden fazla canlı izleme stratejisi başlatabilirsiniz.
-    Arka planda **`multi_worker.py`** script'ini çalıştırdığınızdan emin olun.
-    """)
+    st.info("📡 Canlı Strateji Yönetim Paneli")
 
     # --- 1. Yeni Strateji Ekleme Paneli ---
     with st.expander("➕ Yeni Canlı İzleme Stratejisi Ekle", expanded=True):
@@ -863,7 +863,7 @@ elif page == "Canlı İzleme":
                     if st.button("⏹️ Stratejiyi Durdur", key=f"stop_{strategy['id']}", type="secondary"):
                         remove_strategy(strategy['id'])
                         st.warning(f"'{strategy['name']}' stratejisi durduruldu.")
-                        st.rerun()
+
 
     # --- 3. Son Alarmlar Paneli ---
     st.subheader("🔔 Son Alarmlar (Tüm Stratejilerden)")
@@ -878,6 +878,7 @@ elif page == "Canlı İzleme":
 # app.py dosyasında, mevcut 'elif page == "Optimizasyon":' bloğunu silip yerine bunu yapıştırın.
 
 elif page == "Optimizasyon":
+    # BAŞLIK DOĞRU YERDE
     st.header("⚙️ Strateji Parametre Optimizasyonu")
     st.info("""
     Bu bölümde, stratejinizin en iyi performans gösteren parametrelerini bulmak için binlerce kombinasyonu test edebilirsiniz.

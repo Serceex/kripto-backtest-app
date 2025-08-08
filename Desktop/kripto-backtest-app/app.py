@@ -790,6 +790,8 @@ if page == "Portföy Backtest":
 
 # app.py dosyanızda bu bloğu bulun ve içeriğini aşağıdakilerle değiştirin.
 
+# app.py dosyanızda, mevcut 'elif page == "Canlı İzleme":' bloğunu silip yerine bunu yapıştırın.
+
 elif page == "Canlı İzleme":
     st.header("📡 Canlı Strateji Yönetim Paneli")
 
@@ -817,36 +819,41 @@ elif page == "Canlı İzleme":
             elif not symbols:
                 st.error("Lütfen en az bir sembol seçin.")
             else:
-                # Yeni strateji nesnesini oluştur
+                # Önceki yanıtta belirttiğimiz Telegram bilgilerini ekleyen kod burada olmalı
+                current_strategy_params = strategy_params.copy()
+                if use_telegram:
+                    try:
+                        current_strategy_params["telegram_token"] = st.secrets["telegram"]["token"]
+                        current_strategy_params["telegram_chat_id"] = st.secrets["telegram"]["chat_id"]
+                        current_strategy_params["telegram_enabled"] = True
+                    except Exception as e:
+                        st.warning(f"Telegram bilgileri okunamadı: {e}")
+                        current_strategy_params["telegram_enabled"] = False
+                else:
+                    current_strategy_params["telegram_enabled"] = False
+
                 new_strategy = {
                     "id": f"strategy_{int(time.time())}",
                     "name": new_strategy_name,
                     "status": "running",
                     "symbols": symbols,
                     "interval": interval,
-                    "strategy_params": strategy_params
+                    "strategy_params": current_strategy_params
                 }
-
-                # Stratejiyi veritabanına ekle
                 add_or_update_strategy(new_strategy)
-
-                st.success(
-                    f"'{new_strategy_name}' stratejisi başarıyla veritabanına eklendi ve worker tarafından başlatılacak!")
-                st.rerun() # Sayfayı yeniden yükleyerek listenin güncellenmesini sağla
+                st.success(f"'{new_strategy_name}' stratejisi başarıyla veritabanına eklendi!")
+                st.rerun()
 
     # --- 2. Çalışan Stratejileri Listeleme Paneli ---
     st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
 
-    # Stratejileri veritabanından oku
     running_strategies = get_all_strategies()
 
     if not running_strategies:
         st.info("Şu anda çalışan hiçbir canlı strateji yok. Yukarıdaki panelden yeni bir tane ekleyebilirsiniz.")
     else:
         for strategy in running_strategies:
-            # Her strateji için ayrı bir container oluştur
             with st.container(border=True):
-                # DÜZELTME: Sütunları döngünün içine taşı
                 col1, col2 = st.columns([4, 1])
 
                 with col1:
@@ -855,13 +862,12 @@ elif page == "Canlı İzleme":
                     st.caption(f"**ID:** `{strategy.get('id')}` | **Zaman Dilimi:** `{strategy.get('interval')}` | **Semboller:** `{len(strategy_symbols)}`")
                     st.code(f"{', '.join(strategy_symbols)}", language="text")
 
-
                 with col2:
-                    # Stratejiyi durdurma butonu
+                    # Stratejiyi durdurma butonu ARTIK DOĞRU YERDE
                     if st.button("⏹️ Stratejiyi Durdur", key=f"stop_{strategy['id']}", type="secondary"):
                         remove_strategy(strategy['id'])
-                        st.warning(f"'{strategy['name']}' stratejisi durdurulmak üzere veritabanından kaldırıldı.")
-                        st.rerun() # Sayfayı yeniden yükle
+                        st.warning(f"'{strategy['name']}' stratejisi durduruldu.")
+                        st.rerun()
 
     # --- 3. Son Alarmlar Paneli ---
     st.subheader("🔔 Son Alarmlar (Tüm Stratejilerden)")

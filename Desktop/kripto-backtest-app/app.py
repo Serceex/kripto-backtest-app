@@ -849,6 +849,19 @@ elif page == "Canlı İzleme":
 
     running_strategies = get_all_strategies()
 
+    # app.py -> "Canlı İzleme" bloğu içinde
+
+    st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
+
+    running_strategies = get_all_strategies()
+
+    # --- HATA AYIKLAMA KODUNU BURAYA EKLEYİN ---
+    st.write("--- VERİTABANINDAN GELEN HAM VERİ ---")
+    st.write(running_strategies)
+    st.write("-----------------------------------")
+    # --- HATA AYIKLAMA KODU SONU ---
+
+        
     if not running_strategies:
         st.info("Şu anda çalışan hiçbir canlı strateji yok. Yukarıdaki panelden yeni bir tane ekleyebilirsiniz.")
     else:

@@ -814,24 +814,28 @@ elif page == "Canlı İzleme":
         st.write(f"- **Sinyal Modu:** `{strategy_params['signal_mode']}`")
 
         if st.button("🚀 Yeni Stratejiyi Canlı İzlemeye Al", type="primary"):
+
+            # 1. GİRDİLERİ DOĞRULA
             if not new_strategy_name:
-                st.error("Lütfen stratejiye bir isim verin.")
+                st.error("HATA: Lütfen stratejiye bir isim verin.")
             elif not symbols:
-                st.error("Lütfen en az bir sembol seçin.")
+                st.error("HATA: Lütfen en az bir sembol seçin.")
             else:
-                # Önceki yanıtta belirttiğimiz Telegram bilgilerini ekleyen kod burada olmalı
+                # 2. GİRDİLER GEÇERLİYSE DEVAM ET
                 current_strategy_params = strategy_params.copy()
+
+                # Telegram bilgilerini ekle
                 if use_telegram:
                     try:
                         current_strategy_params["telegram_token"] = st.secrets["telegram"]["token"]
                         current_strategy_params["telegram_chat_id"] = st.secrets["telegram"]["chat_id"]
                         current_strategy_params["telegram_enabled"] = True
-                    except Exception as e:
-                        st.warning(f"Telegram bilgileri okunamadı: {e}")
+                    except Exception:
                         current_strategy_params["telegram_enabled"] = False
                 else:
                     current_strategy_params["telegram_enabled"] = False
 
+                # Strateji nesnesini oluştur
                 new_strategy = {
                     "id": f"strategy_{int(time.time())}",
                     "name": new_strategy_name,
@@ -840,8 +844,12 @@ elif page == "Canlı İzleme":
                     "interval": interval,
                     "strategy_params": current_strategy_params
                 }
+
+                # Veritabanına ekle
                 add_or_update_strategy(new_strategy)
-                st.success(f"'{new_strategy_name}' stratejisi başarıyla veritabanına eklendi!")
+                st.success(f"'{new_strategy_name}' stratejisi başarıyla eklendi!")
+
+                # Sayfayı yeniden yükleyerek listenin güncellenmesini sağla
                 st.rerun()
 
     # --- 2. Çalışan Stratejileri Listeleme Paneli ---
@@ -861,7 +869,7 @@ elif page == "Canlı İzleme":
     st.write("-----------------------------------")
     # --- HATA AYIKLAMA KODU SONU ---
 
-        
+
     if not running_strategies:
         st.info("Şu anda çalışan hiçbir canlı strateji yok. Yukarıdaki panelden yeni bir tane ekleyebilirsiniz.")
     else:

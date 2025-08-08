@@ -2,8 +2,18 @@ import sqlite3
 import pandas as pd
 import json
 import threading
+import os
 
-DB_NAME = "veritas_point.db"
+
+# Projenin bulunduğu dizinin mutlak yolunu al
+project_dir = os.path.dirname(os.path.abspath(__file__))
+
+# DB_NAME'i bu mutlak yolla birleştir
+DB_NAME = os.path.join(project_dir, "veritas_point.db")
+
+# DB_NAME değişkeninin hemen altında yeni halini yazdırarak kontrol edebilirsiniz
+print(f"Veritabanı Dosya Yolu: {DB_NAME}")
+
 
 # Birden fazla thread'in veritabanına aynı anda yazmasını engellemek için kilit
 db_lock = threading.Lock()

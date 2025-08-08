@@ -1,28 +1,27 @@
-# database.py dosyasının YENİ ve TAM içeriği
+# database.py dosyasının yeni, TAM ve DOĞRU içeriği
 
 import sqlite3
 import pandas as pd
 import json
 import threading
 import os
+from datetime import datetime # Alarm log için eklendi
 
-# --- Projenin mutlak yolunu alarak DB yolunu belirleme (ÖNEMLİ) ---
+# --- Projenin mutlak yolunu alarak DB yolunu belirleme ---
 try:
     project_dir = os.path.dirname(os.path.abspath(__file__))
     DB_NAME = os.path.join(project_dir, "veritas_point.db")
     print(f"--- [DATABASE] Veritabanı dosya yolu: {DB_NAME} ---")
 except Exception as e:
-    DB_NAME = "veritas_point.db"  # Fallback
+    DB_NAME = "veritas_point.db"
     print(f"--- [HATA] Veritabanı yolu belirlenemedi: {e} ---")
 
 db_lock = threading.Lock()
 
-
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
-    # Row factory'yi burada kullanmayıp, okuma sırasında manuel dict yapacağız
+    conn.row_factory = sqlite3.Row
     return conn
-
 
 def initialize_db():
     with db_lock:
@@ -48,25 +47,22 @@ def initialize_db():
             conn.commit()
     print("--- [DATABASE] Veritabanı başlatıldı. ---")
 
+# --- Strateji Yönetim Fonksiyonları ---
 
 def add_or_update_strategy(strategy_config):
-    """Veritabanına yeni bir strateji ekler veya mevcut olanı günceller."""
-    print("\n--- [DATABASE: YAZMA] add_or_update_strategy fonksiyonu çağrıldı. ---")
+    print("\n--- [DATABASE: YAZMA] add_or_update_strategy çağrıldı. ---")
     print(f"[YAZMA - Adım 1] Gelen strateji verisi: {strategy_config}")
-
     try:
         params_json = json.dumps(strategy_config.get("strategy_params", {}))
         symbols_json = json.dumps(strategy_config.get("symbols", []))
-        print(f"[YAZMA - Adım 2] JSON'a çevrilen parametreler ve semboller BAŞARILI.")
+        print(f"[YAZMA - Adım 2] JSON'a çevirme BAŞARILI.")
     except Exception as e:
-        print(f"[YAZMA - HATA] JSON'a çevirme sırasında hata oluştu: {e}")
+        print(f"[YAZMA - HATA] JSON'a çevirme sırasında hata: {e}")
         return
-
     with db_lock:
         try:
             with get_db_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
+                conn.execute("""
                     INSERT INTO strategies (id, name, status, symbols, interval, strategy_params)
                     VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
@@ -78,49 +74,9 @@ def add_or_update_strategy(strategy_config):
                     strategy_config.get('interval'), params_json
                 ))
                 conn.commit()
-                print("[YAZMA - Adım 3] Veritabanına yazma işlemi BAŞARILI.")
+                print("[YAZMA - Adım 3] Veritabanına yazma BAŞARILI.")
         except Exception as e:
-            print(f"[YAZMA - HATA] SQL sorgusu çalıştırılırken hata: {e}")
-
-
-def get_all_strategies():
-    """Veritabanındaki tüm stratejileri bir liste olarak döndürür."""
-    print("\n--- [DATABASE: OKUMA] get_all_strategies fonksiyonu çağrıldı. ---")
-    with db_lock:
-        with get_db_connection() as conn:
-            conn.row_factory = sqlite3.Row  # Sadece bu fonksiyon için Row factory kullan
-            cursor = conn.cursor()
-            strategies_raw = cursor.execute("SELECT * FROM strategies").fetchall()
-
-    print(f"[OKUMA - Adım 1] Veritabanından çekilen HAM VERİ (Satır sayısı: {len(strategies_raw)}): {strategies_raw}")
-
-    result = []
-    if not strategies_raw:
-        print("[OKUMA - Adım 2] Veritabanından hiç strateji verisi gelmedi. Boş liste döndürülüyor.")
-        return []
-
-    for s_row in strategies_raw:
-        try:
-            strategy_dict = dict(s_row)  # sqlite3.Row objesini dict'e çevir
-            print(f"[OKUMA - Adım 2] İşlenen satır: {strategy_dict}")
-
-            # JSON string'lerini Python objelerine çevir
-            strategy_dict['symbols'] = json.loads(strategy_dict.get('symbols', '[]') or '[]')
-            strategy_dict['strategy_params'] = json.loads(strategy_dict.get('strategy_params', '{}') or '{}')
-
-            result.append(strategy_dict)
-            print(f"[OKUMA - Adım 3] '{strategy_dict.get('name')}' adlı strateji başarıyla işlendi.")
-        except Exception as e:
-            print(f"[OKUMA - HATA] Bir strateji satırı işlenirken hata oluştu (ID: {s_row['id']}): {e}")
-            # Hatalı satırı atla ama diğerlerini işlemeye devam et
-            continue
-
-    print(f"[OKUMA - Adım 4] Fonksiyondan döndürülen nihai sonuç: {result}")
-    return result
-
-
-# Kalan diğer fonksiyonlar (pozisyon, alarm vs.) aynı kalabilir...
-# (Buraya alarm_log.py ve diğer dosyalardaki fonksiyonları kopyalamaya gerek yok, sadece yukarıdaki 3 fonksiyonu güncelleyin)
+            print(f"[YAZMA - HATA] SQL sorgusunda hata: {e}")
 
 def remove_strategy(strategy_id):
     with db_lock:
@@ -128,3 +84,61 @@ def remove_strategy(strategy_id):
             conn.execute("DELETE FROM strategies WHERE id = ?", (strategy_id,))
             conn.commit()
     print(f"--- [DATABASE] Strateji (ID: {strategy_id}) silindi. ---")
+
+def get_all_strategies():
+    print("\n--- [DATABASE: OKUMA] get_all_strategies çağrıldı. ---")
+    with db_lock:
+        with get_db_connection() as conn:
+            strategies_raw = conn.execute("SELECT * FROM strategies").fetchall()
+    print(f"[OKUMA - Adım 1] Veritabanından çekilen HAM VERİ (Satır sayısı: {len(strategies_raw)})")
+    result = []
+    if not strategies_raw:
+        return []
+    for s_row in strategies_raw:
+        try:
+            strategy_dict = dict(s_row)
+            strategy_dict['symbols'] = json.loads(strategy_dict.get('symbols', '[]') or '[]')
+            strategy_dict['strategy_params'] = json.loads(strategy_dict.get('strategy_params', '{}') or '{}')
+            result.append(strategy_dict)
+        except Exception as e:
+            print(f"[OKUMA - HATA] Bir strateji işlenirken hata (ID: {s_row.get('id')}): {e}")
+            continue
+    print(f"[OKUMA - Adım 4] Fonksiyondan döndürülen nihai sonuç: {result}")
+    return result
+
+# --- Pozisyon Yönetim Fonksiyonları (EKSİK OLAN KISIM) ---
+
+def update_position(strategy_id, symbol, position, entry_price):
+    with db_lock:
+        with get_db_connection() as conn:
+            conn.execute("""
+                INSERT INTO positions (strategy_id, symbol, position, entry_price)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(strategy_id, symbol) DO UPDATE SET
+                    position=excluded.position, entry_price=excluded.entry_price
+            """, (strategy_id, symbol, position, entry_price))
+            conn.commit()
+
+def get_positions_for_strategy(strategy_id):
+    with db_lock:
+        with get_db_connection() as conn:
+            positions = conn.execute("SELECT symbol, position, entry_price FROM positions WHERE strategy_id = ?", (strategy_id,)).fetchall()
+            return {p['symbol']: {'position': p['position'], 'entry_price': p['entry_price']} for p in positions}
+
+# --- Alarm Yönetim Fonksiyonları (EKSİK OLAN KISIM) ---
+
+def log_alarm_db(symbol, signal, price):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with db_lock:
+        with get_db_connection() as conn:
+            conn.execute("INSERT INTO alarms (timestamp, symbol, signal, price) VALUES (?, ?, ?, ?)",
+                         (timestamp, symbol, signal, price))
+            conn.commit()
+    print(f"--- [DATABASE] Alarm loglandı: {symbol} - {signal} ---")
+
+def get_alarm_history_db(limit=50):
+    with db_lock:
+        with get_db_connection() as conn:
+            query = "SELECT timestamp as Zaman, symbol as Sembol, signal as Sinyal, price as Fiyat FROM alarms ORDER BY id DESC LIMIT ?"
+            df = pd.read_sql_query(query, conn, params=(limit,))
+            return df

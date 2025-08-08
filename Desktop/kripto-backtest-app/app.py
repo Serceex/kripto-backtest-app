@@ -789,10 +789,6 @@ if page == "Portföy Backtest":
         st.info("Backtest sonuçları burada görünecek. Lütfen 'Portföy Backtest Başlat' butonuna basın.")
 
 
-# app.py dosyanızda bu bloğu bulun ve içeriğini aşağıdakilerle değiştirin.
-
-# app.py dosyanızda, mevcut 'elif page == "Canlı İzleme":' bloğunu silip yerine bunu yapıştırın.
-
 elif page == "Canlı İzleme":
     st.header("📡 Canlı Strateji Yönetim Paneli")
 
@@ -809,34 +805,30 @@ elif page == "Canlı İzleme":
             placeholder="Örn: BTC/ETH Trend Takip Stratejisi"
         )
 
-        st.write("**Mevcut Kenar Çubuğu Ayarlarınız:**")
+        st.write("**Mevcut Kenar Çubuğu Ayarları:**")
         st.write(f"- **Semboller:** `{', '.join(symbols) if symbols else 'Hiçbiri'}`")
         st.write(f"- **Zaman Dilimi:** `{interval}`")
         st.write(f"- **Sinyal Modu:** `{strategy_params['signal_mode']}`")
 
         if st.button("🚀 Yeni Stratejiyi Canlı İzlemeye Al", type="primary"):
-
-            # 1. GİRDİLERİ DOĞRULA
             if not new_strategy_name:
-                st.error("HATA: Lütfen stratejiye bir isim verin.")
+                st.error("Lütfen stratejiye bir isim verin.")
             elif not symbols:
-                st.error("HATA: Lütfen en az bir sembol seçin.")
+                st.error("Lütfen en az bir sembol seçin.")
             else:
-                # 2. GİRDİLER GEÇERLİYSE DEVAM ET
+                # Strateji parametrelerine Telegram bilgilerini ekle
                 current_strategy_params = strategy_params.copy()
-
-                # Telegram bilgilerini ekle
                 if use_telegram:
                     try:
                         current_strategy_params["telegram_token"] = st.secrets["telegram"]["token"]
                         current_strategy_params["telegram_chat_id"] = st.secrets["telegram"]["chat_id"]
                         current_strategy_params["telegram_enabled"] = True
-                    except Exception:
+                    except Exception as e:
+                        st.warning(f"Telegram bilgileri okunamadı (.streamlit/secrets.toml kontrol edin): {e}")
                         current_strategy_params["telegram_enabled"] = False
                 else:
                     current_strategy_params["telegram_enabled"] = False
 
-                # Strateji nesnesini oluştur
                 new_strategy = {
                     "id": f"strategy_{int(time.time())}",
                     "name": new_strategy_name,
@@ -845,13 +837,14 @@ elif page == "Canlı İzleme":
                     "interval": interval,
                     "strategy_params": current_strategy_params
                 }
-
-                # Veritabanına ekle
                 add_or_update_strategy(new_strategy)
                 st.success(f"'{new_strategy_name}' stratejisi başarıyla eklendi!")
-
-                # Sayfayı yeniden yükleyerek listenin güncellenmesini sağla
                 st.rerun()
+
+    # --- 2. Çalışan Stratejileri Listeleme Paneli ---
+    st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
+
+    running_strategies = get_all_strategies()
 
     if not running_strategies:
         st.info("Şu anda çalışan hiçbir canlı strateji yok. Yukarıdaki panelden yeni bir tane ekleyebilirsiniz.")
@@ -867,7 +860,6 @@ elif page == "Canlı İzleme":
                     st.code(f"{', '.join(strategy_symbols)}", language="text")
 
                 with col2:
-                    # Stratejiyi durdurma butonu ARTIK DOĞRU YERDE
                     if st.button("⏹️ Stratejiyi Durdur", key=f"stop_{strategy['id']}", type="secondary"):
                         remove_strategy(strategy['id'])
                         st.warning(f"'{strategy['name']}' stratejisi durduruldu.")

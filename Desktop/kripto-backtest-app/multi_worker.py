@@ -219,8 +219,8 @@ class StrategyRunner:
                    f"➡️ *Giriş:* `{entry_price:.4f}$`\n\n"
                    f"💰 *Kâr Al Seviyeleri:*\n`{tp_text}`\n\n"
                    f"🛡️ *Stop:*\n`{stop_text}`\n\n"
-                   f"_TP1 sonrası stop girişe çekilmelidir._\n"
-                   f"_Finansal Tavsiye İçermez._")
+                   f"📌TP1 sonrası stop girişe çekilmelidir._\n"
+                   f"📢Yatırım tavsiyesi değildir.❗_")
 
         print("--- YENİ POZİSYON SİNYALİ ---\n" + message + "\n-----------------------------")
 
@@ -235,30 +235,62 @@ class StrategyRunner:
 
 
 def main_manager():
+    """
+    Veritabanını sürekli olarak kontrol eden, yeni/güncellenmiş/silinmiş
+    stratejilere göre StrategyRunner'ları yöneten ana fonksiyon.
+    """
     print("🚀 Çoklu Strateji Yöneticisi (Multi-Worker) Başlatıldı.")
     initialize_db()
-    running_strategies = {}
+    running_strategies = {} # Çalışan stratejilerin runner nesnelerini {id: runner} formatında tutar
+
     while True:
         try:
+            # 1. Veritabanındaki tüm güncel stratejileri çek
             strategies_in_db = get_all_strategies()
-            db_ids = {s['id'] for s in strategies_in_db}
+            db_strategy_map = {s['id']: s for s in strategies_in_db}
+            db_ids = set(db_strategy_map.keys())
             running_ids = set(running_strategies.keys())
 
+            # 2. YENİ STRATEJİLERİ BAŞLAT
+            # Veritabanında olan ama şu an çalışmayan stratejiler
             new_ids = db_ids - running_ids
-            for strategy_config in strategies_in_db:
-                if strategy_config['id'] in new_ids:
-                    runner = StrategyRunner(strategy_config)
-                    running_strategies[runner.id] = runner
-                    runner.start()
+            for strategy_id in new_ids:
+                strategy_config = db_strategy_map[strategy_id]
+                print(f"✅ YENİ STRATEJİ BULUNDU: '{strategy_config['name']}'. Başlatılıyor...")
+                runner = StrategyRunner(strategy_config)
+                running_strategies[runner.id] = runner
+                runner.start()
 
+            # 3. SİLİNMİŞ STRATEJİLERİ DURDUR
+            # Çalışan ama artık veritabanında olmayan stratejiler
             removed_ids = running_ids - db_ids
             for strategy_id in removed_ids:
-                if strategy_id in running_strategies:
-                    print(f"Strateji '{running_strategies[strategy_id].name}' veritabanından silinmiş, durduruluyor.")
-                    running_strategies[strategy_id].stop()
-                    del running_strategies[strategy_id]
+                print(f"🛑 SİLİNMİŞ STRATEJİ: '{running_strategies[strategy_id].name}'. Durduruluyor...")
+                running_strategies[strategy_id].stop()
+                del running_strategies[strategy_id]
+
+            # 4. GÜNCELLENMİŞ STRATEJİLERİ YENİDEN BAŞLAT (EN ÖNEMLİ KISIM)
+            # Hem çalışan hem de veritabanında olan stratejileri kontrol et
+            for strategy_id in running_ids.intersection(db_ids):
+                runner = running_strategies[strategy_id]
+                db_config = db_strategy_map[strategy_id]
+
+                # Eğer veritabanındaki konfigürasyon, çalışan runner'ın konfigürasyonundan farklıysa
+                if runner.config != db_config:
+                    print(f"🔄 GÜNCELLENMİŞ STRATEJİ: '{runner.name}'. Yeni ayarlarla yeniden başlatılıyor...")
+                    # Önce mevcut runner'ı ve thread'lerini durdur
+                    runner.stop()
+                    # Veritabanından gelen yeni ayarlarla yeni bir runner oluştur ve başlat
+                    new_runner = StrategyRunner(db_config)
+                    running_strategies[strategy_id] = new_runner # Eskisinin yerine yenisini koy
+                    new_runner.start()
+
         except Exception as e:
-            print(f"Yönetici döngüsünde beklenmedik hata: {e}")
+            print(f"HATA: Yönetici döngüsünde beklenmedik bir hata oluştu: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Kontrol döngüsü için bekleme süresi
         time.sleep(5)
 
 

@@ -5,9 +5,8 @@ import pandas as pd
 import json
 import threading
 import os
-from datetime import datetime # Alarm log için eklendi
+from datetime import datetime
 
-# --- Projenin mutlak yolunu alarak DB yolunu belirleme ---
 try:
     project_dir = os.path.dirname(os.path.abspath(__file__))
     DB_NAME = os.path.join(project_dir, "veritas_point.db")
@@ -19,11 +18,13 @@ except Exception as e:
 db_lock = threading.Lock()
 
 def get_db_connection():
+    """Veritabanı bağlantı nesnesini döndürür."""
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
 def initialize_db():
+    """Veritabanını ve tabloları başlangıçta oluşturur."""
     with db_lock:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -39,23 +40,26 @@ def initialize_db():
                 FOREIGN KEY (strategy_id) REFERENCES strategies (id) ON DELETE CASCADE,
                 UNIQUE(strategy_id, symbol)
             )""")
+            # DÜZELTME: alarms tablosuna strategy_id sütunu eklendi.
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS alarms (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT,
-                symbol TEXT, signal TEXT, price REAL
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                strategy_id TEXT,
+                timestamp TEXT,
+                symbol TEXT,
+                signal TEXT,
+                price REAL,
+                FOREIGN KEY (strategy_id) REFERENCES strategies (id) ON DELETE CASCADE
             )""")
             conn.commit()
     print("--- [DATABASE] Veritabanı başlatıldı. ---")
 
-# --- Strateji Yönetim Fonksiyonları ---
-
 def add_or_update_strategy(strategy_config):
+    """Veritabanına yeni bir strateji ekler veya mevcut olanı günceller."""
     print("\n--- [DATABASE: YAZMA] add_or_update_strategy çağrıldı. ---")
-    print(f"[YAZMA - Adım 1] Gelen strateji verisi: {strategy_config}")
     try:
         params_json = json.dumps(strategy_config.get("strategy_params", {}))
         symbols_json = json.dumps(strategy_config.get("symbols", []))
-        print(f"[YAZMA - Adım 2] JSON'a çevirme BAŞARILI.")
     except Exception as e:
         print(f"[YAZMA - HATA] JSON'a çevirme sırasında hata: {e}")
         return
@@ -79,6 +83,7 @@ def add_or_update_strategy(strategy_config):
             print(f"[YAZMA - HATA] SQL sorgusunda hata: {e}")
 
 def remove_strategy(strategy_id):
+    """Veritabanından bir stratejiyi ID'sine göre siler."""
     with db_lock:
         with get_db_connection() as conn:
             conn.execute("DELETE FROM strategies WHERE id = ?", (strategy_id,))
@@ -86,11 +91,10 @@ def remove_strategy(strategy_id):
     print(f"--- [DATABASE] Strateji (ID: {strategy_id}) silindi. ---")
 
 def get_all_strategies():
-    print("\n--- [DATABASE: OKUMA] get_all_strategies çağrıldı. ---")
+    """Veritabanındaki tüm stratejileri bir liste olarak döndürür."""
     with db_lock:
         with get_db_connection() as conn:
             strategies_raw = conn.execute("SELECT * FROM strategies").fetchall()
-    print(f"[OKUMA - Adım 1] Veritabanından çekilen HAM VERİ (Satır sayısı: {len(strategies_raw)})")
     result = []
     if not strategies_raw:
         return []
@@ -103,12 +107,10 @@ def get_all_strategies():
         except Exception as e:
             print(f"[OKUMA - HATA] Bir strateji işlenirken hata (ID: {s_row.get('id')}): {e}")
             continue
-    print(f"[OKUMA - Adım 4] Fonksiyondan döndürülen nihai sonuç: {result}")
     return result
 
-# --- Pozisyon Yönetim Fonksiyonları (EKSİK OLAN KISIM) ---
-
 def update_position(strategy_id, symbol, position, entry_price):
+    """Bir stratejinin pozisyon durumunu veritabanında günceller."""
     with db_lock:
         with get_db_connection() as conn:
             conn.execute("""
@@ -120,25 +122,35 @@ def update_position(strategy_id, symbol, position, entry_price):
             conn.commit()
 
 def get_positions_for_strategy(strategy_id):
+    """Belirli bir stratejiye ait tüm pozisyonları döndürür."""
     with db_lock:
         with get_db_connection() as conn:
             positions = conn.execute("SELECT symbol, position, entry_price FROM positions WHERE strategy_id = ?", (strategy_id,)).fetchall()
             return {p['symbol']: {'position': p['position'], 'entry_price': p['entry_price']} for p in positions}
 
-# --- Alarm Yönetim Fonksiyonları (EKSİK OLAN KISIM) ---
-
-def log_alarm_db(symbol, signal, price):
+# DÜZELTME: log_alarm_db fonksiyonu artık strategy_id alacak.
+def log_alarm_db(strategy_id, symbol, signal, price):
+    """Bir alarmı, ilişkili olduğu strateji ID'si ile birlikte veritabanına kaydeder."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with db_lock:
         with get_db_connection() as conn:
-            conn.execute("INSERT INTO alarms (timestamp, symbol, signal, price) VALUES (?, ?, ?, ?)",
-                         (timestamp, symbol, signal, price))
+            conn.execute("INSERT INTO alarms (strategy_id, timestamp, symbol, signal, price) VALUES (?, ?, ?, ?, ?)",
+                         (strategy_id, timestamp, symbol, signal, price))
             conn.commit()
-    print(f"--- [DATABASE] Alarm loglandı: {symbol} - {signal} ---")
+    print(f"--- [DATABASE] Alarm loglandı: Strateji({strategy_id}) - {symbol} - {signal} ---")
 
+# DÜZELTME: Sorgu, artık sadece aktif stratejilere ait alarmları getirecek.
 def get_alarm_history_db(limit=50):
+    """Sadece aktif ('running') olan stratejilerden gelen son alarmları döndürür."""
     with db_lock:
         with get_db_connection() as conn:
-            query = "SELECT timestamp as Zaman, symbol as Sembol, signal as Sinyal, price as Fiyat FROM alarms ORDER BY id DESC LIMIT ?"
+            query = """
+                SELECT a.timestamp as Zaman, a.symbol as Sembol, a.signal as Sinyal, a.price as Fiyat
+                FROM alarms a
+                JOIN strategies s ON a.strategy_id = s.id
+                WHERE s.status = 'running'
+                ORDER BY a.id DESC
+                LIMIT ?
+            """
             df = pd.read_sql_query(query, conn, params=(limit,))
             return df

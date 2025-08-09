@@ -1,50 +1,59 @@
-# multi_worker.py (Çift Çalışmayı Engelleyen Lock File Mekanizmalı Nihai Hali)
+# multi_worker.py (Sinyal Yakalama ve Güvenli Kapanma Mekanizmalı Nihai Hali)
 
 import json
 import time
 import threading
 import pandas as pd
 import websocket
-import os  # Lock file için eklendi
-import sys  # Lock file için eklendi
+import os
+import sys
+import signal  # Sinyal yakalama için eklendi
 from datetime import datetime
 
+# --- Proje Modülleri ---
 from utils import get_binance_klines
 from indicators import generate_all_indicators
 from signals import generate_signals
 from telegram_alert import send_telegram_message
 from database import (
-    initialize_db,
-    get_all_strategies,
-    update_position,
-    get_positions_for_strategy,
-    log_alarm_db
+    initialize_db, get_all_strategies, update_position,
+    get_positions_for_strategy, log_alarm_db
 )
 
-# --- YENİ: Lock File Mekanizması ---
+# --- Lock File Mekanizması ---
 LOCK_FILE = "multi_worker.lock"
 
 
 def create_lock_file():
-    """Script'in çalıştığını belirtmek için bir kilit dosyası oluşturur."""
     if os.path.exists(LOCK_FILE):
-        return False  # Kilit dosyası zaten var, başka bir kopya çalışıyor.
+        return False
     with open(LOCK_FILE, "w") as f:
         f.write(str(os.getpid()))
     return True
 
 
 def remove_lock_file():
-    """Script kapanırken kilit dosyasını kaldırır."""
     if os.path.exists(LOCK_FILE):
-        os.remove(LOCK_FILE)
+        try:
+            os.remove(LOCK_FILE)
+            print("✅ Kilit dosyası başarıyla kaldırıldı.")
+        except OSError as e:
+            print(f"⚠️ Kilit dosyası kaldırılamadı: {e}")
 
 
-# --- Lock File Mekanizması Sonu ---
+# --- YENİ: Sinyal Yakalama Fonksiyonu ---
+def graceful_shutdown(signum, frame):
+    """pkill gibi komutlardan gelen sinyalleri yakalar ve güvenli kapanış sağlar."""
+    print(f"\n🛑 Kapanma sinyali ({signum}) alındı. Tüm işlemler durduruluyor...")
+    # Ana döngünün durması için global bir event'i set edebiliriz veya doğrudan çıkabiliriz.
+    # Bu basit yapı için doğrudan çıkış yeterlidir.
+    # Daha karmaşık sistemlerde çalışan thread'lere durma sinyali gönderilir.
+    sys.exit(0)  # sys.exit() finally bloğunu tetikler.
 
 
+# --- StrategyRunner Sınıfı (İçeriğinde değişiklik yok) ---
 class StrategyRunner:
-    # ... (StrategyRunner sınıfının içeriği önceki cevaptaki ile tamamen aynı kalacak) ...
+    # ... (Bu sınıfın içeriği önceki cevaplardaki ile tamamen aynı kalacak) ...
     # ... Hiçbir değişiklik yapmanıza gerek yok ...
     def __init__(self, strategy_config):
         self.config = strategy_config
@@ -232,6 +241,7 @@ def main_manager():
     running_strategies = {}
     while True:
         try:
+            # ... (Bu döngünün içeriği aynı kalacak) ...
             strategies_in_db = get_all_strategies()
             db_ids = {s['id'] for s in strategies_in_db}
             running_ids = set(running_strategies.keys())
@@ -249,23 +259,24 @@ def main_manager():
                     print(f"Strateji '{running_strategies[strategy_id].name}' veritabanından silinmiş, durduruluyor.")
                     running_strategies[strategy_id].stop()
                     del running_strategies[strategy_id]
-
         except Exception as e:
             print(f"Yönetici döngüsünde beklenmedik hata: {e}")
         time.sleep(5)
 
 
 if __name__ == "__main__":
-    # YENİ: Script başlangıcında kilit kontrolü
     if not create_lock_file():
         print("❌ HATA: multi_worker.py zaten çalışıyor. Yeni bir kopya başlatılamadı.")
-        sys.exit(1)  # Script'i sonlandır
+        sys.exit(1)
+
+    # YENİ: SIGTERM (pkill) ve SIGINT (Ctrl+C) sinyallerini yakala
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+    signal.signal(signal.SIGINT, graceful_shutdown)
 
     try:
         main_manager()
-    except KeyboardInterrupt:
-        print("\nKeyboardInterrupt algılandı. Çıkılıyor...")
     finally:
-        # YENİ: Script sonlandığında kilit dosyasını kaldır
+        # Script normal bir şekilde sonlansa da, bir sinyal ile sonlansa da
+        # bu blok çalışacak ve kilit dosyasını kaldıracaktır.
         remove_lock_file()
-        print("Temizlik yapıldı ve kilit dosyası kaldırıldı.")
+        print("Temizlik yapıldı ve script sonlandı.")

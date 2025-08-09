@@ -1,10 +1,12 @@
-# multi_worker.py (Veritabanı Entegreli, Zenginleştirilmiş Bildirimli Nihai Hali)
+# multi_worker.py (Çift Çalışmayı Engelleyen Lock File Mekanizmalı Nihai Hali)
 
 import json
 import time
 import threading
 import pandas as pd
 import websocket
+import os  # Lock file için eklendi
+import sys  # Lock file için eklendi
 from datetime import datetime
 
 from utils import get_binance_klines
@@ -19,8 +21,31 @@ from database import (
     log_alarm_db
 )
 
+# --- YENİ: Lock File Mekanizması ---
+LOCK_FILE = "multi_worker.lock"
+
+
+def create_lock_file():
+    """Script'in çalıştığını belirtmek için bir kilit dosyası oluşturur."""
+    if os.path.exists(LOCK_FILE):
+        return False  # Kilit dosyası zaten var, başka bir kopya çalışıyor.
+    with open(LOCK_FILE, "w") as f:
+        f.write(str(os.getpid()))
+    return True
+
+
+def remove_lock_file():
+    """Script kapanırken kilit dosyasını kaldırır."""
+    if os.path.exists(LOCK_FILE):
+        os.remove(LOCK_FILE)
+
+
+# --- Lock File Mekanizması Sonu ---
+
 
 class StrategyRunner:
+    # ... (StrategyRunner sınıfının içeriği önceki cevaptaki ile tamamen aynı kalacak) ...
+    # ... Hiçbir değişiklik yapmanıza gerek yok ...
     def __init__(self, strategy_config):
         self.config = strategy_config
         self.id = strategy_config['id']
@@ -231,4 +256,16 @@ def main_manager():
 
 
 if __name__ == "__main__":
-    main_manager()
+    # YENİ: Script başlangıcında kilit kontrolü
+    if not create_lock_file():
+        print("❌ HATA: multi_worker.py zaten çalışıyor. Yeni bir kopya başlatılamadı.")
+        sys.exit(1)  # Script'i sonlandır
+
+    try:
+        main_manager()
+    except KeyboardInterrupt:
+        print("\nKeyboardInterrupt algılandı. Çıkılıyor...")
+    finally:
+        # YENİ: Script sonlandığında kilit dosyasını kaldır
+        remove_lock_file()
+        print("Temizlik yapıldı ve kilit dosyası kaldırıldı.")

@@ -141,14 +141,14 @@ def log_alarm_db(strategy_id, symbol, signal, price):
 
 # DÜZELTME: Sorgu, artık sadece aktif stratejilere ait alarmları getirecek.
 def get_alarm_history_db(limit=50):
-    """Sadece aktif ('running') olan stratejilerden gelen son alarmları döndürür."""
+    """Sadece veritabanında MEVCUT olan stratejilerden gelen son alarmları döndürür."""
     with db_lock:
         with get_db_connection() as conn:
+            # JOIN, bir strateji silindiğinde alarmlarının da gizlenmesini sağlar.
             query = """
                 SELECT a.timestamp as Zaman, a.symbol as Sembol, a.signal as Sinyal, a.price as Fiyat
                 FROM alarms a
                 JOIN strategies s ON a.strategy_id = s.id
-                WHERE s.status = 'running'
                 ORDER BY a.id DESC
                 LIMIT ?
             """

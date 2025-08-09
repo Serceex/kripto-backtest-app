@@ -15,9 +15,10 @@ from signals import generate_signals, filter_signals_with_trend, add_higher_time
 from plots import plot_chart, plot_performance_summary
 from telegram_alert import send_telegram_message
 from alarm_log import log_alarm, get_alarm_history
-from database import (add_or_update_strategy, remove_strategy,
-                      get_all_strategies, initialize_db)
-from alarm_log import get_alarm_history
+from database import (
+    add_or_update_strategy, remove_strategy,
+    get_all_strategies, initialize_db, get_alarm_history_db)
+
 
 
 initialize_db()
@@ -1133,16 +1134,15 @@ elif page == "Detaylı Grafik Analizi":
 # Alarmlar ve Telegram Durumu Paneli
 
 st.sidebar.header("🔔 Son Alarmlar")
-alarms = get_alarm_history(limit=5)
+# DÜZELTME: Alarmlar artık doğrudan veritabanından, daha güvenilir sorgu ile okunuyor.
+alarms = get_alarm_history_db(limit=5)
 if alarms is not None and not alarms.empty:
     for _, row in alarms.iterrows():
-        # Fiyat bilgisini de formatlayarak ekliyoruz
         fiyat_str = f" @ {row['Fiyat']:.7f}" if pd.notna(row['Fiyat']) else ""
 
-        # Sinyal türüne göre emoji belirle
         signal_text = row['Sinyal']
-        if "KAPAT" in signal_text:
-            emoji = "✅"
+        if "KAPAT" in signal_text or "Kârla" in signal_text or "Zararla" in signal_text:
+            emoji = "✅" if "Kârla" in signal_text else "❌" if "Zararla" in signal_text else "🏁"
         elif "LONG" in signal_text:
             emoji = "🟢"
         elif "SHORT" in signal_text:
@@ -1152,7 +1152,6 @@ if alarms is not None and not alarms.empty:
 
         st.sidebar.write(f"{emoji} **{row['Sembol']}**: {signal_text}{fiyat_str}")
         st.sidebar.caption(f"🕰️ {row['Zaman']}")
-
 else:
     st.sidebar.write("Henüz alarm yok.")
 

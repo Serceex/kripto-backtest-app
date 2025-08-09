@@ -1,4 +1,4 @@
-# multi_worker.py (Sinyal Yakalama ve Güvenli Kapanma Mekanizmalı Nihai Hali)
+# multi_worker.py (Parametre hatası düzeltilmiş, en kararlı hali)
 
 import json
 import time
@@ -7,7 +7,7 @@ import pandas as pd
 import websocket
 import os
 import sys
-import signal  # Sinyal yakalama için eklendi
+import signal
 from datetime import datetime
 
 # --- Proje Modülleri ---
@@ -20,15 +20,13 @@ from database import (
     get_positions_for_strategy, log_alarm_db
 )
 
+# --- Lock File Mekanizması ---
 try:
-    # Script'in bulunduğu dizinin tam yolunu al
     project_dir = os.path.dirname(os.path.abspath(__file__))
-    # Kilit dosyasının tam yolunu bu dizine göre oluştur
     LOCK_FILE = os.path.join(project_dir, "multi_worker.lock")
-    print(f"✅ Kilit dosyası yolu belirlendi: {LOCK_FILE}")
-except Exception as e:
-    print(f"⚠️ Kilit dosyası için mutlak yol belirlenemedi, göreceli yol kullanılacak: {e}")
+except Exception:
     LOCK_FILE = "multi_worker.lock"
+
 
 def create_lock_file():
     if os.path.exists(LOCK_FILE):
@@ -36,6 +34,7 @@ def create_lock_file():
     with open(LOCK_FILE, "w") as f:
         f.write(str(os.getpid()))
     return True
+
 
 def remove_lock_file():
     if os.path.exists(LOCK_FILE):
@@ -45,14 +44,14 @@ def remove_lock_file():
         except OSError as e:
             print(f"⚠️ Kilit dosyası kaldırılamadı: {e}")
 
+
 def graceful_shutdown(signum, frame):
     print(f"\n🛑 Kapanma sinyali ({signum}) alındı. Tüm işlemler durduruluyor...")
     sys.exit(0)
 
-# --- StrategyRunner Sınıfı (İçeriğinde değişiklik yok) ---
+
 class StrategyRunner:
-    # ... (Bu sınıfın içeriği önceki cevaplardaki ile tamamen aynı kalacak) ...
-    # ... Hiçbir değişiklik yapmanıza gerek yok ...
+    # ... (Bu sınıfın içeriğinde hiçbir değişiklik yok, olduğu gibi kalabilir) ...
     def __init__(self, strategy_config):
         self.config = strategy_config
         self.id = strategy_config['id']
@@ -224,7 +223,9 @@ class StrategyRunner:
                    f"_Finansal Tavsiye İçermez._")
 
         print("--- YENİ POZİSYON SİNYALİ ---\n" + message + "\n-----------------------------")
-        log_alarm_db(self.id, f"Yeni {signal_type.upper()} Pozisyon ({self.name})", entry_price)
+
+        # ***** İŞTE DÜZELTİLEN SATIR BURASI *****
+        log_alarm_db(self.id, symbol, f"Yeni {signal_type.upper()} Pozisyon ({self.name})", entry_price)
 
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")
@@ -239,7 +240,6 @@ def main_manager():
     running_strategies = {}
     while True:
         try:
-            # ... (Bu döngünün içeriği aynı kalacak) ...
             strategies_in_db = get_all_strategies()
             db_ids = {s['id'] for s in strategies_in_db}
             running_ids = set(running_strategies.keys())
@@ -267,14 +267,11 @@ if __name__ == "__main__":
         print("❌ HATA: multi_worker.py zaten çalışıyor. Yeni bir kopya başlatılamadı.")
         sys.exit(1)
 
-    # YENİ: SIGTERM (pkill) ve SIGINT (Ctrl+C) sinyallerini yakala
     signal.signal(signal.SIGTERM, graceful_shutdown)
     signal.signal(signal.SIGINT, graceful_shutdown)
 
     try:
         main_manager()
     finally:
-        # Script normal bir şekilde sonlansa da, bir sinyal ile sonlansa da
-        # bu blok çalışacak ve kilit dosyasını kaldıracaktır.
         remove_lock_file()
         print("Temizlik yapıldı ve script sonlandı.")

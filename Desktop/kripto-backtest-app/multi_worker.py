@@ -20,9 +20,15 @@ from database import (
     get_positions_for_strategy, log_alarm_db
 )
 
-# --- Lock File Mekanizması ---
-LOCK_FILE = "multi_worker.lock"
-
+try:
+    # Script'in bulunduğu dizinin tam yolunu al
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    # Kilit dosyasının tam yolunu bu dizine göre oluştur
+    LOCK_FILE = os.path.join(project_dir, "multi_worker.lock")
+    print(f"✅ Kilit dosyası yolu belirlendi: {LOCK_FILE}")
+except Exception as e:
+    print(f"⚠️ Kilit dosyası için mutlak yol belirlenemedi, göreceli yol kullanılacak: {e}")
+    LOCK_FILE = "multi_worker.lock"
 
 def create_lock_file():
     if os.path.exists(LOCK_FILE):
@@ -30,7 +36,6 @@ def create_lock_file():
     with open(LOCK_FILE, "w") as f:
         f.write(str(os.getpid()))
     return True
-
 
 def remove_lock_file():
     if os.path.exists(LOCK_FILE):
@@ -40,16 +45,9 @@ def remove_lock_file():
         except OSError as e:
             print(f"⚠️ Kilit dosyası kaldırılamadı: {e}")
 
-
-# --- YENİ: Sinyal Yakalama Fonksiyonu ---
 def graceful_shutdown(signum, frame):
-    """pkill gibi komutlardan gelen sinyalleri yakalar ve güvenli kapanış sağlar."""
     print(f"\n🛑 Kapanma sinyali ({signum}) alındı. Tüm işlemler durduruluyor...")
-    # Ana döngünün durması için global bir event'i set edebiliriz veya doğrudan çıkabiliriz.
-    # Bu basit yapı için doğrudan çıkış yeterlidir.
-    # Daha karmaşık sistemlerde çalışan thread'lere durma sinyali gönderilir.
-    sys.exit(0)  # sys.exit() finally bloğunu tetikler.
-
+    sys.exit(0)
 
 # --- StrategyRunner Sınıfı (İçeriğinde değişiklik yok) ---
 class StrategyRunner:

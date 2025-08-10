@@ -216,11 +216,12 @@ class StrategyRunner:
         signal_emoji = "🚀" if signal_type.upper() == "LONG" else "📉"
 
         message = (f"{signal_emoji} *Yeni Pozisyon: {symbol} - {signal_type.upper()}*\n\n"
+                   f"🔹 *Strateji:* `{self.name}`\n"
                    f"➡️ *Giriş:* `{entry_price:.4f}$`\n\n"
                    f"💰 *Kâr Al Seviyeleri:*\n`{tp_text}`\n\n"
                    f"🛡️ *Stop:*\n`{stop_text}`\n\n"
-                   f"📌TP1 sonrası stop girişe çekilmelidir._\n"
-                   f"📢Yatırım tavsiyesi değildir.❗_")
+                   f"📌 TP1 sonrası stop girişe çekilmelidir._\n"
+                   f"📢 Yatırım tavsiyesi değildir.❗_")
 
         print("--- YENİ POZİSYON SİNYALİ ---\n" + message + "\n-----------------------------")
 

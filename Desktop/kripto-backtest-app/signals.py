@@ -1,57 +1,101 @@
+# signals.py (Sinyal Mantığı Revize Edilmiş Tam Hali)
+
 import numpy as np
 import pandas as pd
 
+# PuzzleStrategy'yi ana sinyal mekanizması olarak kullanabilmek için import ediyoruz.
+# puzzle_strategy.py dosyasının bu dosya ile aynı dizinde olduğundan emin olun.
+try:
+    from puzzle_strategy import PuzzleStrategy
+except ImportError:
+    print("UYARI: puzzle_strategy.py bulunamadı. Puzzle Bot özelliği çalışmayacaktır.")
+    PuzzleStrategy = None
+
 
 def generate_signals(df,
-                     use_rsi=True,
-                     rsi_buy=30,
-                     rsi_sell=70,
-                     use_macd=True,
-                     macd_fast=12,
-                     macd_slow=26,
-                     macd_signal=9,
-                     use_bb=True,
-                     use_adx=True,
-                     adx_threshold=25,
-                     signal_mode='or',
-                     signal_direction='Both',
                      use_puzzle_bot=False,
-                     **kwargs):  # <-- BU SATIRI EKLEYİN
+                     puzzle_config=None,
+                     **kwargs):
     """
-    Bu, orijinal sinyal üretme fonksiyonunuzdur.
-    Çoklu Zaman Dilimi Analizi (MTA) filtresi OLMADAN çalışır.
+    Sinyal üretme fonksiyonu.
+    'use_puzzle_bot' True ise PuzzleStrategy'yi, değilse standart gösterge mantığını kullanır.
     """
     df = df.copy()
 
-    # Eksik kolonları doldur
+    # --- BÖLÜM 1: PUZZLE STRATEJİ BOTU MANTIĞI ---
+    if use_puzzle_bot:
+        # Eğer PuzzleStrategy başarıyla import edilemediyse veya etkin değilse, kullanıcıyı bilgilendir.
+        if PuzzleStrategy is None:
+            print("HATA: PuzzleStrategy sınıfı yüklenemediği için Puzzle Bot çalıştırılamıyor.")
+            df['Signal'] = 'Bekle'
+            df['Buy_Signal'] = False
+            df['Sell_Signal'] = False
+            return df
+
+        # Arayüzden özel bir konfigürasyon gelmezse, varsayılan bir tane kullan.
+        if puzzle_config is None:
+            print("UYARI: Puzzle Strateji için özel bir konfigürasyon bulunamadı. Varsayılan kullanılıyor.")
+            puzzle_config = {
+                'indicators': ['RSI', 'MACD'],
+                'weights': {'RSI': 0.5, 'MACD': 0.5},
+                'thresholds': {
+                    'RSI': {'buy': kwargs.get('rsi_buy', 30), 'sell': kwargs.get('rsi_sell', 70)},
+                    'MACD': {},
+                    'ADX': {'min': 20}
+                },
+                'signal_mode': kwargs.get('signal_direction', 'Both'),
+                'min_score': 0.6  # Pozisyona girmek için gereken minimum skor
+            }
+
+        print("🧩 Puzzle Strateji Botu çalıştırılıyor...")
+        puzzle_bot = PuzzleStrategy(config=puzzle_config)
+        df_with_puzzle_signals = puzzle_bot.generate(df)
+
+        # Puzzle bot'un ürettiği sinyalleri ana DataFrame'e ata
+        df['Signal'] = df_with_puzzle_signals['PuzzleSignal']
+        df['Buy_Signal'] = (df['Signal'] == 'Al')
+        # Hem 'Sat' (Long kapatma) hem de 'Short' (yeni Short pozisyon) sinyallerini Sell_Signal olarak kabul et
+        df['Sell_Signal'] = (df['Signal'] == 'Sat') | (df['Signal'] == 'Short')
+
+        print(f"📈 Puzzle Bot - Ham Al Sinyali: {df['Buy_Signal'].sum()}")
+        print(f"📉 Puzzle Bot - Ham Sat/Short Sinyali: {df['Sell_Signal'].sum()}")
+
+        return df
+
+    # --- BÖLÜM 2: STANDART GÖSTERGE MANTIĞI ---
+
+    # Eksik kolonları doldurarak hataların önüne geç
     required_cols = ['RSI', 'MACD', 'MACD_signal', 'bb_lband', 'bb_hband', 'ADX']
     for col in required_cols:
         if col not in df.columns:
             df[col] = np.nan
 
-    # Şart listeleri
+    # Strateji parametrelerini kwargs'tan al, yoksa varsayılan değerleri kullan
+    signal_mode = kwargs.get('signal_mode', 'and')  # Varsayılan: AND (Teyitli Sinyal)
+    signal_direction = kwargs.get('signal_direction', 'Both')
+
     buy_conditions = []
     sell_conditions = []
 
     # Long (Al) sinyali şartları
-    if use_rsi:
-        buy_conditions.append(df['RSI'] < rsi_buy)
-    if use_macd:
+    if kwargs.get('use_rsi', False):
+        buy_conditions.append(df['RSI'] < kwargs.get('rsi_buy', 30))
+    if kwargs.get('use_macd', False):
         buy_conditions.append(df['MACD'] > df['MACD_signal'])
-    if use_bb:
+    if kwargs.get('use_bb', False):
         buy_conditions.append(df['Close'] < df['bb_lband'])
-    if use_adx:
-        buy_conditions.append(df['ADX'] > adx_threshold)
+    if kwargs.get('use_adx', False):
+        buy_conditions.append(df['ADX'] > kwargs.get('adx_threshold', 25))
 
     # Short (Sat) sinyali şartları
-    if use_rsi:
-        sell_conditions.append(df['RSI'] > rsi_sell)
-    if use_macd:
+    if kwargs.get('use_rsi', False):
+        sell_conditions.append(df['RSI'] > kwargs.get('rsi_sell', 70))
+    if kwargs.get('use_macd', False):
         sell_conditions.append(df['MACD'] < df['MACD_signal'])
-    if use_bb:
+    if kwargs.get('use_bb', False):
         sell_conditions.append(df['Close'] > df['bb_hband'])
-    if use_adx:
-        sell_conditions.append(df['ADX'] > adx_threshold)
+    if kwargs.get('use_adx', False):
+        sell_conditions.append(df['ADX'] > kwargs.get('adx_threshold', 25))
 
     # Koşulları birleştirme fonksiyonu
     def combine_conditions(conditions):
@@ -59,38 +103,32 @@ def generate_signals(df,
             return pd.Series([False] * len(df), index=df.index)
         if signal_mode == 'and':
             return pd.concat(conditions, axis=1).all(axis=1)
-        else:
+        else:  # or
             return pd.concat(conditions, axis=1).any(axis=1)
 
-    # Al ve Sat sinyalleri üret
+    # Al ve Sat sinyallerini üret
     df['Buy_Signal'] = combine_conditions(buy_conditions)
     df['Sell_Signal'] = combine_conditions(sell_conditions)
 
-    # Ana Signal kolonu üretimi
+    # Ana 'Signal' sütununu üret
     df['Signal'] = 'Bekle'
     if signal_direction == 'Long':
         df.loc[df['Buy_Signal'], 'Signal'] = 'Al'
-        df.loc[df['Sell_Signal'], 'Signal'] = 'Sat'  # Long pozisyon kapama
+        df.loc[df['Sell_Signal'], 'Signal'] = 'Sat'  # Long pozisyonu kapama sinyali
     elif signal_direction == 'Short':
-        df.loc[df['Sell_Signal'], 'Signal'] = 'Sat'
-        df.loc[df['Buy_Signal'], 'Signal'] = 'Al'  # Short kapama
-    else:  # Both
+        df.loc[df['Sell_Signal'], 'Signal'] = 'Short'  # Yeni Short pozisyonu açma sinyali
+        df.loc[df['Buy_Signal'], 'Signal'] = 'Al'  # Short pozisyonu kapama sinyali
+    else:  # Both (Long & Short)
         df.loc[df['Buy_Signal'], 'Signal'] = 'Al'
-        df.loc[df['Sell_Signal'], 'Signal'] = 'Sat'
+        df.loc[df['Sell_Signal'], 'Signal'] = 'Short'
 
-    # Güvenlik: Signal kolonu numeric değilse sayısal karşılığı da üret (opsiyonel)
-    df['Signal_Value'] = df['Signal'].map({'Al': 1, 'Sat': -1, 'Bekle': 0})
-
-    # Uyarı: Hiçbir sinyal oluşmamışsa bilgilendirme
-    if (df['Signal'] == 'Bekle').all():
-        print("⚠️ Hiçbir sinyal üretilmedi. Seçilen göstergelerden hiçbiri tetiklenmedi.")
-
-    # Sinyal istatistikleri
-    print(f"📈 Ham Al sinyali sayısı: {df['Buy_Signal'].sum()}")
-    print(f"📉 Ham Sat sinyali sayısı: {df['Sell_Signal'].sum()}")
+    print(f"📈 Standart Mod ({signal_mode.upper()}) - Ham Al Sinyali: {df['Buy_Signal'].sum()}")
+    print(f"📉 Standart Mod ({signal_mode.upper()}) - Ham Sat/Short Sinyali: {df['Sell_Signal'].sum()}")
 
     return df
 
+
+# --- Diğer Fonksiyonlar (Değişiklik Gerekmiyor) ---
 
 def backtest_signals(df):
     trades = []
@@ -108,22 +146,18 @@ def backtest_signals(df):
                 position = 'Long'
                 entry_price = price
                 entry_time = time_idx
-            elif signal == 'Sat':
+            elif signal == 'Short':  # 'Sat' yerine 'Short' olarak değiştirildi
                 position = 'Short'
                 entry_price = price
                 entry_time = time_idx
 
         elif position == 'Long':
-            if signal == 'Sat':
+            if signal == 'Sat' or signal == 'Short':  # Pozisyonu kapatmak için her iki sinyal de kullanılabilir
                 exit_price = price
                 ret = (exit_price - entry_price) / entry_price * 100
                 trades.append({
-                    'Pozisyon': 'Long',
-                    'Giriş Zamanı': entry_time,
-                    'Çıkış Zamanı': time_idx,
-                    'Giriş Fiyatı': entry_price,
-                    'Çıkış Fiyatı': exit_price,
-                    'Getiri (%)': round(ret, 2)
+                    'Pozisyon': 'Long', 'Giriş Zamanı': entry_time, 'Çıkış Zamanı': time_idx,
+                    'Giriş Fiyatı': entry_price, 'Çıkış Fiyatı': exit_price, 'Getiri (%)': round(ret, 2)
                 })
                 position = None
 
@@ -132,68 +166,30 @@ def backtest_signals(df):
                 exit_price = price
                 ret = (entry_price - exit_price) / entry_price * 100
                 trades.append({
-                    'Pozisyon': 'Short',
-                    'Giriş Zamanı': entry_time,
-                    'Çıkış Zamanı': time_idx,
-                    'Giriş Fiyatı': entry_price,
-                    'Çıkış Fiyatı': exit_price,
-                    'Getiri (%)': round(ret, 2)
+                    'Pozisyon': 'Short', 'Giriş Zamanı': entry_time, 'Çıkış Zamanı': time_idx,
+                    'Giriş Fiyatı': entry_price, 'Çıkış Fiyatı': exit_price, 'Getiri (%)': round(ret, 2)
                 })
                 position = None
 
-    # Pozisyon açık kalırsa son kaydı ekle
     if position is not None:
         trades.append({
-            'Pozisyon': position,
-            'Giriş Zamanı': entry_time,
-            'Çıkış Zamanı': pd.NaT,
-            'Giriş Fiyatı': entry_price,
-            'Çıkış Fiyatı': np.nan,
-            'Getiri (%)': np.nan
+            'Pozisyon': position, 'Giriş Zamanı': entry_time, 'Çıkış Zamanı': pd.NaT,
+            'Giriş Fiyatı': entry_price, 'Çıkış Fiyatı': np.nan, 'Getiri (%)': np.nan
         })
 
     return pd.DataFrame(trades)
 
 
-def create_signal_column(df):
-    df['Signal'] = 'Bekle'
-    df.loc[df['Buy_Signal'] == True, 'Signal'] = 'Al'
-    df.loc[df['Sell_Signal'] == True, 'Signal'] = 'Sat'
-    return df
-
-
-# --- YENİ EKLENEN FONKSİYONLAR ---
-
 def add_higher_timeframe_trend(df_lower, df_higher, trend_ema_period=50):
     """
     Üst zaman dilimindeki trendi hesaplar ve alt zaman dilimi verisine ekler.
-
-    Args:
-        df_lower (pd.DataFrame): Alt zaman dilimi verisi (örn: 1h).
-        df_higher (pd.DataFrame): Üst zaman dilimi verisi (örn: 4h).
-        trend_ema_period (int): Trendi belirlemek için kullanılacak EMA periyodu.
-
-    Returns:
-        pd.DataFrame: Trend bilgisini içeren alt zaman dilimi verisi.
     """
-    # Üst zaman diliminde trendi belirle
     df_higher['Trend_EMA'] = pd.Series.ewm(df_higher['Close'], span=trend_ema_period, adjust=False).mean()
     df_higher['Trend'] = np.where(df_higher['Close'] > df_higher['Trend_EMA'], 'Up', 'Down')
-
-    # Sadece trend bilgisini ve zaman damgasını al
     df_trend = df_higher[['Trend']].copy()
 
-    # Alt zaman dilimi verisine, kendi zaman damgasına en yakın olan
-    # üst zaman dilimi trend bilgisini ekle.
-    # 'asof' metodu, her bir alt zaman dilimi barı için, o andaki veya
-    # hemen önceki üst zaman dilimi trendini bulur.
-    df_merged = pd.merge_asof(df_lower.sort_index(),
-                              df_trend.sort_index(),
-                              left_index=True,
-                              right_index=True,
-                              direction='backward')
-
-    # Olası NaN değerleri bir önceki geçerli trend ile doldur
+    df_merged = pd.merge_asof(df_lower.sort_index(), df_trend.sort_index(),
+                              left_index=True, right_index=True, direction='backward')
     df_merged['Trend'] = df_merged['Trend'].ffill()
 
     return df_merged
@@ -202,23 +198,14 @@ def add_higher_timeframe_trend(df_lower, df_higher, trend_ema_period=50):
 def filter_signals_with_trend(df):
     """
     Mevcut sinyalleri üst zaman dilimi trendine göre filtreler.
-
-    Args:
-        df (pd.DataFrame): 'Signal' ve 'Trend' kolonlarını içeren DataFrame.
-
-    Returns:
-        pd.DataFrame: Trende göre filtrelenmiş sinyal kolonunu içeren DataFrame.
     """
-    # Trend "Up" iken "Sat" sinyali gelirse, bunu "Bekle" olarak değiştir.
-    # Ancak "Al" sinyallerine dokunma.
-    df.loc[(df['Trend'] == 'Up') & (df['Signal'] == 'Sat'), 'Signal'] = 'Bekle'
+    # Trend "Up" iken "Short" sinyali gelirse, bunu "Bekle" olarak değiştir.
+    df.loc[(df['Trend'] == 'Up') & (df['Signal'] == 'Short'), 'Signal'] = 'Bekle'
 
     # Trend "Down" iken "Al" sinyali gelirse, bunu "Bekle" olarak değiştir.
-    # Ancak "Sat" sinyallerine dokunma (Short pozisyonlar için).
     df.loc[(df['Trend'] == 'Down') & (df['Signal'] == 'Al'), 'Signal'] = 'Bekle'
 
-    # Sinyal istatistiklerini güncelle
-    print(f"📈 Trend Filtresi Sonrası Al sinyali sayısı: {df[df['Signal'] == 'Al'].shape[0]}")
-    print(f"📉 Trend Filtresi Sonrası Sat sinyali sayısı: {df[df['Signal'] == 'Sat'].shape[0]}")
+    print(f"📈 Trend Filtresi Sonrası Al Sinyali: {df[df['Signal'] == 'Al'].shape[0]}")
+    print(f"📉 Trend Filtresi Sonrası Sat/Short Sinyali: {df[df['Signal'] == 'Short'].shape[0]}")
 
     return df

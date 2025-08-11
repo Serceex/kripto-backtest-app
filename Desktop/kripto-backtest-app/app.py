@@ -200,6 +200,9 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
                                    key="signal_mode_key")
         signal_direction = {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode]
 
+        signal_logic = st.selectbox("Sinyal Mantığı", ["AND (Teyitli)", "OR (Hızlı)"], index=0,
+                                    help="AND: Tüm aktif göstergeler aynı anda sinyal vermeli. OR: Herhangi bir göstergenin sinyali yeterli.")
+
         #st.subheader("İşlem Arası Bekleme")
         st.markdown("**İşlem Arası Bekleme**")
         cooldown_bars = st.slider("Bekleme (bar)", 0, 10, 3, key="cooldown_bars_key", label_visibility="collapsed")
@@ -261,14 +264,14 @@ strategy_params = {
     'take_profit_pct': take_profit_pct,
     'cooldown_bars': cooldown_bars,
 
-    'signal_mode': signal_mode,
-    'signal_direction': signal_direction,
+    'signal_mode': 'and' if signal_logic == "AND (Teyitli)" else 'or', # <-- YENİ SATIR
+    'signal_direction': {"Long & Short": "Both", "Long Only": "Long", "Short Only": "Short"}[signal_mode_direction],
     'use_puzzle_bot': use_puzzle_bot,
     'use_ml': use_ml,
     'use_mta': use_mta,
     'higher_timeframe': higher_timeframe,
     'trend_ema_period': trend_ema_period,
-'commission_pct': commission_pct,
+    'commission_pct': commission_pct,
     'use_trailing_stop': use_trailing_stop
 }
 

@@ -264,7 +264,7 @@ strategy_params = {
     'take_profit_pct': take_profit_pct,
     'cooldown_bars': cooldown_bars,
 
-     'ssignal_mode': 'and' if signal_logic == "AND (Teyitli)" else 'or',
+     'signal_mode': 'and' if signal_logic == "AND (Teyitli)" else 'or',
      'signal_direction': {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode],
 
     'use_puzzle_bot': use_puzzle_bot,

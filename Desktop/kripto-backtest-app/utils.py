@@ -1,8 +1,7 @@
 # utils.py (Yeniden Düzenlenmiş ve Modüler Hali)
-
+import streamlit as st
 from binance.client import Client
 import pandas as pd
-import streamlit as st
 import numpy as np
 
 # API bilgilerini streamlit secrets'tan al

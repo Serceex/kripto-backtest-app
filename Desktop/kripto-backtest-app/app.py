@@ -20,6 +20,63 @@ from database import (
     get_all_strategies, initialize_db, get_alarm_history_db)
 
 
+def apply_full_strategy_params(strategy):
+    """
+    Seçilen bir stratejinin tüm parametrelerini session_state'e uygular,
+    böylece kenar çubuğu yeniden yüklendiğinde bu değerlerle başlar.
+    """
+    params = strategy.get('strategy_params', {})
+    strategy_name = strategy.get('name', 'İsimsiz Strateji')
+
+    # Kenar Çubuğu -> Sinyal Kriterleri
+    st.session_state.use_rsi = params.get('use_rsi', True)
+    st.session_state.rsi_period = params.get('rsi_period', 14)
+    st.session_state.rsi_buy_key = params.get('rsi_buy', 30)
+    st.session_state.rsi_sell_key = params.get('rsi_sell', 70)
+
+    st.session_state.use_macd = params.get('use_macd', True)
+    st.session_state.macd_fast = params.get('macd_fast', 12)
+    st.session_state.macd_slow = params.get('macd_slow', 26)
+    st.session_state.macd_signal = params.get('macd_signal', 9)
+
+    st.session_state.use_bb = params.get('use_bb', False)
+    st.session_state.bb_period = params.get('bb_period', 20)
+    st.session_state.bb_std = params.get('bb_std', 2.0)
+
+    st.session_state.use_adx = params.get('use_adx', False)
+    st.session_state.adx_threshold_key = params.get('adx_threshold', 25)
+
+    # Expander -> Strateji Gelişmiş Ayarlar
+    direction_map = {"Long": "Long Only", "Short": "Short Only", "Both": "Long & Short"}
+    st.session_state.signal_mode_key = direction_map.get(params.get('signal_direction', 'Both'), "Long & Short")
+    st.session_state.signal_logic_key = "AND (Teyitli)" if params.get('signal_mode') == 'and' else "OR (Hızlı)"
+    st.session_state.cooldown_bars_key = params.get('cooldown_bars', 3)
+
+    # Stop-Loss
+    if params.get('atr_multiplier', 0) > 0:
+        st.session_state.sl_type_key = "ATR"
+        st.session_state.atr_multiplier_key = params.get('atr_multiplier', 2.0)
+    else:
+        st.session_state.sl_type_key = "Yüzde (%)"
+        st.session_state.stop_loss_pct_key = params.get('stop_loss_pct', 2.0)
+
+    # Take-Profit & Komisyon
+    st.session_state.trailing_stop_key = params.get('use_trailing_stop', True)
+    st.session_state.take_profit_pct_key = params.get('take_profit_pct', 5.0)
+    st.session_state.commission_pct_key = params.get('commission_pct', 0.1)
+
+    # Expander -> MTA
+    st.session_state.use_mta_key = params.get('use_mta', True)
+    st.session_state.higher_timeframe_key = params.get('higher_timeframe', '4h')
+    st.session_state.trend_ema_period_key = params.get('trend_ema_period', 50)
+
+    # Expander -> Diğer Parametreler
+    st.session_state.puzzle_bot = params.get('use_puzzle_bot', False)
+    st.session_state.ml_toggle = params.get('use_ml', False)
+
+    st.toast(f"'{strategy_name}' stratejisinin parametreleri yüklendi!", icon="✅")
+
+
 
 initialize_db()
 
@@ -239,58 +296,23 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
 
 
 
-# Strateji parametrelerini hazırla
 strategy_params = {
-    'sma': sma_period,
-    'ema': ema_period,
-    'bb_period': bb_period,
-    'bb_std': bb_std,
-
-    'rsi_buy': rsi_buy,
-    'rsi_sell': rsi_sell,
-    'rsi_period': rsi_period,
-    'macd_fast': macd_fast,
-    'macd_slow': macd_slow,
-    'macd_signal': macd_signal,
-    'adx_period': 14,
-    'adx_threshold': adx_threshold,
-    'use_rsi': use_rsi,
-    'use_macd': use_macd,
-    'use_bb': use_bb,
-    'use_adx': use_adx,
-
-    'stop_loss_pct': stop_loss_pct,      # Yüzde SL için bu kalıyor
-    'atr_multiplier': atr_multiplier,    # Yeni ATR çarpanını ekliyoruz
-    'take_profit_pct': take_profit_pct,
-    'cooldown_bars': cooldown_bars,
-
-     'signal_mode': 'and' if signal_logic == "AND (Teyitli)" else 'or',
-     'signal_direction': {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode],
-
-    'use_puzzle_bot': use_puzzle_bot,
-    'use_ml': use_ml,
-    'use_mta': use_mta,
-    'higher_timeframe': higher_timeframe,
-    'trend_ema_period': trend_ema_period,
-    'commission_pct': commission_pct,
-    'use_trailing_stop': use_trailing_stop
+    'sma': sma_period, 'ema': ema_period, 'bb_period': bb_period, 'bb_std': bb_std, 'rsi_buy': rsi_buy,
+    'rsi_sell': rsi_sell, 'rsi_period': rsi_period, 'macd_fast': macd_fast, 'macd_slow': macd_slow,
+    'macd_signal': macd_signal, 'adx_period': 14, 'adx_threshold': adx_threshold, 'use_rsi': use_rsi,
+    'use_macd': use_macd, 'use_bb': use_bb, 'use_adx': use_adx, 'stop_loss_pct': stop_loss_pct,
+    'atr_multiplier': atr_multiplier, 'take_profit_pct': take_profit_pct, 'cooldown_bars': cooldown_bars,
+    'signal_mode': 'and' if signal_logic == "AND (Teyitli)" else 'or',
+    'signal_direction': {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode],
+    'use_puzzle_bot': use_puzzle_bot, 'use_ml': use_ml, 'use_mta': use_mta,
+    'higher_timeframe': higher_timeframe, 'trend_ema_period': trend_ema_period,
+    'commission_pct': commission_pct, 'use_trailing_stop': use_trailing_stop
 }
 
-# ------------------------------
-# Canlı İzleme Thread Yönetimi için session_state default değerleri
-
-if "live_running" not in st.session_state:
-    st.session_state.live_running = False
-
-if "live_thread_started" not in st.session_state:
-    st.session_state.live_thread_started = False
-
-if "last_signal" not in st.session_state:
-    st.session_state.last_signal = "Henüz sinyal yok."
-
-# Backtest sonuçlarını session_state'de saklamak için başlangıç
-if "backtest_results" not in st.session_state:
-    st.session_state.backtest_results = pd.DataFrame()
+if "live_running" not in st.session_state: st.session_state.live_running = False
+if "live_thread_started" not in st.session_state: st.session_state.live_thread_started = False
+if "last_signal" not in st.session_state: st.session_state.last_signal = "Henüz sinyal yok."
+if "backtest_results" not in st.session_state: st.session_state.backtest_results = pd.DataFrame()
 
 
 # ------------------------------
@@ -360,9 +382,6 @@ def update_price_live(symbol, interval, placeholder):
 def run_portfolio_backtest(symbols, interval, strategy_params):
     """
     "Geleceği Görme" (Lookahead Bias) hatası giderilmiş, gerçekçi backtest fonksiyonu.
-    - Sinyaller bir önceki mumun kapanışına göre (k-1) alınır.
-    - Pozisyonlara mevcut mumun açılış fiyatından (k) girilir.
-    - Stop/Profit kontrolleri mevcut mumun (k) High/Low değerlerine göre yapılır.
     """
     all_results = []
     st.session_state.backtest_data = {}
@@ -371,19 +390,15 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
 
     for i, symbol in enumerate(symbols):
         status_text.text(f"🔍 {symbol} verisi indiriliyor ve strateji uygulanıyor... ({i + 1}/{len(symbols)})")
-
-        # 1. Veri ve Göstergelerin Hazırlanması (Değişiklik yok)
         df = get_binance_klines(symbol=symbol, interval=interval, limit=1000)
         if df is None or df.empty:
             st.warning(f"{symbol} için veri alınamadı.")
             continue
 
-        df_higher = None
-        current_use_mta = strategy_params['use_mta']
+        df_higher, current_use_mta = None, strategy_params['use_mta']
         if current_use_mta:
             df_higher = get_binance_klines(symbol=symbol, interval=strategy_params['higher_timeframe'], limit=1000)
-            if df_higher is None or df_higher.empty:
-                current_use_mta = False
+            if df_higher is None or df_higher.empty: current_use_mta = False
 
         df = generate_all_indicators(df, **strategy_params)
         df = generate_signals(df, **strategy_params)
@@ -392,122 +407,85 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
             df = add_higher_timeframe_trend(df, df_higher, strategy_params['trend_ema_period'])
             df = filter_signals_with_trend(df)
 
-        # --- YENİ ve DOĞRU BACKTEST MANTIĞI ---
-        trades = []
-        position = None
-        entry_price = 0
-        entry_time = None
-        stop_loss_price = 0
-        cooldown = 0
-
-        # Döngüyü 1'den başlatıyoruz çünkü her zaman bir önceki muma (k-1) bakacağız.
+        trades, position, entry_price, entry_time, stop_loss_price, cooldown = [], None, 0, None, 0, 0
         for k in range(1, len(df)):
             if cooldown > 0:
                 cooldown -= 1
                 continue
+            prev_row, current_row = df.iloc[k - 1], df.iloc[k]
+            signal, open_price, low_price, high_price = prev_row['Signal'], current_row['Open'], current_row['Low'], \
+            current_row['High']
+            time_idx, current_atr = current_row.name, prev_row.get('ATR', 0)
 
-            # Verileri hazırla: prev_row sinyal için, current_row işlem yapmak için
-            prev_row = df.iloc[k - 1]
-            current_row = df.iloc[k]
-
-            signal = prev_row['Signal']
-            open_price = current_row['Open']
-            low_price = current_row['Low']
-            high_price = current_row['High']
-            time_idx = current_row.name  # index'i al
-            current_atr = prev_row.get('ATR', 0)  # Stop için bir önceki barın ATR'si kullanılır
-
-            # --- POZİSYON YÖNETİMİ ---
             if position is not None:
                 exit_price = None
-
-                # 1. İz Süren Stop (Trailing Stop) Seviyesini Güncelle
                 if strategy_params.get('use_trailing_stop', False) and current_atr > 0:
                     if position == 'Long':
-                        # Stop'u sadece yukarı taşı
                         new_stop_price = high_price - (current_atr * strategy_params['atr_multiplier'])
-                        if new_stop_price > stop_loss_price:
-                            stop_loss_price = new_stop_price
+                        if new_stop_price > stop_loss_price: stop_loss_price = new_stop_price
                     elif position == 'Short':
-                        # Stop'u sadece aşağı taşı
                         new_stop_price = low_price + (current_atr * strategy_params['atr_multiplier'])
-                        if new_stop_price < stop_loss_price:
-                            stop_loss_price = new_stop_price
-
-                # 2. Çıkış Koşullarını Kontrol Et
+                        if new_stop_price < stop_loss_price: stop_loss_price = new_stop_price
                 if position == 'Long':
-                    # Stop-Loss kontrolü
                     if low_price <= stop_loss_price:
-                        exit_price = stop_loss_price  # Stop'un tam çalıştığı fiyattan çık
-                    # Take-Profit kontrolü (eğer trailing stop kullanılmıyorsa)
+                        exit_price = stop_loss_price
                     elif not strategy_params.get('use_trailing_stop', False) and high_price >= entry_price * (
                             1 + strategy_params['take_profit_pct'] / 100):
                         exit_price = entry_price * (1 + strategy_params['take_profit_pct'] / 100)
-                    # Karşıt sinyal ile çıkış
-                    elif signal == 'Sat':
+                    elif signal == 'Short' or signal == 'Sat':
                         exit_price = open_price
-
                 elif position == 'Short':
-                    # Stop-Loss kontrolü
                     if high_price >= stop_loss_price:
                         exit_price = stop_loss_price
-                    # Take-Profit kontrolü
                     elif not strategy_params.get('use_trailing_stop', False) and low_price <= entry_price * (
                             1 - strategy_params['take_profit_pct'] / 100):
                         exit_price = entry_price * (1 - strategy_params['take_profit_pct'] / 100)
-                    # Karşıt sinyal ile çıkış
                     elif signal == 'Al':
                         exit_price = open_price
 
-                # Eğer bir çıkış koşulu oluştuysa, işlemi kaydet
                 if exit_price is not None:
-                    # Brüt getiriyi hesapla
                     gross_ret = ((exit_price - entry_price) / entry_price * 100) if position == 'Long' else (
                                 (entry_price - exit_price) / entry_price * 100)
-
-                    # Komisyonu düşerek net getiriyi hesapla (1 alım + 1 satım)
-                    commission_cost = strategy_params['commission_pct'] * 2
-                    ret = gross_ret - commission_cost
-
-                    trades.append({
-                        'Pozisyon': position, 'Giriş Zamanı': entry_time, 'Çıkış Zamanı': time_idx,
-                        'Giriş Fiyatı': entry_price, 'Çıkış Fiyatı': exit_price, 'Getiri (%)': round(ret, 2)
-                    })
+                    ret = gross_ret - (strategy_params['commission_pct'] * 2)
+                    trades.append({'Pozisyon': position, 'Giriş Zamanı': entry_time, 'Çıkış Zamanı': time_idx,
+                                   'Giriş Fiyatı': entry_price, 'Çıkış Fiyatı': exit_price,
+                                   'Getiri (%)': round(ret, 2)})
                     position, cooldown = None, strategy_params['cooldown_bars']
 
-            # --- YENİ POZİSYON AÇMA ---
             if position is None:
                 if signal == 'Al' and strategy_params['signal_direction'] != 'Short':
                     position, entry_price, entry_time = 'Long', open_price, time_idx
-                    if strategy_params['atr_multiplier'] > 0 and current_atr > 0:
-                        stop_loss_price = entry_price - (current_atr * strategy_params['atr_multiplier'])
-                    else:
-                        stop_loss_price = entry_price * (1 - strategy_params['stop_loss_pct'] / 100)
-
-
+                    stop_loss_price = entry_price - (current_atr * strategy_params['atr_multiplier']) if \
+                    strategy_params['atr_multiplier'] > 0 and current_atr > 0 else entry_price * (
+                                1 - strategy_params['stop_loss_pct'] / 100)
                 elif signal == 'Short' and strategy_params['signal_direction'] != 'Long':
                     position, entry_price, entry_time = 'Short', open_price, time_idx
-                    if strategy_params['atr_multiplier'] > 0 and current_atr > 0:
-                        stop_loss_price = entry_price + (current_atr * strategy_params['atr_multiplier'])
-                    else:
-                        stop_loss_price = entry_price * (1 + strategy_params['stop_loss_pct'] / 100)
+                    stop_loss_price = entry_price + (current_atr * strategy_params['atr_multiplier']) if \
+                    strategy_params['atr_multiplier'] > 0 and current_atr > 0 else entry_price * (
+                                1 + strategy_params['stop_loss_pct'] / 100)
 
-        # Döngü bittikten sonra kalan işlemleri hallet
         if trades:
             trades_df = pd.DataFrame(trades)
             trades_df['Sembol'] = symbol
             all_results.append(trades_df)
-
         st.session_state.backtest_data[symbol] = df
         progress_bar.progress((i + 1) / len(symbols))
 
     status_text.success("🚀 Backtest tamamlandı!")
-
     if all_results:
-        portfolio_results = pd.concat(all_results, ignore_index=True).sort_values("Giriş Zamanı")
-        st.session_state['backtest_results'] = portfolio_results
+        st.session_state['backtest_results'] = pd.concat(all_results, ignore_index=True).sort_values("Giriş Zamanı")
     else:
         st.session_state['backtest_results'] = pd.DataFrame()
+
+def apply_selected_params(selected_params):
+            st.session_state.rsi_buy_key = int(selected_params['rsi_buy'])
+            st.session_state.rsi_sell_key = int(selected_params['rsi_sell'])
+            st.session_state.adx_threshold_key = int(selected_params['adx_threshold'])
+            st.session_state.atr_multiplier_key = float(selected_params['atr_multiplier'])
+            st.session_state.take_profit_pct_key = float(selected_params['take_profit_pct'])
+            st.session_state.sl_type_key = "ATR"
+            st.success("Parametreler başarıyla uygulandı! Ayarlar kenar çubuğuna aktarıldı.")
+
 
 def apply_selected_params(selected_params):
         """

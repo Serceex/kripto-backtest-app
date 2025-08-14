@@ -71,7 +71,6 @@ def calculate_fibonacci_levels(df):
     return levels
 
 
-
 def _calculate_equity_and_drawdown(trades_df, initial_capital=100):
     """
     Sermaye eğrisini, tepe noktalarını ve düşüş serisini hesaplar.

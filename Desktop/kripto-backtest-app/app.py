@@ -294,35 +294,22 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
         )
 
 
-
 strategy_params = {
-    'sma': sma_period,
-    'ema': ema_period,
-    'bb_period': bb_period,
-    'bb_std': bb_std,
-    'rsi_buy': rsi_buy,
-    'rsi_sell': rsi_sell,
-    'rsi_period': rsi_period,
-    'macd_fast': macd_fast,
-    'macd_slow': macd_slow,
-    'macd_signal': macd_signal, 'adx_period': 14, 'adx_threshold': adx_threshold, 'use_rsi': use_rsi,
-    'use_macd': use_macd, 'use_bb': use_bb, 'use_adx': use_adx,
+    'sma': sma_period, 'ema': ema_period, 'bb_period': bb_period, 'bb_std': bb_std,
+    'rsi_buy': rsi_buy, 'rsi_sell': rsi_sell, 'rsi_period': rsi_period,
+    'macd_fast': macd_fast, 'macd_slow': macd_slow, 'macd_signal': macd_signal,
+    'adx_period': 14, 'adx_threshold': adx_threshold,
+    'use_rsi': use_rsi, 'use_macd': use_macd, 'use_bb': use_bb, 'use_adx': use_adx,
     'stop_loss_pct': stop_loss_pct,
     'atr_multiplier': atr_multiplier,
-    'take_profit_pct': take_profit_pct,
     'cooldown_bars': cooldown_bars,
     'signal_mode': 'and' if signal_logic == "AND (Teyitli)" else 'or',
     'signal_direction': {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode],
-    'use_puzzle_bot': use_puzzle_bot,
-    'use_ml': use_ml, 'use_mta': use_mta,
-    'higher_timeframe': higher_timeframe,
-    'trend_ema_period': trend_ema_period,
-    'commission_pct': commission_pct,
-    'use_trailing_stop': use_trailing_stop,
-    'tp1_pct': tp1_pct,
-    'tp1_size_pct': tp1_size_pct,
-    'tp2_pct': tp2_pct,
-    'tp2_size_pct': tp2_size_pct,
+    'use_puzzle_bot': use_puzzle_bot, 'use_ml': use_ml, 'use_mta': use_mta,
+    'higher_timeframe': higher_timeframe, 'trend_ema_period': trend_ema_period,
+    'commission_pct': 0.1, # Örnek olarak komisyon
+    'tp1_pct': tp1_pct, 'tp1_size_pct': tp1_size_pct,
+    'tp2_pct': tp2_pct, 'tp2_size_pct': tp2_size_pct,
     'move_sl_to_be': move_sl_to_be
 }
 

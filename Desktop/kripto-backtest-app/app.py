@@ -787,67 +787,37 @@ if page == "Portföy Backtest":
 
 
 elif page == "Canlı İzleme":
-    # --- ŞİFRE KONTROL MANTIĞI ---
-
-    # Şifrenin secrets.toml dosyasında ayarlanıp ayarlanmadığını kontrol et
-    try:
-        correct_password = st.secrets["app"]["password"]
+    try: correct_password = st.secrets["app"]["password"]
     except (KeyError, FileNotFoundError):
         st.error("Uygulama şifresi '.streamlit/secrets.toml' dosyasında ayarlanmamış. Lütfen kurulumu tamamlayın.")
-        st.stop()  # Şifre yoksa sayfayı tamamen durdur
-
-    # Kullanıcı giriş yapmamışsa, şifre sorma ekranını göster
+        st.stop()
     if not st.session_state.get('authenticated', False):
         st.header("🔒 Giriş Gerekli")
         st.info("Canlı İzleme paneline erişmek için lütfen şifreyi girin.")
-
         password_input = st.text_input("Şifre", type="password", key="password_input")
-
         if st.button("Giriş Yap"):
             if password_input == correct_password:
                 st.session_state.authenticated = True
-                st.rerun()  # Sayfayı yeniden yükleyerek içeriği göster
+                st.rerun()
             else:
                 st.error("Girilen şifre yanlış.")
-
-    # Kullanıcı başarıyla giriş yapmışsa, sayfanın asıl içeriğini göster
     else:
-        # --- YENİ DÜZENLEME: BAŞLIK VE BUTON İÇİN SÜTUNLAR ---
-        col1, col2 = st.columns([5, 1])  # Sütunları 5'e 1 oranında ayır
-
-        with col1:
-            # Başlığı sol sütuna yerleştir
-            st.header("📡 Canlı Strateji Yönetim Paneli")
-
+        col1, col2 = st.columns([5, 1])
+        with col1: st.header("📡 Canlı Strateji Yönetim Paneli")
         with col2:
-            # Butonu sağ sütuna yerleştir ve ".sidebar" kısmını kaldır
             if st.button("🔒 Çıkış Yap"):
                 st.session_state.authenticated = False
                 st.rerun()
-
-        st.info("""
-        Bu panelden, kenar çubuğunda (sidebar) yapılandırdığınız ayarlarla birden fazla canlı izleme stratejisi başlatabilirsiniz.
-        Arka planda **`multi_worker.py`** script'ini çalıştırdığınızdan emin olun.
-        """)
-
-        # --- 1. Yeni Strateji Ekleme Paneli ---
+        st.info("""Bu panelden, kenar çubuğunda (sidebar) yapılandırdığınız ayarlarla birden fazla canlı izleme stratejisi başlatabilirsiniz. Arka planda **`multi_worker.py`** script'ini çalıştırdığınızdan emin olun.""")
         with st.expander("➕ Yeni Canlı İzleme Stratejisi Ekle", expanded=True):
-
-            new_strategy_name = st.text_input(
-                "Strateji Adı",
-                placeholder="Örn: BTC/ETH Trend Takip Stratejisi"
-            )
-
+            new_strategy_name = st.text_input("Strateji Adı", placeholder="Örn: BTC/ETH Trend Takip Stratejisi")
             st.write("**Mevcut Kenar Çubuğu Ayarları:**")
             st.write(f"- **Semboller:** `{', '.join(symbols) if symbols else 'Hiçbiri'}`")
             st.write(f"- **Zaman Dilimi:** `{interval}`")
             st.write(f"- **Sinyal Modu:** `{strategy_params['signal_mode']}`")
-
             if st.button("🚀 Yeni Stratejiyi Canlı İzlemeye Al", type="primary"):
-                if not new_strategy_name:
-                    st.error("Lütfen stratejiye bir isim verin.")
-                elif not symbols:
-                    st.error("Lütfen en az bir sembol seçin.")
+                if not new_strategy_name: st.error("Lütfen stratejiye bir isim verin.")
+                elif not symbols: st.error("Lütfen en az bir sembol seçin.")
                 else:
                     current_strategy_params = strategy_params.copy()
                     if use_telegram:
@@ -860,46 +830,36 @@ elif page == "Canlı İzleme":
                             current_strategy_params["telegram_enabled"] = False
                     else:
                         current_strategy_params["telegram_enabled"] = False
-
-                    new_strategy = {
-                        "id": f"strategy_{int(time.time())}",
-                        "name": new_strategy_name,
-                        "status": "running",
-                        "symbols": symbols,
-                        "interval": interval,
-                        "strategy_params": current_strategy_params
-                    }
+                    new_strategy = {"id": f"strategy_{int(time.time())}", "name": new_strategy_name, "status": "running", "symbols": symbols, "interval": interval, "strategy_params": current_strategy_params}
                     add_or_update_strategy(new_strategy)
                     st.success(f"'{new_strategy_name}' stratejisi başarıyla eklendi!")
                     st.rerun()
-
-        # --- 2. Çalışan Stratejileri Listeleme Paneli ---
         st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
-
         running_strategies = get_all_strategies()
-
         if not running_strategies:
             st.info("Şu anda çalışan hiçbir canlı strateji yok. Yukarıdaki panelden yeni bir tane ekleyebilirsiniz.")
         else:
             for strategy in running_strategies:
                 with st.container(border=True):
-                    col1, col2 = st.columns([4, 1])
+                    # --- YENİ DÜZENLEME: Sütun yapısı ve yeni buton ---
+                    col1, col2, col3 = st.columns([4, 1, 1])
                     with col1:
                         st.subheader(f"{strategy.get('name', 'İsimsiz Strateji')}")
                         strategy_symbols = strategy.get('symbols', [])
-                        st.caption(
-                            f"**ID:** `{strategy.get('id')}` | **Zaman Dilimi:** `{strategy.get('interval')}` | **Semboller:** `{len(strategy_symbols)}`")
+                        st.caption(f"**ID:** `{strategy.get('id')}` | **Zaman Dilimi:** `{strategy.get('interval')}` | **Semboller:** `{len(strategy_symbols)}`")
                         st.code(f"{', '.join(strategy_symbols)}", language="text")
                     with col2:
-                        if st.button("⏹️ Stratejiyi Durdur", key=f"stop_{strategy['id']}", type="secondary"):
+                        if st.button("⏹️ Durdur", key=f"stop_{strategy['id']}", type="secondary"):
                             remove_strategy(strategy['id'])
                             st.warning(f"'{strategy['name']}' stratejisi durduruldu.")
-                            st.rerun()  # Butona basıldığında listenin güncellenmesi için burada rerun gerekli ve güvenlidir.
-
-        # --- 3. Son Alarmlar Paneli ---
+                            st.rerun()
+                    with col3:
+                        st.button("⚙️ Ayarları Yükle", key=f"load_{strategy['id']}",
+                                  help="Bu stratejinin parametrelerini kenar çubuğuna yükle",
+                                  on_click=apply_full_strategy_params,
+                                  args=(strategy,))
         st.subheader("🔔 Son Alarmlar (Tüm Stratejilerden)")
-        alarm_history = get_alarm_history(limit=20)
-
+        alarm_history = get_alarm_history_db(limit=20)
         if alarm_history is not None and not alarm_history.empty:
             st.dataframe(alarm_history, use_container_width=True)
         else:

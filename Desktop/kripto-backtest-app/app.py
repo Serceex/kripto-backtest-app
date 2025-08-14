@@ -17,7 +17,8 @@ from telegram_alert import send_telegram_message
 from alarm_log import log_alarm, get_alarm_history
 from database import (
     add_or_update_strategy, remove_strategy,
-    get_all_strategies, initialize_db, get_alarm_history_db)
+    get_all_strategies, initialize_db, get_alarm_history_db, get_all_open_positions
+)
 
 
 def apply_full_strategy_params(strategy):

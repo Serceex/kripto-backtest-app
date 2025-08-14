@@ -1,4 +1,5 @@
-# utils.py (Yeniden Düzenlenmiş ve Modüler Hali)
+# utils.py (Yeniden Düzenlenmiş, Modüler ve Hataları Giderilmiş Hali)
+
 import streamlit as st
 from binance.client import Client
 import pandas as pd
@@ -17,12 +18,17 @@ except Exception:
     # client'ı None olarak ayarlayarak uygulamanın çökmesini engelle
     client = None
 
+
 @st.cache_data(ttl=600) # Sonuçları 10 dakika (600 saniye) boyunca önbellekte tut
 def get_binance_klines(symbol="BTCUSDT", interval="1h", limit=1000):
     """Binance API üzerinden OHLCV verisi çeker."""
     if client is None:
-        st.error("Binance API bilgileri bulunamadı. Lütfen `.streamlit/secrets.toml` dosyasını kontrol edin.")
-        return pd.DataFrame()  # Boş DataFrame döndür
+        # Worker script'lerinin çökmemesi için st.error try-except bloğuna alındı
+        try:
+            st.error("Binance API bilgileri bulunamadı. Lütfen `.streamlit/secrets.toml` dosyasını kontrol edin.")
+        except Exception:
+            print("HATA: Binance API bilgileri bulunamadı. Lütfen `.streamlit/secrets.toml` dosyasını kontrol edin.")
+        return pd.DataFrame()
 
     try:
         klines = client.get_klines(symbol=symbol, interval=interval, limit=limit)
@@ -36,7 +42,11 @@ def get_binance_klines(symbol="BTCUSDT", interval="1h", limit=1000):
         df = df[['Open', 'High', 'Low', 'Close', 'Volume']].astype(float)
         return df
     except Exception as e:
-        st.error(f"{symbol} için Binance'ten veri çekilirken hata oluştu: {e}")
+        # Worker script'lerinin çökmemesi için st.error try-except bloğuna alındı
+        try:
+            st.error(f"{symbol} için Binance'ten veri çekilirken hata oluştu: {e}")
+        except Exception:
+             print(f"HATA: {symbol} için Binance'ten veri çekilirken hata oluştu: {e}")
         return pd.DataFrame()
 
 

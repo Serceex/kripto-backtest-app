@@ -1,4 +1,4 @@
-# multi_worker.py (Parametre hatası düzeltilmiş, en kararlı hali)
+# multi_worker.py (Telegram bildirimine TP seviyeleri eklendi)
 
 import json
 import time
@@ -51,7 +51,6 @@ def graceful_shutdown(signum, frame):
 
 
 class StrategyRunner:
-    # ... (Bu sınıfın içeriğinde hiçbir değişiklik yok, olduğu gibi kalabilir) ...
     def __init__(self, strategy_config):
         self.config = strategy_config
         self.id = strategy_config['id']
@@ -146,10 +145,10 @@ class StrategyRunner:
             current_position = self.portfolio_data.get(symbol, {}).get('position')
             entry_price = self.portfolio_data.get(symbol, {}).get('entry_price', 0)
 
-            if (current_position == 'Long' and raw_signal == 'Sat') or \
+            if (current_position == 'Long' and raw_signal == 'Short') or \
                     (current_position == 'Short' and raw_signal == 'Al'):
                 pnl = ((price - entry_price) / entry_price * 100) if current_position == 'Long' else (
-                            (entry_price - price) / entry_price * 100)
+                        (entry_price - price) / entry_price * 100)
                 self.notify_and_log(symbol, f"{current_position.upper()} Pozisyonu KAPAT", price, pnl)
                 self.portfolio_data[symbol]['position'] = None
                 self.portfolio_data[symbol]['entry_price'] = 0
@@ -185,7 +184,7 @@ class StrategyRunner:
                    f"💰 *Kapanış Fiyatı:* `{price:.7f} USDT`"
                    f"{pnl_text}")
         print(f"!!! {message} !!!")
-        log_alarm_db(self.id, symbol, f"{status_text} ({self.name})", price)
+        log_alarm_db(symbol, f"{status_text} ({self.name})", price, strategy_id=self.id)
 
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")
@@ -193,40 +192,57 @@ class StrategyRunner:
             if token and chat_id:
                 send_telegram_message(message, token, chat_id)
 
+    # --- YENİLENMİŞ FONKSİYON ---
     def notify_new_position(self, symbol, signal_type, entry_price):
         params = self.params
-        stop_loss_price, stop_loss_pct = 0, 0
-        if params.get('stop_loss_pct', 0) > 0:
-            stop_loss_pct = params['stop_loss_pct']
+
+        # Stop-Loss Fiyatını Hesapla
+        stop_loss_price = 0
+        current_atr = self.portfolio_data[symbol]['df'].iloc[-1].get('ATR', 0)
+        if params.get('atr_multiplier', 0) > 0 and current_atr > 0:
+            stop_loss_price = entry_price - (
+                        current_atr * params['atr_multiplier']) if signal_type.upper() == 'LONG' else entry_price + (
+                        current_atr * params['atr_multiplier'])
+        elif params.get('stop_loss_pct', 0) > 0:
             stop_loss_price = entry_price * (
-                        1 - stop_loss_pct / 100) if signal_type.upper() == 'LONG' else entry_price * (
-                        1 + stop_loss_pct / 100)
+                        1 - params['stop_loss_pct'] / 100) if signal_type.upper() == 'LONG' else entry_price * (
+                        1 + params['stop_loss_pct'] / 100)
 
+        # Take-Profit Seviyelerini Hesapla
         tp_levels = []
-        tp1_pct = params.get('take_profit_pct', 5.0)
-        if signal_type.upper() == 'LONG':
-            tp2_pct, tp3_pct = tp1_pct * 1.618, tp1_pct * 2.618
-            tp_levels.extend([{'price': entry_price * (1 + p / 100), 'pct': p} for p in [tp1_pct, tp2_pct, tp3_pct]])
-        else:
-            tp2_pct, tp3_pct = tp1_pct * 1.618, tp1_pct * 2.618
-            tp_levels.extend([{'price': entry_price * (1 - p / 100), 'pct': p} for p in [tp1_pct, tp2_pct, tp3_pct]])
+        tp1_pct = params.get('tp1_pct', 0)
+        tp2_pct = params.get('tp2_pct', 0)
 
-        tp_text = "\n".join([f"{lvl['price']:.6f}$ (+%{lvl['pct']:.1f})" for lvl in tp_levels])
-        stop_text = f"{stop_loss_price:.6f}$ (-%{stop_loss_pct:.1f}%)" if stop_loss_price > 0 else "Belirlenmedi"
+        if signal_type.upper() == 'LONG':
+            if tp1_pct > 0: tp_levels.append(
+                {'price': entry_price * (1 + tp1_pct / 100), 'pct': tp1_pct, 'label': 'TP1'})
+            if tp2_pct > 0: tp_levels.append(
+                {'price': entry_price * (1 + tp2_pct / 100), 'pct': tp2_pct, 'label': 'TP2'})
+        else:  # SHORT
+            if tp1_pct > 0: tp_levels.append(
+                {'price': entry_price * (1 - tp1_pct / 100), 'pct': tp1_pct, 'label': 'TP1'})
+            if tp2_pct > 0: tp_levels.append(
+                {'price': entry_price * (1 - tp2_pct / 100), 'pct': tp2_pct, 'label': 'TP2'})
+
+        # Mesajı Oluştur
+        tp_text = "\n".join([f"`{lvl['label']}: {lvl['price']:.6f}$ (+{lvl['pct']:.1f}%)`" for lvl in
+                             tp_levels]) if tp_levels else "`Belirlenmedi`"
+        stop_text = f"`{stop_loss_price:.6f}$`" if stop_loss_price > 0 else "`Belirlenmedi`"
         signal_emoji = "🚀" if signal_type.upper() == "LONG" else "📉"
 
-        message = (f"{signal_emoji} *Yeni Pozisyon: {symbol} - {signal_type.upper()}*\n\n"
-                   f"🔹 *Strateji:* `{self.name}`\n"
-                   f"➡️ *Giriş:* `{entry_price:.4f}$`\n\n"
-                   f"💰 *Kâr Al Seviyeleri:*\n`{tp_text}`\n\n"
-                   f"🛡️ *Stop:*\n`{stop_text}`\n\n"
-                   f"📌 TP1 sonrası stop girişe çekilmelidir._\n"
-                   f"📢 Yatırım tavsiyesi değildir.❗_")
+        message = (
+            f"{signal_emoji} *Yeni Pozisyon: {symbol} - {signal_type.upper()}*\n\n"
+            f"🔹 *Strateji:* `{self.name}`\n"
+            f"➡️ *Giriş Fiyatı:* `{entry_price:.4f}$`\n\n"
+            f"💰 *Kâr Al Seviyeleri:*\n{tp_text}\n\n"
+            f"🛡️ *Zarar Durdur:*\n{stop_text}\n"
+        )
+        if params.get('move_sl_to_be', False):
+            message += f"\n_📌 Not: TP1 sonrası stop girişe çekilecektir._"
 
         print("--- YENİ POZİSYON SİNYALİ ---\n" + message + "\n-----------------------------")
 
-        # ***** İŞTE DÜZELTİLEN SATIR BURASI *****
-        log_alarm_db(self.id, symbol, f"Yeni {signal_type.upper()} Pozisyon ({self.name})", entry_price)
+        log_alarm_db(symbol, f"Yeni {signal_type.upper()} Pozisyon ({self.name})", entry_price, strategy_id=self.id)
 
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")
@@ -237,23 +253,19 @@ class StrategyRunner:
 
 def main_manager():
     """
-    Veritabanını sürekli olarak kontrol eden, yeni/güncellenmiş/silinmiş
-    stratejilere göre StrategyRunner'ları yöneten ana fonksiyon.
+    Veritabanını sürekli olarak kontrol eden ana yönetici fonksiyonu.
     """
     print("🚀 Çoklu Strateji Yöneticisi (Multi-Worker) Başlatıldı.")
     initialize_db()
-    running_strategies = {} # Çalışan stratejilerin runner nesnelerini {id: runner} formatında tutar
+    running_strategies = {}
 
     while True:
         try:
-            # 1. Veritabanındaki tüm güncel stratejileri çek
             strategies_in_db = get_all_strategies()
             db_strategy_map = {s['id']: s for s in strategies_in_db}
             db_ids = set(db_strategy_map.keys())
             running_ids = set(running_strategies.keys())
 
-            # 2. YENİ STRATEJİLERİ BAŞLAT
-            # Veritabanında olan ama şu an çalışmayan stratejiler
             new_ids = db_ids - running_ids
             for strategy_id in new_ids:
                 strategy_config = db_strategy_map[strategy_id]
@@ -262,36 +274,26 @@ def main_manager():
                 running_strategies[runner.id] = runner
                 runner.start()
 
-            # 3. SİLİNMİŞ STRATEJİLERİ DURDUR
-            # Çalışan ama artık veritabanında olmayan stratejiler
             removed_ids = running_ids - db_ids
             for strategy_id in removed_ids:
                 print(f"🛑 SİLİNMİŞ STRATEJİ: '{running_strategies[strategy_id].name}'. Durduruluyor...")
                 running_strategies[strategy_id].stop()
                 del running_strategies[strategy_id]
 
-            # 4. GÜNCELLENMİŞ STRATEJİLERİ YENİDEN BAŞLAT (EN ÖNEMLİ KISIM)
-            # Hem çalışan hem de veritabanında olan stratejileri kontrol et
             for strategy_id in running_ids.intersection(db_ids):
                 runner = running_strategies[strategy_id]
                 db_config = db_strategy_map[strategy_id]
-
-                # Eğer veritabanındaki konfigürasyon, çalışan runner'ın konfigürasyonundan farklıysa
                 if runner.config != db_config:
                     print(f"🔄 GÜNCELLENMİŞ STRATEJİ: '{runner.name}'. Yeni ayarlarla yeniden başlatılıyor...")
-                    # Önce mevcut runner'ı ve thread'lerini durdur
                     runner.stop()
-                    # Veritabanından gelen yeni ayarlarla yeni bir runner oluştur ve başlat
                     new_runner = StrategyRunner(db_config)
-                    running_strategies[strategy_id] = new_runner # Eskisinin yerine yenisini koy
+                    running_strategies[strategy_id] = new_runner
                     new_runner.start()
 
         except Exception as e:
             print(f"HATA: Yönetici döngüsünde beklenmedik bir hata oluştu: {e}")
             import traceback
             traceback.print_exc()
-
-        # Kontrol döngüsü için bekleme süresi
         time.sleep(5)
 
 

@@ -18,7 +18,7 @@ except Exception:
     # client'ı None olarak ayarlayarak uygulamanın çökmesini engelle
     client = None
 
-
+@st.cache_data(ttl=600) # Sonuçları 10 dakika (600 saniye) boyunca önbellekte tut
 def get_binance_klines(symbol="BTCUSDT", interval="1h", limit=1000):
     """Binance API üzerinden OHLCV verisi çeker."""
     if client is None:

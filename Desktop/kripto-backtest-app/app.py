@@ -484,7 +484,8 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
                     else:
                         stop_loss_price = entry_price * (1 - strategy_params['stop_loss_pct'] / 100)
 
-                elif signal == 'Sat' and strategy_params['signal_direction'] != 'Long':
+
+                elif signal == 'Short' and strategy_params['signal_direction'] != 'Long':
                     position, entry_price, entry_time = 'Short', open_price, time_idx
                     if strategy_params['atr_multiplier'] > 0 and current_atr > 0:
                         stop_loss_price = entry_price + (current_atr * strategy_params['atr_multiplier'])

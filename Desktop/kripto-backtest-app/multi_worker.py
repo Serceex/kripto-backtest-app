@@ -159,7 +159,7 @@ class StrategyRunner:
                 new_pos = None
                 if raw_signal == 'Al' and self.params.get('signal_direction', 'Both') != 'Short':
                     new_pos = 'Long'
-                elif raw_signal == 'Sat' and self.params.get('signal_direction', 'Both') != 'Long':
+                elif raw_signal == 'Short' and self.params.get('signal_direction', 'Both') != 'Long':
                     new_pos = 'Short'
 
                 if new_pos:

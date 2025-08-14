@@ -1076,25 +1076,21 @@ elif page == "Detaylı Grafik Analizi":
 # ------------------------------
 # Alarmlar ve Telegram Durumu Paneli
 
-st.sidebar.header("🔔 Son Alarmlar")
-# DÜZELTME: Alarmlar artık doğrudan veritabanından, daha güvenilir sorgu ile okunuyor.
-alarms = get_alarm_history_db(limit=5)
-if alarms is not None and not alarms.empty:
-    for _, row in alarms.iterrows():
-        fiyat_str = f" @ {row['Fiyat']:.7f}" if pd.notna(row['Fiyat']) else ""
+st.sidebar.header("📊 Mevcut Açık Pozisyonlar")
 
-        signal_text = row['Sinyal']
-        if "KAPAT" in signal_text or "Kârla" in signal_text or "Zararla" in signal_text:
-            emoji = "✅" if "Kârla" in signal_text else "❌" if "Zararla" in signal_text else "🏁"
-        elif "LONG" in signal_text:
-            emoji = "🟢"
-        elif "SHORT" in signal_text:
-            emoji = "🔴"
-        else:
-            emoji = "🔔"
+open_positions_df = get_all_open_positions()
 
-        st.sidebar.write(f"{emoji} **{row['Sembol']}**: {signal_text}{fiyat_str}")
-        st.sidebar.caption(f"🕰️ {row['Zaman']}")
+if open_positions_df is not None and not open_positions_df.empty:
+    for _, row in open_positions_df.iterrows():
+        position_type = row['Pozisyon']
+        emoji = "🟢" if position_type == 'Long' else "🔴" if position_type == 'Short' else "❔"
+
+        st.sidebar.markdown(f"""
+        <div style="margin-bottom: 5px; padding: 5px; border-radius: 5px; border: 1px solid #444;">
+            <small><b>Strateji:</b> {row['Strateji Adı']}</small><br>
+            {emoji} <b>{row['Sembol']} - {position_type}</b><br>
+            <small>Giriş: {row['Giriş Fiyatı']:.7f}</small>
+        </div>
+        """, unsafe_allow_html=True)
 else:
-    st.sidebar.write("Henüz alarm yok.")
-
+    st.sidebar.info("Mevcutta açık pozisyon bulunmuyor.")

@@ -40,7 +40,6 @@ def initialize_db():
                 FOREIGN KEY (strategy_id) REFERENCES strategies (id) ON DELETE CASCADE,
                 UNIQUE(strategy_id, symbol)
             )""")
-            # DÜZELTME: alarms tablosuna strategy_id sütunu eklendi.
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS alarms (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,7 +127,6 @@ def get_positions_for_strategy(strategy_id):
             positions = conn.execute("SELECT symbol, position, entry_price FROM positions WHERE strategy_id = ?", (strategy_id,)).fetchall()
             return {p['symbol']: {'position': p['position'], 'entry_price': p['entry_price']} for p in positions}
 
-# DÜZELTME: log_alarm_db fonksiyonu artık strategy_id alacak.
 def log_alarm_db(strategy_id, symbol, signal, price):
     """Bir alarmı, ilişkili olduğu strateji ID'si ile birlikte veritabanına kaydeder."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -139,12 +137,10 @@ def log_alarm_db(strategy_id, symbol, signal, price):
             conn.commit()
     print(f"--- [DATABASE] Alarm loglandı: Strateji({strategy_id}) - {symbol} - {signal} ---")
 
-# DÜZELTME: Sorgu, artık sadece aktif stratejilere ait alarmları getirecek.
 def get_alarm_history_db(limit=50):
     """Sadece veritabanında MEVCUT olan stratejilerden gelen son alarmları döndürür."""
     with db_lock:
         with get_db_connection() as conn:
-            # JOIN, bir strateji silindiğinde alarmlarının da gizlenmesini sağlar.
             query = """
                 SELECT a.timestamp as Zaman, a.symbol as Sembol, a.signal as Sinyal, a.price as Fiyat
                 FROM alarms a
@@ -153,4 +149,22 @@ def get_alarm_history_db(limit=50):
                 LIMIT ?
             """
             df = pd.read_sql_query(query, conn, params=(limit,))
+            return df
+
+# --- YENİ FONKSİYON ---
+def get_all_open_positions():
+    """Tüm stratejilerdeki mevcut açık pozisyonları bir DataFrame olarak döndürür."""
+    with db_lock:
+        with get_db_connection() as conn:
+            query = """
+                SELECT
+                    s.name as "Strateji Adı",
+                    p.symbol as "Sembol",
+                    p.position as "Pozisyon",
+                    p.entry_price as "Giriş Fiyatı"
+                FROM positions p
+                JOIN strategies s ON p.strategy_id = s.id
+                WHERE p.position IS NOT NULL
+            """
+            df = pd.read_sql_query(query, conn)
             return df

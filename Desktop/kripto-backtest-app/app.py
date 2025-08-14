@@ -260,6 +260,10 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
         signal_logic = st.selectbox("Sinyal Mantığı", ["AND (Teyitli)", "OR (Hızlı)"], index=0,
                                     help="AND: Tüm aktif göstergeler aynı anda sinyal vermeli. OR: Herhangi bir göstergenin sinyali yeterli.")
         cooldown_bars = st.slider("İşlem Arası Bekleme (bar)", 0, 10, 3, key="cooldown_bars_key")
+        commission_pct = st.slider(
+            "İşlem Başına Komisyon (%)", 0.0, 0.5, 0.1, step=0.01,
+            key="commission_pct_key",
+            help="Her alım veya satım işlemi için ödenecek komisyon oranı. Binance için genellikle %0.1'dir.")
 
     with col2:
         st.markdown("**Zarar Durdur (Stop-Loss)**")
@@ -273,11 +277,12 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
                                        key="atr_multiplier_key")
             stop_loss_pct = 0
 
-        move_sl_to_be = st.checkbox("TP1 sonrası Stop'u Girişe Çek", value=True,
-                                    help="İlk kâr alma hedefi gerçekleştiğinde, stop-loss seviyesini otomatik olarak giriş fiyatına çeker.")
+
 
     with col3:
         st.markdown("**Kademeli Kâr Al (Take-Profit)**")
+        move_sl_to_be = st.checkbox("TP1 sonrası Stop'u Girişe Çek", value=True,
+                                    help="İlk kâr alma hedefi gerçekleştiğinde, stop-loss seviyesini otomatik olarak giriş fiyatına çeker.")
         tp1_pct = st.slider("TP1 Kâr (%)", 0.0, 20.0, 5.0, step=0.1, key="tp1_pct_key")
         tp1_size_pct = st.slider("TP1 Pozisyon Kapatma (%)", 0, 100, 50, key="tp1_size_key",
                                  help="TP1'e ulaşıldığında pozisyonun yüzde kaçı kapatılsın?")
@@ -287,11 +292,7 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
                                  help="TP2'ye ulaşıldığında, kalan pozisyonun yüzde kaçı kapatılsın?")
 
 
-        commission_pct = st.slider(
-            "İşlem Başına Komisyon (%)", 0.0, 0.5, 0.1, step=0.01,
-            key="commission_pct_key",
-            help="Her alım veya satım işlemi için ödenecek komisyon oranı. Binance için genellikle %0.1'dir."
-        )
+
 
 
 strategy_params = {

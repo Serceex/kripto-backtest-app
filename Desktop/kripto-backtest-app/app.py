@@ -258,6 +258,7 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
                                    key="signal_mode_key")
         signal_direction = {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode]
         signal_logic = st.selectbox("Sinyal Mantığı", ["AND (Teyitli)", "OR (Hızlı)"], index=0,
+                                    key="signal_logic_key",  # <-- BU SATIRI EKLEYİN
                                     help="AND: Tüm aktif göstergeler aynı anda sinyal vermeli. OR: Herhangi bir göstergenin sinyali yeterli.")
         cooldown_bars = st.slider("İşlem Arası Bekleme (bar)", 0, 10, 3, key="cooldown_bars_key")
         commission_pct = st.slider(

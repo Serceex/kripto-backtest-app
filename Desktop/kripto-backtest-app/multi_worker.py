@@ -1,4 +1,4 @@
-# multi_worker.py (Telegram bildirimine TP seviyeleri eklendi)
+# multi_worker.py (TP/SL Bildirimleri Entegre Edilmiş Nihai Hali)
 
 import json
 import time
@@ -82,7 +82,12 @@ class StrategyRunner:
                     continue
 
                 if symbol not in self.portfolio_data:
-                    self.portfolio_data[symbol] = {'position': None, 'entry_price': 0}
+                    # YENİ: Pozisyon durumunu daha detaylı sakla
+                    self.portfolio_data[symbol] = {
+                        'position': None, 'entry_price': 0,
+                        'stop_loss_price': 0, 'tp1_price': 0, 'tp2_price': 0,
+                        'tp1_hit': False, 'tp2_hit': False
+                    }
 
                 self.portfolio_data[symbol]['df'] = initial_df
 
@@ -116,11 +121,65 @@ class StrategyRunner:
             if not self._stop_event.is_set():
                 time.sleep(10)
 
+    def _reset_position_state(self, symbol):
+        """Bir pozisyon kapandığında tüm değerleri sıfırlar."""
+        self.portfolio_data[symbol]['position'] = None
+        self.portfolio_data[symbol]['entry_price'] = 0
+        self.portfolio_data[symbol]['stop_loss_price'] = 0
+        self.portfolio_data[symbol]['tp1_price'] = 0
+        self.portfolio_data[symbol]['tp2_price'] = 0
+        self.portfolio_data[symbol]['tp1_hit'] = False
+        self.portfolio_data[symbol]['tp2_hit'] = False
+        update_position(self.id, symbol, None, 0)
+
     def _on_message(self, ws, message, symbol):
         try:
             data = json.loads(message)
             kline = data.get('k')
-            if not kline or not kline.get('x'): return
+            if not kline: return  # 'k' anahtarı yoksa devam etme
+
+            # Mumun anlık yüksek ve düşük fiyatlarını al
+            high_price = float(kline['h'])
+            low_price = float(kline['l'])
+
+            # --- YENİ: AKTİF POZİSYON KONTROLÜ (TP/SL) ---
+            symbol_data = self.portfolio_data.get(symbol, {})
+            current_position = symbol_data.get('position')
+
+            if current_position:
+                pos_closed = False
+                # 1. Stop-Loss Kontrolü
+                sl_price = symbol_data.get('stop_loss_price', 0)
+                if sl_price > 0:
+                    if (current_position == 'Long' and low_price <= sl_price) or \
+                            (current_position == 'Short' and high_price >= sl_price):
+                        self.notify_risk_management_event(symbol, "Stop-Loss", sl_price)
+                        self._reset_position_state(symbol)
+                        pos_closed = True
+
+                # 2. Take-Profit Kontrolleri (eğer pozisyon hala açıksa)
+                if not pos_closed:
+                    # TP1 Kontrolü
+                    if not symbol_data.get('tp1_hit', False):
+                        tp1_price = symbol_data.get('tp1_price', 0)
+                        if tp1_price > 0:
+                            if (current_position == 'Long' and high_price >= tp1_price) or \
+                                    (current_position == 'Short' and low_price <= tp1_price):
+                                self.notify_risk_management_event(symbol, "TP1 Kâr Alındı", tp1_price)
+                                self.portfolio_data[symbol]['tp1_hit'] = True
+
+                    # TP2 Kontrolü
+                    if not symbol_data.get('tp2_hit', False):
+                        tp2_price = symbol_data.get('tp2_price', 0)
+                        if tp2_price > 0:
+                            if (current_position == 'Long' and high_price >= tp2_price) or \
+                                    (current_position == 'Short' and low_price <= tp2_price):
+                                self.notify_risk_management_event(symbol, "TP2 Kâr Alındı", tp2_price)
+                                self.portfolio_data[symbol]['tp2_hit'] = True
+
+            # --- SİNYAL KONTROLÜ (Sadece mum kapandığında çalışır) ---
+            is_kline_closed = kline.get('x', False)
+            if not is_kline_closed: return
 
             new_kline_df = pd.DataFrame([{'timestamp': pd.to_datetime(kline['t'], unit='ms'), 'Open': float(kline['o']),
                                           'High': float(kline['h']), 'Low': float(kline['l']),
@@ -145,15 +204,15 @@ class StrategyRunner:
             current_position = self.portfolio_data.get(symbol, {}).get('position')
             entry_price = self.portfolio_data.get(symbol, {}).get('entry_price', 0)
 
+            # Karşıt sinyal ile pozisyon kapatma
             if (current_position == 'Long' and raw_signal == 'Short') or \
                     (current_position == 'Short' and raw_signal == 'Al'):
                 pnl = ((price - entry_price) / entry_price * 100) if current_position == 'Long' else (
                         (entry_price - price) / entry_price * 100)
-                self.notify_and_log(symbol, f"{current_position.upper()} Pozisyonu KAPAT", price, pnl)
-                self.portfolio_data[symbol]['position'] = None
-                self.portfolio_data[symbol]['entry_price'] = 0
-                update_position(self.id, symbol, None, 0)
+                self.notify_and_log(symbol, f"Pozisyon Karşıt Sinyal İle Kapatıldı", price, pnl)
+                self._reset_position_state(symbol)
 
+            # Yeni pozisyon açma
             elif current_position is None:
                 new_pos = None
                 if raw_signal == 'Al' and self.params.get('signal_direction', 'Both') != 'Short':
@@ -162,13 +221,80 @@ class StrategyRunner:
                     new_pos = 'Short'
 
                 if new_pos:
-                    self.notify_new_position(symbol, new_pos, price)
-                    self.portfolio_data[symbol]['position'] = new_pos
-                    self.portfolio_data[symbol]['entry_price'] = price
-                    update_position(self.id, symbol, new_pos, price)
+                    self._open_new_position(symbol, new_pos, price)
 
         except Exception as e:
             print(f"KRİTİK HATA ({symbol}, {self.name}): Mesaj işlenirken sorun: {e}")
+
+    def _open_new_position(self, symbol, new_pos, entry_price):
+        """Yeni bir pozisyon açar, durumunu kaydeder ve bildirim gönderir."""
+        self.notify_new_position(symbol, new_pos, entry_price)
+        self.portfolio_data[symbol]['position'] = new_pos
+        self.portfolio_data[symbol]['entry_price'] = entry_price
+
+        # TP/SL fiyatlarını hesapla ve sakla
+        sl, tp1, tp2 = self._calculate_risk_levels(symbol, new_pos, entry_price)
+        self.portfolio_data[symbol]['stop_loss_price'] = sl
+        self.portfolio_data[symbol]['tp1_price'] = tp1
+        self.portfolio_data[symbol]['tp2_price'] = tp2
+        self.portfolio_data[symbol]['tp1_hit'] = False
+        self.portfolio_data[symbol]['tp2_hit'] = False
+
+        update_position(self.id, symbol, new_pos, entry_price)
+
+    def _calculate_risk_levels(self, symbol, position_type, entry_price):
+        """Verilen giriş fiyatına göre TP ve SL seviyelerini hesaplar."""
+        params = self.params
+        stop_loss_price, tp1_price, tp2_price = 0, 0, 0
+
+        current_atr = self.portfolio_data[symbol]['df'].iloc[-1].get('ATR', 0)
+
+        if position_type == 'Long':
+            if params.get('atr_multiplier', 0) > 0 and current_atr > 0:
+                stop_loss_price = entry_price - (current_atr * params['atr_multiplier'])
+            elif params.get('stop_loss_pct', 0) > 0:
+                stop_loss_price = entry_price * (1 - params['stop_loss_pct'] / 100)
+
+            if params.get('tp1_pct', 0) > 0:
+                tp1_price = entry_price * (1 + params['tp1_pct'] / 100)
+            if params.get('tp2_pct', 0) > 0:
+                tp2_price = entry_price * (1 + params['tp2_pct'] / 100)
+        else:  # Short
+            if params.get('atr_multiplier', 0) > 0 and current_atr > 0:
+                stop_loss_price = entry_price + (current_atr * params['atr_multiplier'])
+            elif params.get('stop_loss_pct', 0) > 0:
+                stop_loss_price = entry_price * (1 + params['stop_loss_pct'] / 100)
+
+            if params.get('tp1_pct', 0) > 0:
+                tp1_price = entry_price * (1 - params['tp1_pct'] / 100)
+            if params.get('tp2_pct', 0) > 0:
+                tp2_price = entry_price * (1 - params['tp2_pct'] / 100)
+
+        return stop_loss_price, tp1_price, tp2_price
+
+    # --- YENİ BİLDİRİM FONKSİYONU ---
+    def notify_risk_management_event(self, symbol, event_type, price):
+        """TP veya SL tetiklendiğinde bildirim gönderir."""
+        emoji_map = {
+            "Stop-Loss": "🛡️🛑",
+            "TP1 Kâr Alındı": "💰✅",
+            "TP2 Kâr Alındı": "💰✅"
+        }
+        emoji = emoji_map.get(event_type, "ℹ️")
+
+        message = (f"{emoji} *{event_type.upper()}*\n\n"
+                   f"🔹 *Strateji:* `{self.name}`\n"
+                   f"📈 *Sembol:* `{symbol}`\n"
+                   f"🎯 *Tetiklenme Fiyatı:* `{price:.7f} USDT`")
+
+        print(f"--- {message} ---")
+        log_alarm_db(symbol, f"{event_type} ({self.name})", price, strategy_id=self.id)
+
+        if self.params.get("telegram_enabled", False):
+            token = self.params.get("telegram_token")
+            chat_id = self.params.get("telegram_chat_id")
+            if token and chat_id:
+                send_telegram_message(message, token, chat_id)
 
     def notify_and_log(self, symbol, signal_type, price, pnl=None):
         if pnl is not None:
@@ -192,41 +318,16 @@ class StrategyRunner:
             if token and chat_id:
                 send_telegram_message(message, token, chat_id)
 
-    # --- YENİLENMİŞ FONKSİYON ---
     def notify_new_position(self, symbol, signal_type, entry_price):
         params = self.params
+        stop_loss_price, tp1_price, tp2_price = self._calculate_risk_levels(symbol, signal_type, entry_price)
 
-        # Stop-Loss Fiyatını Hesapla
-        stop_loss_price = 0
-        current_atr = self.portfolio_data[symbol]['df'].iloc[-1].get('ATR', 0)
-        if params.get('atr_multiplier', 0) > 0 and current_atr > 0:
-            stop_loss_price = entry_price - (
-                        current_atr * params['atr_multiplier']) if signal_type.upper() == 'LONG' else entry_price + (
-                        current_atr * params['atr_multiplier'])
-        elif params.get('stop_loss_pct', 0) > 0:
-            stop_loss_price = entry_price * (
-                        1 - params['stop_loss_pct'] / 100) if signal_type.upper() == 'LONG' else entry_price * (
-                        1 + params['stop_loss_pct'] / 100)
-
-        # Take-Profit Seviyelerini Hesapla
         tp_levels = []
-        tp1_pct = params.get('tp1_pct', 0)
-        tp2_pct = params.get('tp2_pct', 0)
+        if tp1_price > 0: tp_levels.append({'price': tp1_price, 'label': 'TP1'})
+        if tp2_price > 0: tp_levels.append({'price': tp2_price, 'label': 'TP2'})
 
-        if signal_type.upper() == 'LONG':
-            if tp1_pct > 0: tp_levels.append(
-                {'price': entry_price * (1 + tp1_pct / 100), 'pct': tp1_pct, 'label': 'TP1'})
-            if tp2_pct > 0: tp_levels.append(
-                {'price': entry_price * (1 + tp2_pct / 100), 'pct': tp2_pct, 'label': 'TP2'})
-        else:  # SHORT
-            if tp1_pct > 0: tp_levels.append(
-                {'price': entry_price * (1 - tp1_pct / 100), 'pct': tp1_pct, 'label': 'TP1'})
-            if tp2_pct > 0: tp_levels.append(
-                {'price': entry_price * (1 - tp2_pct / 100), 'pct': tp2_pct, 'label': 'TP2'})
-
-        # Mesajı Oluştur
-        tp_text = "\n".join([f"`{lvl['label']}: {lvl['price']:.6f}$ (+{lvl['pct']:.1f}%)`" for lvl in
-                             tp_levels]) if tp_levels else "`Belirlenmedi`"
+        tp_text = "\n".join(
+            [f"`{lvl['label']}: {lvl['price']:.6f}$`" for lvl in tp_levels]) if tp_levels else "`Belirlenmedi`"
         stop_text = f"`{stop_loss_price:.6f}$`" if stop_loss_price > 0 else "`Belirlenmedi`"
         signal_emoji = "🚀" if signal_type.upper() == "LONG" else "📉"
 
@@ -241,7 +342,6 @@ class StrategyRunner:
             message += f"\n_📌 Not: TP1 sonrası stop girişe çekilecektir._"
 
         print("--- YENİ POZİSYON SİNYALİ ---\n" + message + "\n-----------------------------")
-
         log_alarm_db(symbol, f"Yeni {signal_type.upper()} Pozisyon ({self.name})", entry_price, strategy_id=self.id)
 
         if self.params.get("telegram_enabled", False):
@@ -252,9 +352,6 @@ class StrategyRunner:
 
 
 def main_manager():
-    """
-    Veritabanını sürekli olarak kontrol eden ana yönetici fonksiyonu.
-    """
     print("🚀 Çoklu Strateji Yöneticisi (Multi-Worker) Başlatıldı.")
     initialize_db()
     running_strategies = {}

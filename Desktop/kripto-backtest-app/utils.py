@@ -4,6 +4,7 @@ import streamlit as st
 from binance.client import Client
 import pandas as pd
 import numpy as np
+import requests
 
 # API bilgilerini streamlit secrets'tan al
 # Bu bilgilerin burada olması, bu dosyanın sadece Streamlit context'inde
@@ -148,7 +149,6 @@ def analyze_backtest_results(trades_df, risk_free_rate=0.02):
     return results, equity_curve, drawdown_series
 
 
-# utils.py dosyasının sonuna ekleyin
 
 @st.cache_data(ttl=30)  # Fiyatları 30 saniye önbellekte tut
 def get_current_prices(symbols: list):
@@ -174,3 +174,36 @@ def get_current_prices(symbols: list):
         except Exception:
             print(f"HATA: Anlık fiyatlar çekilirken hata oluştu: {e}")
     return prices
+
+# utils.py dosyasının en üstüne ekleyin (eğer yoksa)
+import requests
+
+# utils.py dosyasının sonuna bu iki fonksiyonu ekleyin
+
+@st.cache_data(ttl=3600) # Veriyi 1 saat önbellekte tut
+def get_fear_and_greed_index():
+    """Kripto Korku ve Hırs Endeksi'ni API'den çeker."""
+    try:
+        response = requests.get("https://api.alternative.me/fng/?limit=1")
+        response.raise_for_status()
+        data = response.json()['data'][0]
+        return {
+            "value": int(data['value']),
+            "classification": data['value_classification']
+        }
+    except Exception as e:
+        print(f"HATA: Korku ve Hırs Endeksi alınamadı: {e}")
+        return None
+
+@st.cache_data(ttl=900) # Veriyi 15 dakika önbellekte tut
+def get_btc_dominance():
+    """CoinGecko API üzerinden anlık Bitcoin Dominansı'nı çeker."""
+    try:
+        response = requests.get("https://api.coingecko.com/api/v3/global")
+        response.raise_for_status()
+        data = response.json()['data']
+        btc_dominance = data['market_cap_percentage'].get('btc')
+        return round(btc_dominance, 2) if btc_dominance else None
+    except Exception as e:
+        print(f"HATA: Bitcoin Dominansı alınamadı: {e}")
+        return None

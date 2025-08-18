@@ -22,6 +22,9 @@ from database import (
     get_live_closed_trades_metrics, update_strategy_status,
     issue_manual_action
 )
+from utils import (
+    get_current_prices, get_fear_and_greed_index, get_btc_dominance
+)
 
 
 def apply_full_strategy_params(strategy):
@@ -905,10 +908,34 @@ elif page == "Canlı İzleme":
             else:
                 st.error("Girilen şifre yanlış.")
     else:
+        # --- BÖLÜM 0: GLOBAL PİYASA DURUM PANELİ ---
+        st.subheader("🌐 Global Piyasa Durumu")
+
+        fng_data = get_fear_and_greed_index()
+        btc_dom = get_btc_dominance()
+
+        col1_market, col2_market = st.columns(2)
+
+        with col1_market:
+            if fng_data:
+                st.metric(
+                    label=f"Korku ve Hırs Endeksi: {fng_data['classification']}",
+                    value=fng_data['value']
+                )
+            else:
+                st.metric(label="Korku ve Hırs Endeksi", value="Veri Alınamadı")
+
+        with col2_market:
+            if btc_dom:
+                st.metric(label="Bitcoin Dominansı", value=f"{btc_dom}%")
+            else:
+                st.metric(label="Bitcoin Dominansı", value="Veri Alınamadı")
+
+        st.markdown("---")
+
         # --- BÖLÜM 1: GENEL PORTFÖY PANELİ ---
         st.subheader("🚀 Genel Portföy Durumu")
 
-        # 1.1 Verileri Çek
         open_positions_df = get_all_open_positions()
         live_metrics = get_live_closed_trades_metrics()
 
@@ -918,7 +945,6 @@ elif page == "Canlı İzleme":
         else:
             current_prices = {}
 
-        # 1.2 Metrikleri Hesapla (Açık Pozisyonlar için)
         total_pnl = 0.0
         pnl_by_strategy = {}
 
@@ -941,14 +967,13 @@ elif page == "Canlı İzleme":
                     pnl_by_strategy.setdefault(strategy_name, 0.0)
                     pnl_by_strategy[strategy_name] += pnl_percent
 
-        # 1.3 Paneli Arayüzde Göster
-        col1, col2, col3 = st.columns(3)
-        col1.metric(label="Açık Pozisyonlar Toplam Kâr/Zarar", value=f"{total_pnl:.2f}%")
-        col2.metric(label="Genel Başarı Oranı (Kapalı)", value=f"{live_metrics['win_rate']:.2f}%",
-                    help=f"Canlıda kapanan {live_metrics['total_trades']} işlem üzerinden hesaplanmıştır.")
+        col1_pnl, col2_pnl, col3_pnl = st.columns(3)
+        col1_pnl.metric(label="Açık Pozisyonlar Toplam Kâr/Zarar", value=f"{total_pnl:.2f}%")
+        col2_pnl.metric(label="Genel Başarı Oranı (Kapalı)", value=f"{live_metrics['win_rate']:.2f}%",
+                        help=f"Canlıda kapanan {live_metrics['total_trades']} işlem üzerinden hesaplanmıştır.")
 
         most_profitable_strategy = max(pnl_by_strategy, key=pnl_by_strategy.get) if pnl_by_strategy else "--"
-        col3.metric(label="En Kârlı Strateji (Anlık)", value=most_profitable_strategy)
+        col3_pnl.metric(label="En Kârlı Strateji (Anlık)", value=most_profitable_strategy)
 
         if pnl_by_strategy:
             pnl_df = pd.DataFrame(list(pnl_by_strategy.items()), columns=['Strateji', 'PnL (%)'])
@@ -971,19 +996,18 @@ elif page == "Canlı İzleme":
             "Bu panelden canlı izleme stratejileri başlatabilirsiniz. Arka planda `multi_worker.py` script'ini çalıştırdığınızdan emin olun.")
 
         with st.expander("➕ Yeni Canlı İzleme Stratejisi Ekle", expanded=True):
+            new_strategy_name = st.text_input("Strateji Adı", placeholder="Örn: BTC/ETH Trend Takip Stratejisi")
+            st.write("**Mevcut Kenar Çubuğu Ayarları:**")
+            st.write(f"- **Semboller:** `{', '.join(symbols) if symbols else 'Hiçbiri'}`")
+            st.write(f"- **Zaman Dilimi:** `{interval}`")
+            st.write(f"- **Sinyal Modu:** `{strategy_params['signal_mode']}`")
 
-                new_strategy_name = st.text_input("Strateji Adı", placeholder="Örn: BTC/ETH Trend Takip Stratejisi")
-                st.write("**Mevcut Kenar Çubuğu Ayarları:**")
-                st.write(f"- **Semboller:** `{', '.join(symbols) if symbols else 'Hiçbiri'}`")
-                st.write(f"- **Zaman Dilimi:** `{interval}`")
-                st.write(f"- **Sinyal Modu:** `{strategy_params['signal_mode']}`")
-
-                if st.button("🚀 Yeni Stratejiyi Canlı İzlemeye Al", type="primary"):
-                    if not new_strategy_name:
-                        st.error("Lütfen stratejiye bir isim verin.")
-                    elif not symbols:
-                        st.error("Lütfen en az bir sembol seçin.")
-                    else:
+            if st.button("🚀 Yeni Stratejiyi Canlı İzlemeye Al", type="primary"):
+                if not new_strategy_name:
+                    st.error("Lütfen stratejiye bir isim verin.")
+                elif not symbols:
+                    st.error("Lütfen en az bir sembol seçin.")
+                else:
                         current_strategy_params = strategy_params.copy()
                         if use_telegram:
                             try:
@@ -1023,8 +1047,8 @@ elif page == "Canlı İzleme":
                 pnl_color = "green" if strategy_pnl >= 0 else "red"
 
                 with st.container(border=True):
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
+                    col1_strat, col2_strat = st.columns([3, 1])
+                    with col1_strat:
                         st.subheader(strategy_name)
                         status_emoji = "▶️" if strategy_status == 'running' else "⏸️"
                         st.markdown(
@@ -1034,7 +1058,7 @@ elif page == "Canlı İzleme":
                         st.caption(
                             f"**ID:** `{strategy_id}` | **Zaman Dilimi:** `{strategy.get('interval')}` | **Semboller:** `{len(strategy_symbols)}`")
 
-                    with col2:
+                    with col2_strat:
                         st.write("")
                         b_col1, b_col2, b_col3 = st.columns(3)
                         with b_col1:

@@ -332,6 +332,7 @@ class StrategyRunner:
         print(f"--- {message} ---")
         log_alarm_db(self.id, symbol, f"{event_type} ({self.name})", price)
 
+
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")
             chat_id = self.params.get("telegram_chat_id")
@@ -385,6 +386,7 @@ class StrategyRunner:
 
         print("--- YENİ POZİSYON SİNYALİ ---\n" + message + "\n-----------------------------")
         log_alarm_db(self.id, symbol, f"Yeni {signal_type.upper()} Pozisyon ({self.name})", entry_price)
+
 
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")

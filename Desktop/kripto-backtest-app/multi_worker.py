@@ -17,7 +17,8 @@ from signals import generate_signals
 from telegram_alert import send_telegram_message
 from database import (
     initialize_db, get_all_strategies, update_position,
-    get_positions_for_strategy, log_alarm_db
+    get_positions_for_strategy, log_alarm_db,
+    get_and_clear_pending_actions
 )
 
 # --- Lock File Mekanizması ---
@@ -74,6 +75,11 @@ class StrategyRunner:
 
     def start(self):
         print(f"✅ Strateji BAŞLATILIYOR: '{self.name}' (ID: {self.id})")
+
+        # Manuel komutları kontrol etmek için ayrı bir thread başlat
+        action_checker_thread = threading.Thread(target=self._check_manual_actions, daemon=True)
+        action_checker_thread.start()
+
         for symbol in self.symbols:
             try:
                 initial_df = get_binance_klines(symbol, self.interval, limit=200)
@@ -82,13 +88,10 @@ class StrategyRunner:
                     continue
 
                 if symbol not in self.portfolio_data:
-                    # YENİ: Pozisyon durumunu daha detaylı sakla
                     self.portfolio_data[symbol] = {
-                        'position': None, 'entry_price': 0,
-                        'stop_loss_price': 0, 'tp1_price': 0, 'tp2_price': 0,
-                        'tp1_hit': False, 'tp2_hit': False
+                        'position': None, 'entry_price': 0, 'stop_loss_price': 0,
+                        'tp1_price': 0, 'tp2_price': 0, 'tp1_hit': False, 'tp2_hit': False
                     }
-
                 self.portfolio_data[symbol]['df'] = initial_df
 
                 ws_thread = threading.Thread(target=self._run_websocket, args=(symbol,), daemon=True)
@@ -101,6 +104,43 @@ class StrategyRunner:
     def stop(self):
         print(f"🛑 Strateji DURDURULUYOR: '{self.name}' (ID: {self.id})")
         self._stop_event.set()
+
+    def _check_manual_actions(self):
+        """Periyodik olarak veritabanını manuel komutlar için kontrol eder."""
+        while not self._stop_event.is_set():
+            try:
+                actions = get_and_clear_pending_actions(self.id)
+                for action in actions:
+                    if action['action'] == 'CLOSE_POSITION':
+                        symbol_to_close = action['symbol']
+                        print(f"MANUEL KOMUT ({self.name}): {symbol_to_close} için pozisyon kapatma emri alındı.")
+                        self._close_position_manually(symbol_to_close)
+            except Exception as e:
+                print(f"HATA ({self.name}): Manuel komutlar kontrol edilirken hata: {e}")
+            time.sleep(5)  # Her 5 saniyede bir kontrol et
+
+    def _close_position_manually(self, symbol):
+        """Bir pozisyonu anlık piyasa fiyatından manuel olarak kapatır."""
+        symbol_data = self.portfolio_data.get(symbol, {})
+        current_position = symbol_data.get('position')
+        entry_price = symbol_data.get('entry_price', 0)
+
+        if not current_position:
+            print(f"BİLGİ ({self.name}): {symbol} için kapatılacak aktif pozisyon bulunamadı.")
+            return
+
+        # Anlık fiyatı al
+        try:
+            latest_price = get_binance_klines(symbol, self.interval, limit=1).iloc[-1]['Close']
+        except Exception as e:
+            print(f"HATA ({self.name}): Manuel kapatma için {symbol} anlık fiyatı alınamadı: {e}")
+            return
+
+        pnl = ((latest_price - entry_price) / entry_price * 100) if current_position == 'Long' else (
+                    (entry_price - latest_price) / entry_price * 100)
+
+        self.notify_and_log(symbol, "Pozisyon Manuel Olarak Kapatıldı", latest_price, pnl)
+        self._reset_position_state(symbol)
 
     def _run_websocket(self, symbol):
         stream_url = f"wss://stream.binance.com:9443/ws/{symbol.lower()}@kline_{self.interval}"
@@ -214,6 +254,8 @@ class StrategyRunner:
 
             # Yeni pozisyon açma
             elif current_position is None:
+                if self.config.get('status') == 'paused':
+                    return  # Fonksiyondan çık, işlem yapma
                 new_pos = None
                 if raw_signal == 'Al' and self.params.get('signal_direction', 'Both') != 'Short':
                     new_pos = 'Long'

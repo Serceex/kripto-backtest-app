@@ -29,9 +29,13 @@ def initialize_db():
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-            CREATE TABLE IF NOT EXISTS strategies (
-                id TEXT PRIMARY KEY, name TEXT, status TEXT,
-                symbols TEXT, interval TEXT, strategy_params TEXT
+              CREATE TABLE IF NOT EXISTS strategies (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                status TEXT DEFAULT 'running',
+                symbols TEXT,
+                interval TEXT,
+                strategy_params TEXT
             )""")
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS positions (
@@ -50,6 +54,15 @@ def initialize_db():
                 price REAL,
                 FOREIGN KEY (strategy_id) REFERENCES strategies (id) ON DELETE CASCADE
             )""")
+            cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS manual_actions (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            strategy_id TEXT NOT NULL,
+                            symbol TEXT NOT NULL,
+                            action TEXT NOT NULL, -- e.g., 'CLOSE_POSITION'
+                            timestamp TEXT NOT NULL,
+                            status TEXT DEFAULT 'pending' -- pending, completed
+                        )""")
             conn.commit()
     print("--- [DATABASE] Veritabanı başlatıldı. ---")
 
@@ -158,13 +171,113 @@ def get_all_open_positions():
         with get_db_connection() as conn:
             query = """
                 SELECT
+                    s.id as "strategy_id", 
                     s.name as "Strateji Adı",
                     p.symbol as "Sembol",
                     p.position as "Pozisyon",
                     p.entry_price as "Giriş Fiyatı"
                 FROM positions p
                 JOIN strategies s ON p.strategy_id = s.id
-                WHERE p.position IS NOT NULL
+                WHERE p.position IS NOT NULL AND p.position != ''
             """
             df = pd.read_sql_query(query, conn)
             return df
+
+
+
+def get_live_closed_trades_metrics():
+    """
+    'alarms' tablosundaki sinyal geçmişini analiz ederek canlıda kapanan
+    işlemlerin metriklerini hesaplar.
+    """
+    with db_lock:
+        with get_db_connection() as conn:
+            # Sadece pozisyon açma ve kapama sinyallerini al
+            query = """
+                SELECT strategy_id, symbol, signal, price, timestamp
+                FROM alarms
+                WHERE signal LIKE '%Pozisyon%'
+                ORDER BY timestamp ASC
+            """
+            df = pd.read_sql_query(query, conn)
+
+    if df.empty:
+        return {"total_trades": 0, "win_rate": 0}
+
+    trades = []
+    open_trades = {}  # (strategy_id, symbol) -> {entry_price: float}
+
+    for _, row in df.iterrows():
+        key = (row['strategy_id'], row['symbol'])
+        signal = row['signal']
+        price = row['price']
+
+        # Yeni bir pozisyon açılış sinyali
+        if 'Yeni' in signal and key not in open_trades:
+            open_trades[key] = {'entry_price': price, 'position_type': 'Long' if 'LONG' in signal else 'Short'}
+
+        # Bir pozisyon kapanış sinyali
+        elif ('Kapatıldı' in signal or 'Stop-Loss' in signal) and key in open_trades:
+            entry_price = open_trades[key]['entry_price']
+            position_type = open_trades[key]['position_type']
+            pnl = 0
+
+            if position_type == 'Long':
+                pnl = ((price - entry_price) / entry_price) * 100
+            else:  # Short
+                pnl = ((entry_price - price) / entry_price) * 100
+
+            trades.append({'pnl': pnl})
+            del open_trades[key]  # İşlemi kapat
+
+    if not trades:
+        return {"total_trades": 0, "win_rate": 0}
+
+    total_trades = len(trades)
+    winning_trades = sum(1 for trade in trades if trade['pnl'] > 0)
+    win_rate = (winning_trades / total_trades) * 100 if total_trades > 0 else 0
+
+    return {"total_trades": total_trades, "win_rate": win_rate}
+
+# database.py dosyasının sonuna ekleyin
+
+def update_strategy_status(strategy_id, status):
+    """Bir stratejinin durumunu günceller (running, paused)."""
+    with db_lock:
+        with get_db_connection() as conn:
+            conn.execute("UPDATE strategies SET status = ? WHERE id = ?", (status, strategy_id))
+            conn.commit()
+    print(f"--- [DATABASE] Strateji {strategy_id} durumu güncellendi: {status} ---")
+
+
+def issue_manual_action(strategy_id, symbol, action):
+    """Arayüzden çalışana manuel bir komut gönderir."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with db_lock:
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO manual_actions (strategy_id, symbol, action, timestamp) VALUES (?, ?, ?, ?)",
+                (strategy_id, symbol, action, timestamp)
+            )
+            conn.commit()
+    print(f"--- [MANUAL ACTION] Issued: {action} for {symbol} on strategy {strategy_id} ---")
+
+
+def get_and_clear_pending_actions(strategy_id):
+    """Belirli bir strateji için bekleyen komutları alır ve 'tamamlandı' olarak işaretler."""
+    with db_lock:
+        with get_db_connection() as conn:
+            actions = conn.execute(
+                "SELECT id, symbol, action FROM manual_actions WHERE strategy_id = ? AND status = 'pending'",
+                (strategy_id,)
+            ).fetchall()
+
+            if actions:
+                action_ids = tuple(action['id'] for action in actions)
+                # Tek bir ID varsa tuple formatını düzelt
+                if len(action_ids) == 1:
+                    conn.execute("UPDATE manual_actions SET status = 'completed' WHERE id = ?", (action_ids[0],))
+                else:
+                    conn.execute(f"UPDATE manual_actions SET status = 'completed' WHERE id IN {action_ids}")
+                conn.commit()
+            return actions

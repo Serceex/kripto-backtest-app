@@ -146,3 +146,31 @@ def analyze_backtest_results(trades_df, risk_free_rate=0.02):
     }
 
     return results, equity_curve, drawdown_series
+
+
+# utils.py dosyasının sonuna ekleyin
+
+@st.cache_data(ttl=30)  # Fiyatları 30 saniye önbellekte tut
+def get_current_prices(symbols: list):
+    """
+    Verilen sembol listesi için Binance'den anlık fiyatları çeker.
+    """
+    if not symbols or client is None:
+        return {}
+
+    prices = {}
+    try:
+        tickers = client.get_symbol_ticker()
+        # İhtiyacımız olan sembolleri daha hızlı bulmak için ticker'ları bir sözlüğe dönüştür
+        ticker_map = {ticker['symbol']: float(ticker['price']) for ticker in tickers}
+
+        for symbol in symbols:
+            if symbol in ticker_map:
+                prices[symbol] = ticker_map[symbol]
+    except Exception as e:
+        # Hata durumunda st.error'ı try-except içine alarak worker'da çökmesini engelle
+        try:
+            st.error(f"Anlık fiyatlar çekilirken hata oluştu: {e}")
+        except Exception:
+            print(f"HATA: Anlık fiyatlar çekilirken hata oluştu: {e}")
+    return prices

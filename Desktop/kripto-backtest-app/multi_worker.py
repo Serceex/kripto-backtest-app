@@ -288,7 +288,7 @@ class StrategyRunner:
                    f"🎯 *Tetiklenme Fiyatı:* `{price:.7f} USDT`")
 
         print(f"--- {message} ---")
-        log_alarm_db(symbol, f"{event_type} ({self.name})", price, strategy_id=self.id)
+        log_alarm_db(self.id, symbol, f"{event_type} ({self.name})", price)
 
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")
@@ -310,7 +310,7 @@ class StrategyRunner:
                    f"💰 *Kapanış Fiyatı:* `{price:.7f} USDT`"
                    f"{pnl_text}")
         print(f"!!! {message} !!!")
-        log_alarm_db(symbol, f"{status_text} ({self.name})", price, strategy_id=self.id)
+        log_alarm_db(self.id, symbol, f"{status_text} ({self.name})", price)
 
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")
@@ -342,7 +342,7 @@ class StrategyRunner:
             message += f"\n_📌 Not: TP1 sonrası stop girişe çekilecektir._"
 
         print("--- YENİ POZİSYON SİNYALİ ---\n" + message + "\n-----------------------------")
-        log_alarm_db(symbol, f"Yeni {signal_type.upper()} Pozisyon ({self.name})", entry_price, strategy_id=self.id)
+        log_alarm_db(self.id, symbol, f"Yeni {signal_type.upper()} Pozisyon ({self.name})", entry_price)
 
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")

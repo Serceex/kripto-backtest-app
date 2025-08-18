@@ -6,6 +6,8 @@ import time
 import itertools
 import random
 import threading
+import os
+from stable_baselines3 import PPO
 
 from utils import get_binance_klines, calculate_fibonacci_levels, analyze_backtest_results
 from indicators import generate_all_indicators
@@ -25,6 +27,8 @@ from database import (
 from utils import (
     get_current_prices, get_fear_and_greed_index, get_btc_dominance
 )
+from trading_env import TradingEnv
+from rl_trainer import train_rl_agent
 
 
 def apply_full_strategy_params(strategy):
@@ -95,6 +99,41 @@ def apply_full_strategy_params(strategy):
     st.toast(f"'{strategy_name}' stratejisinin tüm parametreleri yüklendi!", icon="✅")
 
 
+def run_rl_backtest(model_path, backtest_df):
+    """Eğitilmiş bir RL modelini yükler ve backtest verisi üzerinde çalıştırır."""
+    if not os.path.exists(model_path):
+        st.error(f"Model dosyası bulunamadı: {model_path}")
+        return pd.DataFrame()
+
+    model = PPO.load(model_path)
+    env = TradingEnv(backtest_df)
+    obs, _ = env.reset()
+
+    trades = []
+    initial_balance = env.initial_balance  # Başlangıç bakiyesini al
+
+    while True:
+        action, _states = model.predict(obs, deterministic=True)
+        obs, reward, done, truncated, info = env.step(action)
+
+        current_price = env.df['Close'].iloc[env.current_step if env.current_step < len(env.df) else -1]
+
+        # Sadece pozisyon değişikliği olduğunda işlem kaydet
+        if action == 1 and env.position == 1:  # Alış yapıldı
+            trades.append({'Zaman': env.df.index[env.current_step], 'İşlem': 'Al', 'Fiyat': current_price,
+                           'Bakiye': env.net_worth})
+        elif action == 2 and env.position == 0:  # Satış yapıldı
+            trades.append({'Zaman': env.df.index[env.current_step], 'İşlem': 'Sat', 'Fiyat': current_price,
+                           'Bakiye': env.net_worth})
+
+        if done:
+            # Kapanmamış pozisyon varsa son fiyattan kapat
+            if env.position == 1:
+                trades.append({'Zaman': env.df.index[-1], 'İşlem': 'Pozisyonu Kapat', 'Fiyat': env.df['Close'].iloc[-1],
+                               'Bakiye': env.net_worth})
+            break
+
+    return pd.DataFrame(trades)
 
 initialize_db()
 
@@ -140,7 +179,7 @@ config = st.session_state.config
 st.sidebar.header("🔎 Sayfa Seçimi")
 page = st.sidebar.radio(
     "Sayfa",
-    ["Portföy Backtest", "Detaylı Grafik Analizi", "Canlı İzleme", "Optimizasyon"]
+    ["Portföy Backtest", "Detaylı Grafik Analizi", "Canlı İzleme", "Optimizasyon", "🤖 RL Ajanı"]
 )
 
 
@@ -1296,6 +1335,72 @@ elif page == "Detaylı Grafik Analizi":
             fig = plot_chart(df, selected_symbol, fib_levels, chart_options)
 
             st.plotly_chart(fig, use_container_width=True)
+
+
+elif page == "🤖 RL Ajanı":
+    st.header("🤖 Kendi Kendine Öğrenen Ticaret Ajanı")
+    st.info("""
+    Bu bölümde, Pekiştirmeli Öğrenme (RL) teknolojisini kullanarak kendi ticaret stratejisini sıfırdan öğrenen
+    bir yapay zeka ajanını eğitebilir ve performansını test edebilirsiniz. Ajan, geçmiş veriler üzerinde
+    milyonlarca işlem yaparak kârını maksimize etmeyi öğrenir.
+    """)
+
+    st.subheader("1. Ajanı Eğit")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        rl_symbol = st.selectbox("Eğitim için Sembol", options=st.session_state.get('symbols_key', ["BTCUSDT"]))
+    with col2:
+        rl_interval = st.selectbox("Eğitim için Zaman Dilimi", options=["15m", "1h", "4h"], index=1)
+    with col3:
+        rl_timesteps = st.number_input("Eğitim Adım Sayısı", min_value=1000, max_value=100000, value=25000, step=1000,
+                                     help="Ajanın ne kadar süreyle öğreneceğini belirler. Yüksek değerler daha iyi öğrenme ama daha uzun eğitim süresi demektir.")
+
+    if st.button("🚀 Ajan Eğitimini Başlat", type="primary"):
+        with st.spinner(f"Lütfen bekleyin... RL ajanı **{rl_symbol}** verileri üzerinde **{rl_timesteps}** adım boyunca eğitiliyor. Bu işlem birkaç dakika sürebilir."):
+            # rl_trainer.py'deki fonksiyonumuzu burada çağırıyoruz
+            train_rl_agent(symbol=rl_symbol, interval=rl_interval, total_timesteps=rl_timesteps)
+        st.success("Eğitim başarıyla tamamlandı! Eğitilmiş model kaydedildi.")
+        st.balloons()
+
+    st.markdown("---")
+
+    st.subheader("2. Eğitilmiş Ajanı Test Et (Backtest)")
+
+    # Kaydedilmiş modelleri bul ve listele
+    saved_models = [f for f in os.listdir('.') if f.startswith('rl_model_') and f.endswith('.zip')]
+
+    if not saved_models:
+        st.warning("Henüz eğitilmiş bir model bulunmuyor. Lütfen önce bir ajan eğitin.")
+    else:
+        selected_model = st.selectbox("Test edilecek eğitilmiş modeli seçin", options=saved_models)
+
+        if st.button("📈 RL Ajanı ile Backtest Yap"):
+            model_symbol = selected_model.split('_')[2]
+            model_interval = selected_model.split('_')[3].replace('.zip', '')
+
+            with st.spinner(f"Backtest verisi ({model_symbol}/{model_interval}) indiriliyor ve model yükleniyor..."):
+                backtest_df = get_binance_klines(symbol=model_symbol, interval=model_interval, limit=500)
+
+            if backtest_df.empty:
+                st.error("Backtest için veri indirilemedi.")
+            else:
+                with st.spinner("Model, geçmiş veriler üzerinde işlem yapıyor..."):
+                    trade_results_df = run_rl_backtest(selected_model, backtest_df)
+
+                st.success("RL Ajanı Backtesti tamamlandı!")
+
+                if trade_results_df.empty:
+                    st.info("Ajan bu periyotta hiç işlem yapmadı.")
+                else:
+                    st.subheader("İşlem Sonuçları")
+                    st.dataframe(trade_results_df)
+
+                    # Basit bir performans metriği
+                    final_balance = trade_results_df['Bakiye'].iloc[-1]
+                    initial_balance = 10000 # Env'deki başlangıç değeri
+                    pnl_percent = ((final_balance - initial_balance) / initial_balance) * 100
+                    st.metric("Toplam Kâr/Zarar", f"{pnl_percent:.2f}%")
 # ------------------------------
 # Alarmlar ve Telegram Durumu Paneli
 

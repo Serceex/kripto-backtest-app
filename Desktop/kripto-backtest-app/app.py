@@ -23,13 +23,20 @@ from database import (
 
 def apply_full_strategy_params(strategy):
     """
-    Seçilen bir stratejinin tüm parametrelerini session_state'e uygular,
-    böylece kenar çubuğu yeniden yüklendiğinde bu değerlerle başlar.
+    Seçilen bir stratejinin tüm parametrelerini (semboller, zaman dilimi dahil)
+    session_state'e uygular, böylece tüm arayüz yeniden yüklendiğinde bu
+    değerlerle başlar.
     """
+    # Stratejinin ana ve parametre bilgilerini al
     params = strategy.get('strategy_params', {})
     strategy_name = strategy.get('name', 'İsimsiz Strateji')
 
-    # Kenar Çubuğu -> Sinyal Kriterleri
+    # --- 1. Ana Ayarları Yükle (Semboller ve Zaman Dilimi) ---
+    # Bu ayarlar stratejinin kendisinden gelir, 'strategy_params' içinden değil.
+    st.session_state.symbols_key = strategy.get('symbols', ["BTCUSDT"])
+    st.session_state.interval_key = strategy.get('interval', '1h')
+
+    # --- 2. Sinyal Kriterleri Ayarlarını Yükle ---
     st.session_state.use_rsi = params.get('use_rsi', True)
     st.session_state.rsi_period = params.get('rsi_period', 14)
     st.session_state.rsi_buy_key = params.get('rsi_buy', 30)
@@ -47,13 +54,14 @@ def apply_full_strategy_params(strategy):
     st.session_state.use_adx = params.get('use_adx', False)
     st.session_state.adx_threshold_key = params.get('adx_threshold', 25)
 
-    # Expander -> Strateji Gelişmiş Ayarlar
+    # --- 3. Gelişmiş Strateji Ayarlarını Yükle ---
     direction_map = {"Long": "Long Only", "Short": "Short Only", "Both": "Long & Short"}
     st.session_state.signal_mode_key = direction_map.get(params.get('signal_direction', 'Both'), "Long & Short")
     st.session_state.signal_logic_key = "AND (Teyitli)" if params.get('signal_mode') == 'and' else "OR (Hızlı)"
     st.session_state.cooldown_bars_key = params.get('cooldown_bars', 3)
+    st.session_state.commission_pct_key = params.get('commission_pct', 0.1)
 
-    # Stop-Loss
+    # Zarar Durdurma (Stop-Loss) Ayarları
     if params.get('atr_multiplier', 0) > 0:
         st.session_state.sl_type_key = "ATR"
         st.session_state.atr_multiplier_key = params.get('atr_multiplier', 2.0)
@@ -61,21 +69,24 @@ def apply_full_strategy_params(strategy):
         st.session_state.sl_type_key = "Yüzde (%)"
         st.session_state.stop_loss_pct_key = params.get('stop_loss_pct', 2.0)
 
-    # Take-Profit & Komisyon
-    st.session_state.trailing_stop_key = params.get('use_trailing_stop', True)
-    st.session_state.take_profit_pct_key = params.get('take_profit_pct', 5.0)
-    st.session_state.commission_pct_key = params.get('commission_pct', 0.1)
+    # Kademeli Kâr Alma (Take-Profit) Ayarları
+    st.session_state.move_sl_to_be = params.get('move_sl_to_be', True)
+    st.session_state.tp1_pct_key = params.get('tp1_pct', 5.0)
+    st.session_state.tp1_size_key = params.get('tp1_size_pct', 50)
+    st.session_state.tp2_pct_key = params.get('tp2_pct', 10.0)
+    st.session_state.tp2_size_key = params.get('tp2_size_pct', 50)
 
-    # Expander -> MTA
+    # --- 4. Çoklu Zaman Dilimi (MTA) Ayarlarını Yükle ---
     st.session_state.use_mta_key = params.get('use_mta', True)
     st.session_state.higher_timeframe_key = params.get('higher_timeframe', '4h')
     st.session_state.trend_ema_period_key = params.get('trend_ema_period', 50)
 
-    # Expander -> Diğer Parametreler
+    # --- 5. Diğer Parametreleri Yükle ---
     st.session_state.puzzle_bot = params.get('use_puzzle_bot', False)
     st.session_state.ml_toggle = params.get('use_ml', False)
+    st.session_state.telegram_alerts = params.get('telegram_enabled', True)
 
-    st.toast(f"'{strategy_name}' stratejisinin parametreleri yüklendi!", icon="✅")
+    st.toast(f"'{strategy_name}' stratejisinin tüm parametreleri yüklendi!", icon="✅")
 
 
 
@@ -225,6 +236,11 @@ else:
 
 adx_threshold = st.sidebar.slider("ADX Eşiği", 10, 50, 25, key="adx_threshold_key")
 
+
+
+
+if 'symbols_key' not in st.session_state:
+    st.session_state.symbols_key = ["BTCUSDT", "ETHUSDT"] # Varsayılan değer
 # Üst ekran sembol ve interval seçimi (sabit)
 symbols = st.multiselect(
     "📈 Portföyde test edilecek semboller",
@@ -238,10 +254,19 @@ symbols = st.multiselect(
         "BATUSDT", "NANOUSDT", "1INCHUSDT", "ZRXUSDT", "CELRUSDT", "HNTUSDT", "FTTUSDT",
         "GALAUSDT"
     ],
-    default=["BTCUSDT", "ETHUSDT"]
+    key="symbols_key"
 )
 
-interval = st.selectbox("⏳ Zaman Dilimi Seçin", options=["15m", "1h", "4h"], index=1)
+timeframe_options = ["15m", "1h", "4h"]
+# session_state'de kayıtlı index'i bul, yoksa varsayılan olarak 1 ('1h') kullan
+default_interval_index = timeframe_options.index(st.session_state.get('interval_key', '1h')) if st.session_state.get('interval_key', '1h') in timeframe_options else 1
+
+interval = st.selectbox(
+    "⏳ Zaman Dilimi Seçin",
+    options=timeframe_options,
+    index=default_interval_index, # index'i session_state'den al
+    key="interval_key" # 'key' parametresini kullanıyoruz
+)
 
 # Container’lar
 results_section = st.container()

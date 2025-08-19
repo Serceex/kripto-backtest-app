@@ -21,7 +21,7 @@ import plotly.express as px
 from database import (
     add_or_update_strategy, remove_strategy, get_all_strategies,
     initialize_db, get_alarm_history_db, get_all_open_positions,
-    get_live_closed_trades_metrics, update_strategy_status,
+    get_live_closed_trades_metrics, update_strategy_status, # get_live_closed_trades_metrics'i import ediyoruz
     issue_manual_action
 )
 from utils import (
@@ -37,16 +37,12 @@ def apply_full_strategy_params(strategy):
     session_state'e uygular, böylece tüm arayüz yeniden yüklendiğinde bu
     değerlerle başlar.
     """
-    # Stratejinin ana ve parametre bilgilerini al
     params = strategy.get('strategy_params', {})
     strategy_name = strategy.get('name', 'İsimsiz Strateji')
 
-    # --- 1. Ana Ayarları Yükle (Semboller ve Zaman Dilimi) ---
-    # Bu ayarlar stratejinin kendisinden gelir, 'strategy_params' içinden değil.
     st.session_state.symbols_key = strategy.get('symbols', ["BTCUSDT"])
     st.session_state.interval_key = strategy.get('interval', '1h')
 
-    # --- 2. Sinyal Kriterleri Ayarlarını Yükle ---
     st.session_state.use_rsi = params.get('use_rsi', True)
     st.session_state.rsi_period = params.get('rsi_period', 14)
     st.session_state.rsi_buy_key = params.get('rsi_buy', 30)
@@ -64,14 +60,12 @@ def apply_full_strategy_params(strategy):
     st.session_state.use_adx = params.get('use_adx', False)
     st.session_state.adx_threshold_key = params.get('adx_threshold', 25)
 
-    # --- 3. Gelişmiş Strateji Ayarlarını Yükle ---
     direction_map = {"Long": "Long Only", "Short": "Short Only", "Both": "Long & Short"}
     st.session_state.signal_mode_key = direction_map.get(params.get('signal_direction', 'Both'), "Long & Short")
     st.session_state.signal_logic_key = "AND (Teyitli)" if params.get('signal_mode') == 'and' else "OR (Hızlı)"
     st.session_state.cooldown_bars_key = params.get('cooldown_bars', 3)
     st.session_state.commission_pct_key = params.get('commission_pct', 0.1)
 
-    # Zarar Durdurma (Stop-Loss) Ayarları
     if params.get('atr_multiplier', 0) > 0:
         st.session_state.sl_type_key = "ATR"
         st.session_state.atr_multiplier_key = params.get('atr_multiplier', 2.0)
@@ -79,19 +73,16 @@ def apply_full_strategy_params(strategy):
         st.session_state.sl_type_key = "Yüzde (%)"
         st.session_state.stop_loss_pct_key = params.get('stop_loss_pct', 2.0)
 
-    # Kademeli Kâr Alma (Take-Profit) Ayarları
     st.session_state.move_sl_to_be = params.get('move_sl_to_be', True)
     st.session_state.tp1_pct_key = params.get('tp1_pct', 5.0)
     st.session_state.tp1_size_key = params.get('tp1_size_pct', 50)
     st.session_state.tp2_pct_key = params.get('tp2_pct', 10.0)
     st.session_state.tp2_size_key = params.get('tp2_size_pct', 50)
 
-    # --- 4. Çoklu Zaman Dilimi (MTA) Ayarlarını Yükle ---
     st.session_state.use_mta_key = params.get('use_mta', True)
     st.session_state.higher_timeframe_key = params.get('higher_timeframe', '4h')
     st.session_state.trend_ema_period_key = params.get('trend_ema_period', 50)
 
-    # --- 5. Diğer Parametreleri Yükle ---
     st.session_state.puzzle_bot = params.get('use_puzzle_bot', False)
     st.session_state.ml_toggle = params.get('use_ml', False)
     st.session_state.telegram_alerts = params.get('telegram_enabled', True)
@@ -110,7 +101,7 @@ def run_rl_backtest(model_path, backtest_df):
     obs, _ = env.reset()
 
     trades = []
-    initial_balance = env.initial_balance  # Başlangıç bakiyesini al
+    initial_balance = env.initial_balance
 
     while True:
         action, _states = model.predict(obs, deterministic=True)
@@ -118,16 +109,14 @@ def run_rl_backtest(model_path, backtest_df):
 
         current_price = env.df['Close'].iloc[env.current_step if env.current_step < len(env.df) else -1]
 
-        # Sadece pozisyon değişikliği olduğunda işlem kaydet
-        if action == 1 and env.position == 1:  # Alış yapıldı
+        if action == 1 and env.position == 1:
             trades.append({'Zaman': env.df.index[env.current_step], 'İşlem': 'Al', 'Fiyat': current_price,
                            'Bakiye': env.net_worth})
-        elif action == 2 and env.position == 0:  # Satış yapıldı
+        elif action == 2 and env.position == 0:
             trades.append({'Zaman': env.df.index[env.current_step], 'İşlem': 'Sat', 'Fiyat': current_price,
                            'Bakiye': env.net_worth})
 
         if done:
-            # Kapanmamış pozisyon varsa son fiyattan kapat
             if env.position == 1:
                 trades.append({'Zaman': env.df.index[-1], 'İşlem': 'Pozisyonu Kapat', 'Fiyat': env.df['Close'].iloc[-1],
                                'Bakiye': env.net_worth})
@@ -137,7 +126,6 @@ def run_rl_backtest(model_path, backtest_df):
 
 initialize_db()
 
-# Kullanıcının giriş durumunu saklamak için session_state'i başlat
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 
@@ -150,7 +138,6 @@ def load_config():
         with open(CONFIG_FILE, 'r') as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        # Eğer dosya yoksa veya bozuksa, varsayılan bir yapı döndür
         return {
             "live_tracking_enabled": False,
             "telegram_enabled": False,
@@ -169,7 +156,6 @@ st.set_page_config(page_title="Veritas Point Labs", layout="wide")
 st.title("📊 Veritas Point Labs")
 
 
-# Session state'i kullanarak config'i bir kere yükle
 if 'config' not in st.session_state:
     st.session_state.config = load_config()
 
@@ -184,7 +170,7 @@ page = st.sidebar.radio(
 
 
 if "live_tracking" not in st.session_state:
-    st.session_state.live_tracking = False  # Başlangıçta izleme kapalı
+    st.session_state.live_tracking = False
 
 with st.sidebar.expander("📊 Grafik Gösterge Seçenekleri", expanded=False):
     show_sma = st.checkbox("SMA Göster", value=False)
@@ -205,15 +191,12 @@ with st.sidebar.expander("⏳ Çoklu Zaman Dilimi Analizi (MTA)", expanded=True)
     use_mta = st.checkbox("Ana Trend Filtresini Kullan", value=True,
                           help="Daha üst bir zaman dilimindeki ana trend yönünde sinyal üretir. Başarı oranını artırır.")
     if use_mta:
-        # Mevcut işlem zaman dilimine göre mantıklı bir üst zaman dilimi öner
         timeframe_map = {"15m": "1h", "1h": "4h", "4h": "1d"}
-        # 'interval' session_state'de yoksa varsayılan olarak '1h' kullan
         current_interval = st.session_state.get('interval', '1h')
         default_higher_tf = timeframe_map.get(current_interval, "4h")
 
         higher_tf_options = ["1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"]
 
-        # Önerilen üst zaman diliminin index'ini bul, bulamazsa varsayılan olarak 2 (4h) kullan
         try:
             default_index = higher_tf_options.index(default_higher_tf)
         except ValueError:
@@ -265,7 +248,6 @@ if use_rsi:
     rsi_buy = st.sidebar.slider("RSI Alış Eşiği", min_value=0, max_value=50, value=30, step=1, key="rsi_buy_key")
     rsi_sell = st.sidebar.slider("RSI Satış Eşiği", min_value=50, max_value=100, value=70, step=1, key="rsi_sell_key")
 else:
-    # Default değerler (kullanılmayacak çünkü use_rsi False)
     rsi_buy = 30
     rsi_sell = 70
     rsi_period = 14
@@ -285,8 +267,7 @@ adx_threshold = st.sidebar.slider("ADX Eşiği", 10, 50, 25, key="adx_threshold_
 
 
 if 'symbols_key' not in st.session_state:
-    st.session_state.symbols_key = ["BTCUSDT", "ETHUSDT"] # Varsayılan değer
-# Üst ekran sembol ve interval seçimi (sabit)
+    st.session_state.symbols_key = ["BTCUSDT", "ETHUSDT"]
 symbols = st.multiselect(
     "📈 Portföyde test edilecek semboller",
     [
@@ -303,21 +284,17 @@ symbols = st.multiselect(
 )
 
 timeframe_options = ["15m", "1h", "4h"]
-# session_state'de kayıtlı index'i bul, yoksa varsayılan olarak 1 ('1h') kullan
 default_interval_index = timeframe_options.index(st.session_state.get('interval_key', '1h')) if st.session_state.get('interval_key', '1h') in timeframe_options else 1
 
 interval = st.selectbox(
     "⏳ Zaman Dilimi Seçin",
     options=timeframe_options,
-    index=default_interval_index, # index'i session_state'den al
-    key="interval_key" # 'key' parametresini kullanıyoruz
+    index=default_interval_index,
+    key="interval_key"
 )
 
-# Container’lar
 results_section = st.container()
 optimize_section = st.container()
-
-# --- YENİ ve KÜÇÜLTÜLMÜŞ HALİ ---
 
 with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
     col1, col2, col3 = st.columns(3)
@@ -328,7 +305,7 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
                                    key="signal_mode_key")
         signal_direction = {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode]
         signal_logic = st.selectbox("Sinyal Mantığı", ["AND (Teyitli)", "OR (Hızlı)"], index=1,
-                                    key="signal_logic_key",  # <-- BU SATIRI EKLEYİN
+                                    key="signal_logic_key",
                                     help="AND: Tüm aktif göstergeler aynı anda sinyal vermeli. OR: Herhangi bir göstergenin sinyali yeterli.")
         cooldown_bars = st.slider("İşlem Arası Bekleme (bar)", 0, 10, 3, key="cooldown_bars_key")
         commission_pct = st.slider(
@@ -379,7 +356,7 @@ strategy_params = {
     'signal_direction': {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode],
     'use_puzzle_bot': use_puzzle_bot, 'use_ml': use_ml, 'use_mta': use_mta,
     'higher_timeframe': higher_timeframe, 'trend_ema_period': trend_ema_period,
-    'commission_pct': 0.1, # Örnek olarak komisyon
+    'commission_pct': 0.1,
     'tp1_pct': tp1_pct, 'tp1_size_pct': tp1_size_pct,
     'tp2_pct': tp2_pct, 'tp2_size_pct': tp2_size_pct,
     'move_sl_to_be': move_sl_to_be
@@ -390,9 +367,6 @@ if "live_thread_started" not in st.session_state: st.session_state.live_thread_s
 if "last_signal" not in st.session_state: st.session_state.last_signal = "Henüz sinyal yok."
 if "backtest_results" not in st.session_state: st.session_state.backtest_results = pd.DataFrame()
 
-
-# ------------------------------
-# Fonksiyonlar
 
 def update_price_live(symbol, interval, placeholder):
     signal_text_map = {
@@ -452,9 +426,6 @@ def update_price_live(symbol, interval, placeholder):
             placeholder.warning(f"⚠️ Canlı veri hatası: {e}")
             break
 
-
-# app.py dosyasındaki ESKİ run_portfolio_backtest fonksiyonunun yerine bunu yapıştırın.
-
 def run_portfolio_backtest(symbols, interval, strategy_params):
     """
     Kademeli Kâr Alma ve Stop'u Başa Çekme özelliklerini içeren,
@@ -487,7 +458,7 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
 
         trades = []
         position, entry_price, entry_time, stop_loss_price, cooldown = None, 0, None, 0, 0
-        position_size = 0  # 1.0 = %100
+        position_size = 0
         tp1_target, tp2_target = 0, 0
         tp1_hit, tp2_hit = False, False
 
@@ -501,20 +472,15 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
             current_row['High']
             time_idx, current_atr = current_row.name, prev_row.get('ATR', 0)
 
-            # --- POZİSYON YÖNETİMİ ---
             if position is not None:
                 exit_price, exit_reason = None, ""
 
-                # 1. Stop-Loss Kontrolü
                 if (position == 'Long' and low_price <= stop_loss_price) or \
                         (position == 'Short' and high_price >= stop_loss_price):
                     exit_price, exit_reason = stop_loss_price, "Stop-Loss"
 
-                # 2. Kademeli Kâr Alma Kontrolü
                 else:
-                    # LONG Pozisyon için TP kontrolleri
                     if position == 'Long':
-                        # TP1 kontrolü
                         if not tp1_hit and high_price >= tp1_target:
                             size_to_close = position_size * (strategy_params['tp1_size_pct'] / 100.0)
                             position_size -= size_to_close
@@ -525,9 +491,8 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
                                            'Getiri (%)': round(ret, 2)})
                             tp1_hit = True
                             if strategy_params['move_sl_to_be']:
-                                stop_loss_price = entry_price  # Stop'u girişe çek
+                                stop_loss_price = entry_price
 
-                        # TP2 kontrolü
                         if not tp2_hit and high_price >= tp2_target:
                             size_to_close = position_size * (strategy_params['tp2_size_pct'] / 100.0)
                             position_size -= size_to_close
@@ -538,9 +503,7 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
                                            'Getiri (%)': round(ret, 2)})
                             tp2_hit = True
 
-                    # SHORT Pozisyon için TP kontrolleri
                     elif position == 'Short':
-                        # TP1 kontrolü
                         if not tp1_hit and low_price <= tp1_target:
                             size_to_close = position_size * (strategy_params['tp1_size_pct'] / 100.0)
                             position_size -= size_to_close
@@ -551,9 +514,8 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
                                            'Getiri (%)': round(ret, 2)})
                             tp1_hit = True
                             if strategy_params['move_sl_to_be']:
-                                stop_loss_price = entry_price  # Stop'u girişe çek
+                                stop_loss_price = entry_price
 
-                        # TP2 kontrolü
                         if not tp2_hit and low_price <= tp2_target:
                             size_to_close = position_size * (strategy_params['tp2_size_pct'] / 100.0)
                             position_size -= size_to_close
@@ -564,14 +526,12 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
                                            'Getiri (%)': round(ret, 2)})
                             tp2_hit = True
 
-                # 3. Karşıt Sinyal ile Pozisyon Kapatma
                 if (position == 'Long' and signal == 'Short') or \
                         (position == 'Short' and signal == 'Al'):
                     exit_price, exit_reason = open_price, "Karşıt Sinyal"
 
-                # Pozisyonu tamamen kapat
                 if exit_price is not None or position_size <= 0.01:
-                    if position_size > 0:  # Eğer SL veya karşıt sinyal ile kapanıyorsa kalan pozisyonu kapat
+                    if position_size > 0:
                         ret = ((exit_price - entry_price) / entry_price * 100) if position == 'Long' else (
                                     (entry_price - exit_price) / entry_price * 100)
                         ret -= strategy_params['commission_pct']
@@ -581,7 +541,6 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
 
                     position, cooldown, position_size = None, strategy_params.get('cooldown_bars', 3), 0
 
-            # --- YENİ POZİSYON AÇMA ---
             if position is None:
                 entry_signal = None
                 if signal == 'Al' and strategy_params['signal_direction'] != 'Short':
@@ -599,7 +558,7 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
                                     current_atr * strategy_params['atr_multiplier'])
                         tp1_target = entry_price * (1 + strategy_params['tp1_pct'] / 100.0)
                         tp2_target = entry_price * (1 + strategy_params['tp2_pct'] / 100.0)
-                    else:  # Short
+                    else:
                         stop_loss_price = entry_price * (1 + strategy_params['stop_loss_pct'] / 100) if strategy_params[
                                                                                                             'atr_multiplier'] <= 0 else entry_price + (
                                     current_atr * strategy_params['atr_multiplier'])
@@ -633,7 +592,6 @@ def apply_selected_params(selected_params):
 def apply_selected_params(selected_params):
         """
         Seçilen optimizasyon parametrelerini session_state'e uygular.
-        Bu fonksiyon, butonun on_click olayı ile tetiklenir.
         """
         st.session_state.rsi_buy_key = int(selected_params['rsi_buy'])
         st.session_state.rsi_sell_key = int(selected_params['rsi_sell'])
@@ -680,16 +638,12 @@ def live_signal_loop(symbols, interval, params, delay=60):
                 pass
         time.sleep(delay)
 
-
-# app.py dosyasındaki ESKİ run_portfolio_optimization fonksiyonunu silip yerine bunu yapıştırın.
-
 def run_portfolio_optimization(symbols, interval, strategy_params):
     st.info("""
     Bu bölümde, stratejinizin en iyi performans gösteren parametrelerini bulmak için binlerce kombinasyonu test edebilirsiniz.
     Lütfen optimize etmek istediğiniz hedefi ve parametrelerin test edileceği aralıkları seçin.
     """)
 
-    # --- Optimizasyon Hedefi ---
     st.subheader("1. Optimizasyon Hedefini Seçin")
     optimization_target = st.selectbox(
         "Hangi Metriğe Göre Optimize Edilsin?",
@@ -699,7 +653,6 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
         help="Optimizasyon, seçtiğiniz bu metriği maksimize (veya Drawdown için minimize) etmeye çalışacaktır."
     )
 
-    # --- Parametre Aralıkları ---
     st.subheader("2. Parametre Test Aralıklarını Belirleyin")
     param_col1, param_col2 = st.columns(2)
     with param_col1:
@@ -712,12 +665,9 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
         atr_multiplier_range = st.slider("ATR Çarpanı Aralığı", 1.0, 5.0, (1.5, 2.5))
         tp_pct_range = st.slider("Take Profit (%) Aralığı", 1.0, 20.0, (4.0, 8.0))
 
-    # --- Optimizasyon Kontrolü ---
     st.subheader("3. Optimizasyonu Başlatın")
-    # ... (Kombinasyon hesaplama kodları aynı kalabilir)
 
     if st.button("🚀 Optimizasyonu Başlat", type="primary"):
-        # Parametre grid'ini oluştur
         param_grid = {
             'rsi_buy': range(rsi_buy_range[0], rsi_buy_range[1] + 1, 5),
             'rsi_sell': range(rsi_sell_range[0], rsi_sell_range[1] + 1, 5),
@@ -730,8 +680,7 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
         keys, values = zip(*param_grid.items())
         all_combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
 
-        # ... (Örneklem seçme kodları aynı kalabilir)
-        max_tests = 200  # Örnek olarak
+        max_tests = 200
         if len(all_combinations) > max_tests:
             test_combinations = random.sample(all_combinations, max_tests)
         else:
@@ -744,7 +693,7 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
         for i, params_to_test in enumerate(test_combinations):
             current_params = strategy_params.copy()
             current_params.update(params_to_test)
-            current_params['stop_loss_pct'] = 0  # ATR kullandığımız için yüzdeyi sıfırla
+            current_params['stop_loss_pct'] = 0
 
             all_trades = []
             for symbol in symbols:
@@ -759,7 +708,6 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
                         df = add_higher_timeframe_trend(df, df_higher, current_params['trend_ema_period'])
                         df = filter_signals_with_trend(df)
 
-                # --- BURADAN İTİBAREN YENİ BACKTEST DÖNGÜSÜ ---
                 trades = []
                 position = None
                 entry_price = 0
@@ -811,11 +759,9 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
                                 exit_price = open_price
 
                         if exit_price is not None:
-                            # Brüt getiriyi hesapla
                             gross_ret = ((exit_price - entry_price) / entry_price * 100) if position == 'Long' else (
                                         (entry_price - exit_price) / entry_price * 100)
 
-                            # Komisyonu düşerek net getiriyi hesapla
                             commission_cost = current_params['commission_pct'] * 2
                             ret = gross_ret - commission_cost
 
@@ -833,7 +779,6 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
                             position, entry_price, entry_time = 'Short', open_price, time_idx
                             if current_params['atr_multiplier'] > 0 and current_atr > 0:
                                 stop_loss_price = entry_price + (current_atr * current_params['atr_multiplier'])
-                # --- YENİ DÖNGÜ SONU ---
 
                 if trades:
                     trades_df = pd.DataFrame(trades)
@@ -862,34 +807,24 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
 
         status_text.success("✅ Optimizasyon tamamlandı!")
 
-
-# ------------------------------
-# Ana Sayfa Menü Yönetimi
-
 if page == "Portföy Backtest":
 
 
-    # Seçilen sembolleri session_state'e kaydet (opsiyonel ama iyi bir pratik)
     st.session_state.selected_symbols = symbols
 
     if st.button("🚀 Portföy Backtest Başlat"):
-        # run_portfolio_backtest fonksiyonu, sonuçları st.session_state['backtest_results']'e kaydeder
         run_portfolio_backtest(symbols, interval, strategy_params)
 
-    # Backtest sonuçları varsa, sonuçları göster
     if 'backtest_results' in st.session_state and not st.session_state['backtest_results'].empty:
         portfolio_results = st.session_state['backtest_results'].copy()
 
-        # Analiz için 'Çıkış Zamanı' olmayan (açık) pozisyonları çıkar
         analysis_df = portfolio_results.dropna(subset=['Çıkış Zamanı'])
 
         if not analysis_df.empty:
-            # Analiz fonksiyonu 3 değer döndürür: metrikler, sermaye eğrisi, düşüş serisi
             performance_metrics, equity_curve, drawdown_series = analyze_backtest_results(analysis_df)
 
             st.subheader("📊 Portföy Performans Metrikleri")
 
-            # Metrikleri ve açıklamalarını tanımla
             metric_tooltips = {
                 "Toplam İşlem": "Backtest süresince yapılan toplam alım-satım işlemi sayısı.",
                 "Kazançlı İşlem Oranı (%)": "Toplam işlemlerin yüzde kaçının kâr ile sonuçlandığı.",
@@ -903,7 +838,6 @@ if page == "Portföy Backtest":
                 "Calmar Oranı": "Yıllıklandırılmış getirinin maksimum düşüşe oranıdır."
             }
 
-            # Metrikleri iki sütun halinde göster
             col1, col2 = st.columns(2)
             metrics_list = list(performance_metrics.items())
             mid_point = (len(metrics_list) + 1) // 2
@@ -915,13 +849,11 @@ if page == "Portföy Backtest":
                 for key, value in metrics_list[mid_point:]:
                     st.metric(label=key, value=value, help=metric_tooltips.get(key, ""))
 
-            # Performans grafiğini göster
             st.subheader("📈 Strateji Performans Grafiği")
             if equity_curve is not None and drawdown_series is not None:
                 performance_fig = plot_performance_summary(equity_curve, drawdown_series)
                 st.plotly_chart(performance_fig, use_container_width=True)
 
-        # Tüm işlemlerin tablosunu göster
         st.subheader("📋 Tüm İşlemler")
         st.dataframe(portfolio_results, use_container_width=True)
 
@@ -947,7 +879,6 @@ elif page == "Canlı İzleme":
             else:
                 st.error("Girilen şifre yanlış.")
     else:
-        # --- BÖLÜM 0: GLOBAL PİYASA DURUM PANELİ ---
         st.subheader("🌐 Global Piyasa Durumu")
 
         fng_data = get_fear_and_greed_index()
@@ -972,11 +903,11 @@ elif page == "Canlı İzleme":
 
         st.markdown("---")
 
-        # --- BÖLÜM 1: GENEL PORTFÖY PANELİ ---
         st.subheader("🚀 Genel Portföy Durumu")
 
         open_positions_df = get_all_open_positions()
-        live_metrics = get_live_closed_trades_metrics()
+        # DEĞİŞİKLİK BURADA BAŞLIYOR: Genel metrikleri alıyoruz
+        live_metrics_overall = get_live_closed_trades_metrics()
 
         if not open_positions_df.empty:
             symbols_with_open_positions = open_positions_df['Sembol'].unique().tolist()
@@ -1008,8 +939,9 @@ elif page == "Canlı İzleme":
 
         col1_pnl, col2_pnl, col3_pnl = st.columns(3)
         col1_pnl.metric(label="Açık Pozisyonlar Toplam Kâr/Zarar", value=f"{total_pnl:.2f}%")
-        col2_pnl.metric(label="Genel Başarı Oranı (Kapalı)", value=f"{live_metrics['win_rate']:.2f}%",
-                        help=f"Canlıda kapanan {live_metrics['total_trades']} işlem üzerinden hesaplanmıştır.")
+        # DEĞİŞİKLİK: Metrikleri yeni fonksiyondan alıyoruz
+        col2_pnl.metric(label="Genel Başarı Oranı (Kapalı)", value=f"{live_metrics_overall['Başarı Oranı (%)']}%",
+                        help=f"Canlıda kapanan {live_metrics_overall['Toplam İşlem']} işlem üzerinden hesaplanmıştır.")
 
         most_profitable_strategy = max(pnl_by_strategy, key=pnl_by_strategy.get) if pnl_by_strategy else "--"
         col3_pnl.metric(label="En Kârlı Strateji (Anlık)", value=most_profitable_strategy)
@@ -1022,7 +954,6 @@ elif page == "Canlı İzleme":
 
         st.markdown("---")
 
-        # --- BÖLÜM 2: STRATEJİ YÖNETİM PANELİ ---
         main_col1, main_col2 = st.columns([5, 1])
         with main_col1:
             st.header("📡 Canlı Strateji Yönetim Paneli")
@@ -1120,6 +1051,25 @@ elif page == "Canlı İzleme":
                                 st.warning(f"'{strategy_name}' stratejisi silindi.")
                                 st.rerun()
 
+                    # YENİ PERFORMANS PANELİ BURADA
+                    with st.expander("📈 Canlı Performans Detayları"):
+                        # Her strateji için metrikleri özel olarak çekiyoruz
+                        live_metrics_strategy = get_live_closed_trades_metrics(strategy_id=strategy_id)
+
+                        if live_metrics_strategy['Toplam İşlem'] == 0:
+                            st.info("Bu strateji için henüz kapanmış bir işlem bulunmuyor.")
+                        else:
+                            m_col1, m_col2, m_col3 = st.columns(3)
+                            m_col1.metric("Toplam İşlem", live_metrics_strategy['Toplam İşlem'])
+                            m_col2.metric("Başarı Oranı (%)", f"{live_metrics_strategy['Başarı Oranı (%)']}%")
+                            m_col3.metric("Toplam Getiri (%)", f"{live_metrics_strategy['Toplam Getiri (%)']}%")
+
+                            m_col4, m_col5, m_col6 = st.columns(3)
+                            m_col4.metric("Ortalama Kazanç (%)", f"{live_metrics_strategy['Ortalama Kazanç (%)']}%")
+                            m_col5.metric("Ortalama Kayıp (%)", f"{live_metrics_strategy['Ortalama Kayıp (%)']}%")
+                            m_col6.metric("Profit Factor", live_metrics_strategy['Profit Factor'])
+
+
         st.subheader("🔔 Son Alarmlar (Tüm Stratejilerden)")
         alarm_history = get_alarm_history_db(limit=20)
         if alarm_history is not None and not alarm_history.empty:
@@ -1128,17 +1078,13 @@ elif page == "Canlı İzleme":
             st.info("Veritabanında henüz kayıtlı bir alarm yok.")
 
 
-# app.py dosyasında, mevcut 'elif page == "Optimizasyon":' bloğunu silip yerine bunu yapıştırın.
-
 elif page == "Optimizasyon":
-    # BAŞLIK DOĞRU YERDE
     st.header("⚙️ Strateji Parametre Optimizasyonu")
     st.info("""
     Bu bölümde, stratejinizin en iyi performans gösteren parametrelerini bulmak için binlerce kombinasyonu test edebilirsiniz.
     Lütfen optimize etmek istediğiniz hedefi ve parametrelerin test edileceği aralıkları seçin.
     """)
 
-    # --- Optimizasyon Hedefi ---
     st.subheader("1. Optimizasyon Hedefini Seçin")
     optimization_target = st.selectbox(
         "Hangi Metriğe Göre Optimize Edilsin?",
@@ -1148,7 +1094,6 @@ elif page == "Optimizasyon":
         help="Optimizasyon, seçtiğiniz bu metriği maksimize (veya Drawdown için minimize) etmeye çalışacaktır."
     )
 
-    # --- Parametre Aralıkları ---
     st.subheader("2. Parametre Test Aralıklarını Belirleyin")
 
     param_col1, param_col2 = st.columns(2)
@@ -1164,7 +1109,6 @@ elif page == "Optimizasyon":
         atr_multiplier_range = st.slider("ATR Çarpanı Aralığı", 1.0, 5.0, (1.5, 2.5))
         tp_pct_range = st.slider("Take Profit (%) Aralığı", 1.0, 20.0, (4.0, 8.0))
 
-    # --- Optimizasyon Kontrolü ---
     st.subheader("3. Optimizasyonu Başlatın")
 
     total_combinations = (
@@ -1182,7 +1126,6 @@ elif page == "Optimizasyon":
 
     if st.button("🚀 Optimizasyonu Başlat", type="primary"):
 
-        # Parametre grid'ini oluştur
         param_grid = {
             'rsi_buy': range(rsi_buy_range[0], rsi_buy_range[1] + 1, 5),
             'rsi_sell': range(rsi_sell_range[0], rsi_sell_range[1] + 1, 5),
@@ -1206,11 +1149,9 @@ elif page == "Optimizasyon":
         status_text = st.empty()
 
         for i, params_to_test in enumerate(test_combinations):
-            # Ana backtest'teki parametreleri kopyala ve bu iterasyon için olanlarla güncelle
             current_params = strategy_params.copy()
             current_params.update(params_to_test)
 
-            # ATR stop kullanıldığını varsay, yüzdeyi sıfırla
             current_params['stop_loss_pct'] = 0
 
             all_trades = []
@@ -1221,14 +1162,13 @@ elif page == "Optimizasyon":
                 df = generate_all_indicators(df, **current_params)
                 df = generate_signals(df, **current_params)
 
-                # MTA filtresini uygula
                 if current_params['use_mta']:
                     df_higher = get_binance_klines(symbol, current_params['higher_timeframe'], 1000)
                     if df_higher is not None and not df_higher.empty:
                         df = add_higher_timeframe_trend(df, df_higher, current_params['trend_ema_period'])
                         df = filter_signals_with_trend(df)
 
-                trades_df = backtest_signals(df)  # Basit backtest yeterli
+                trades_df = backtest_signals(df)
                 if not trades_df.empty:
                     all_trades.append(trades_df)
 
@@ -1236,9 +1176,7 @@ elif page == "Optimizasyon":
                 final_trades = pd.concat(all_trades, ignore_index=True).dropna(subset=['Çıkış Zamanı'])
                 if not final_trades.empty:
                     metrics, _, _ = analyze_backtest_results(final_trades)
-                    # Parametreleri ve metrikleri birleştir
                     result_row = params_to_test.copy()
-                    # Metriklerdeki "%" ve string ifadeleri temizleyip float'a çevir
                     for key, val in metrics.items():
                         try:
                             result_row[key] = float(str(val).replace('%', ''))
@@ -1253,7 +1191,6 @@ elif page == "Optimizasyon":
         if results_list:
             results_df = pd.DataFrame(results_list)
 
-            # Hedefe göre sırala
             is_ascending = True if optimization_target == "Maksimum Düşüş (Drawdown) (%)" else False
             sorted_results = results_df.sort_values(by=optimization_target, ascending=is_ascending).head(10)
 
@@ -1262,23 +1199,17 @@ elif page == "Optimizasyon":
 
         status_text.success("✅ Optimizasyon tamamlandı! En iyi 10 sonuç aşağıda listelenmiştir.")
 
-    # app.py dosyasındaki 'elif page == "Optimizasyon":' bloğunun sonundaki
-    # 'if 'optimization_results' in st.session_state:' koşulunu bununla değiştirin.
-
     if 'optimization_results' in st.session_state and not st.session_state.optimization_results.empty:
         st.subheader("🏆 En İyi Parametre Kombinasyonları")
         results_df = st.session_state.optimization_results
 
-        # Görüntüleme için gereksiz kolonları kaldır
         display_cols = [
             'rsi_buy', 'rsi_sell', 'adx_threshold', 'atr_multiplier', 'take_profit_pct',
             optimization_target, 'Toplam İşlem', 'Kazançlı İşlem Oranı (%)'
         ]
-        # Sadece var olan kolonları göster
         display_cols_exist = [col for col in display_cols if col in results_df.columns]
         st.dataframe(results_df[display_cols_exist])
 
-        # --- GÜNCELLENMİŞ "UYGULA" BÖLÜMÜ ---
         st.subheader("4. Sonuçları Kenar Çubuğuna Aktar")
 
         selected_index = st.selectbox(
@@ -1287,15 +1218,12 @@ elif page == "Optimizasyon":
             help="Yukarıdaki tablodan en beğendiğiniz sonucun index numarasını seçin."
         )
 
-        # Butona tıklandığında çalışacak callback fonksiyonunu ve argümanlarını ata
         st.button(
             "✅ Seçili Parametreleri Uygula",
             on_click=apply_selected_params,
-            args=(results_df.loc[selected_index],)  # args'ı bir tuple olarak göndermeyi unutmayın (sonunda virgül var)
+            args=(results_df.loc[selected_index],)
         )
 
-
-# app.py dosyasındaki if/elif yapısının sonuna bu bloğu ekleyin
 
 elif page == "Detaylı Grafik Analizi":
     st.header("📈 Detaylı Grafik Analizi")
@@ -1305,19 +1233,15 @@ elif page == "Detaylı Grafik Analizi":
     Grafik üzerindeki göstergeleri (SMA, EMA, Bollinger vb.) kenar çubuğundaki **"📊 Grafik Gösterge Seçenekleri"** menüsünden kontrol edebilirsiniz.
     """)
 
-    # Backtest verisinin var olup olmadığını kontrol et
     if 'backtest_data' not in st.session_state or not st.session_state.backtest_data:
         st.warning("Lütfen önce 'Portföy Backtest' sayfasından bir backtest çalıştırın.")
     else:
-        # Backtesti yapılan sembollerden birini seçmek için bir dropdown oluştur
         backtested_symbols = list(st.session_state.backtest_data.keys())
         selected_symbol = st.selectbox("Analiz edilecek sembolü seçin:", backtested_symbols)
 
         if selected_symbol:
-            # Seçilen sembolün DataFrame'ini al
             df = st.session_state.backtest_data[selected_symbol]
 
-            # Kenar çubuğundaki "Göster" checkbox'larının değerlerini bir sözlükte topla
             chart_options = {
                 "show_sma": show_sma,
                 "show_ema": show_ema,
@@ -1328,10 +1252,8 @@ elif page == "Detaylı Grafik Analizi":
                 "show_fibonacci": show_fibonacci
             }
 
-            # Fibonacci seviyelerini hesapla (eğer gösterilecekse)
             fib_levels = calculate_fibonacci_levels(df) if show_fibonacci else {}
 
-            # Atıl durumdaki plot_chart fonksiyonunu burada çağırıyoruz!
             fig = plot_chart(df, selected_symbol, fib_levels, chart_options)
 
             st.plotly_chart(fig, use_container_width=True)
@@ -1358,7 +1280,6 @@ elif page == "🤖 RL Ajanı":
 
     if st.button("🚀 Ajan Eğitimini Başlat", type="primary"):
         with st.spinner(f"Lütfen bekleyin... RL ajanı **{rl_symbol}** verileri üzerinde **{rl_timesteps}** adım boyunca eğitiliyor. Bu işlem birkaç dakika sürebilir."):
-            # rl_trainer.py'deki fonksiyonumuzu burada çağırıyoruz
             train_rl_agent(symbol=rl_symbol, interval=rl_interval, total_timesteps=rl_timesteps)
         st.success("Eğitim başarıyla tamamlandı! Eğitilmiş model kaydedildi.")
         st.balloons()
@@ -1367,7 +1288,6 @@ elif page == "🤖 RL Ajanı":
 
     st.subheader("2. Eğitilmiş Ajanı Test Et (Backtest)")
 
-    # Kaydedilmiş modelleri bul ve listele
     saved_models = [f for f in os.listdir('.') if f.startswith('rl_model_') and f.endswith('.zip')]
 
     if not saved_models:
@@ -1396,19 +1316,14 @@ elif page == "🤖 RL Ajanı":
                     st.subheader("İşlem Sonuçları")
                     st.dataframe(trade_results_df)
 
-                    # Basit bir performans metriği
                     final_balance = trade_results_df['Bakiye'].iloc[-1]
-                    initial_balance = 10000 # Env'deki başlangıç değeri
+                    initial_balance = 10000
                     pnl_percent = ((final_balance - initial_balance) / initial_balance) * 100
                     st.metric("Toplam Kâr/Zarar", f"{pnl_percent:.2f}%")
-# ------------------------------
-# Alarmlar ve Telegram Durumu Paneli
-
 st.sidebar.header("📊 Mevcut Açık Pozisyonlar")
 
 open_positions_df = get_all_open_positions()
 
-# Anlık fiyatları çekmek için açık pozisyonu olan sembollerin listesini oluştur
 if not open_positions_df.empty:
     symbols_for_prices = open_positions_df['Sembol'].unique().tolist()
     live_prices = get_current_prices(symbols_for_prices)
@@ -1417,14 +1332,12 @@ else:
 
 if not open_positions_df.empty:
     for index, row in open_positions_df.iterrows():
-        # Gerekli verileri DataFrame'den al
         strategy_id = row['strategy_id']
         symbol = row['Sembol']
         position_type = row['Pozisyon']
         entry_price = row['Giriş Fiyatı']
         current_price = live_prices.get(symbol, 0)
 
-        # Anlık P&L yüzdesini hesapla
         pnl_percent = 0
         if current_price > 0 and entry_price > 0:
             if position_type == 'Long':
@@ -1432,17 +1345,13 @@ if not open_positions_df.empty:
             elif position_type == 'Short':
                 pnl_percent = ((entry_price - current_price) / entry_price) * 100
 
-        # P&L durumuna göre renk ve emoji belirle
         pnl_color = "green" if pnl_percent >= 0 else "red"
         emoji = "🟢" if position_type == 'Long' else "🔴"
 
-        # Her pozisyon için ayrı bir konteyner oluştur
         with st.sidebar.container(border=True):
-            # Bilgileri ve butonu göstermek için sütunlar kullan
             col1, col2 = st.columns([4, 1])
 
             with col1:
-                # Pozisyon bilgilerini Markdown ile göster
                 st.markdown(f"""
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span>{emoji} <b>{symbol}</b></span>
@@ -1455,14 +1364,12 @@ if not open_positions_df.empty:
                 """, unsafe_allow_html=True)
 
             with col2:
-                # MANUEL KAPAT BUTONU
                 if st.button("❌", key=f"close_{strategy_id}_{symbol}",
                              help="Pozisyonu piyasa fiyatından hemen kapatır."):
                     issue_manual_action(strategy_id, symbol, 'CLOSE_POSITION')
                     st.toast(f"{symbol} için pozisyon kapatma emri gönderildi!", icon="📨")
-                    time.sleep(1)  # Arayüzün güncellenmesi için kısa bir bekleme
+                    time.sleep(1)
                     st.rerun()
 
 else:
     st.sidebar.info("Mevcutta açık pozisyon bulunmuyor.")
-

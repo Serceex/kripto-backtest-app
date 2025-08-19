@@ -6,6 +6,7 @@ import json
 import threading
 import os
 from datetime import datetime
+import numpy as np # Numpy'ı import ediyoruz
 
 try:
     project_dir = os.path.dirname(os.path.abspath(__file__))
@@ -164,14 +165,13 @@ def get_alarm_history_db(limit=50):
             df = pd.read_sql_query(query, conn, params=(limit,))
             return df
 
-# --- YENİ FONKSİYON ---
 def get_all_open_positions():
     """Tüm stratejilerdeki mevcut açık pozisyonları bir DataFrame olarak döndürür."""
     with db_lock:
         with get_db_connection() as conn:
             query = """
                 SELECT
-                    s.id as "strategy_id", 
+                    s.id as "strategy_id",
                     s.name as "Strateji Adı",
                     p.symbol as "Sembol",
                     p.position as "Pozisyon",
@@ -183,63 +183,67 @@ def get_all_open_positions():
             df = pd.read_sql_query(query, conn)
             return df
 
-
-
-def get_live_closed_trades_metrics():
+def get_live_closed_trades_metrics(strategy_id=None):
     """
-    'alarms' tablosundaki sinyal geçmişini analiz ederek canlıda kapanan
-    işlemlerin metriklerini hesaplar.
+    Canlıda kapanan işlemlerin detaylı metriklerini hesaplar.
+    Eğer strategy_id verilirse, sadece o strateji için hesaplar.
     """
+    default_metrics = {
+        "Toplam İşlem": 0, "Başarı Oranı (%)": 0.0, "Toplam Getiri (%)": 0.0,
+        "Ortalama Kazanç (%)": 0.0, "Ortalama Kayıp (%)": 0.0, "Profit Factor": 0.0
+    }
+
     with db_lock:
         with get_db_connection() as conn:
-            # Sadece pozisyon açma ve kapama sinyallerini al
-            query = """
-                SELECT strategy_id, symbol, signal, price, timestamp
-                FROM alarms
-                WHERE signal LIKE '%Pozisyon%'
-                ORDER BY timestamp ASC
-            """
-            df = pd.read_sql_query(query, conn)
+            query = "SELECT strategy_id, symbol, signal, price, timestamp FROM alarms WHERE signal LIKE '%Pozisyon%' ORDER BY timestamp ASC"
+            params = ()
+            if strategy_id:
+                query = "SELECT strategy_id, symbol, signal, price, timestamp FROM alarms WHERE strategy_id = ? AND signal LIKE '%Pozisyon%' ORDER BY timestamp ASC"
+                params = (strategy_id,)
+            df = pd.read_sql_query(query, conn, params=params)
 
     if df.empty:
-        return {"total_trades": 0, "win_rate": 0}
+        return default_metrics
 
     trades = []
-    open_trades = {}  # (strategy_id, symbol) -> {entry_price: float}
+    open_trades = {}
 
     for _, row in df.iterrows():
         key = (row['strategy_id'], row['symbol'])
         signal = row['signal']
         price = row['price']
 
-        # Yeni bir pozisyon açılış sinyali
         if 'Yeni' in signal and key not in open_trades:
             open_trades[key] = {'entry_price': price, 'position_type': 'Long' if 'LONG' in signal else 'Short'}
-
-        # Bir pozisyon kapanış sinyali
         elif ('Kapatıldı' in signal or 'Stop-Loss' in signal) and key in open_trades:
             entry_price = open_trades[key]['entry_price']
             position_type = open_trades[key]['position_type']
-            pnl = 0
-
-            if position_type == 'Long':
-                pnl = ((price - entry_price) / entry_price) * 100
-            else:  # Short
-                pnl = ((entry_price - price) / entry_price) * 100
-
+            pnl = ((price - entry_price) / entry_price) * 100 if position_type == 'Long' else ((entry_price - price) / entry_price) * 100
             trades.append({'pnl': pnl})
-            del open_trades[key]  # İşlemi kapat
+            del open_trades[key]
 
     if not trades:
-        return {"total_trades": 0, "win_rate": 0}
+        return default_metrics
 
-    total_trades = len(trades)
-    winning_trades = sum(1 for trade in trades if trade['pnl'] > 0)
-    win_rate = (winning_trades / total_trades) * 100 if total_trades > 0 else 0
+    pnl_list = [t['pnl'] for t in trades]
+    total_trades = len(pnl_list)
+    winning_trades = [p for p in pnl_list if p > 0]
+    losing_trades = [p for p in pnl_list if p <= 0]
 
-    return {"total_trades": total_trades, "win_rate": win_rate}
+    win_rate = (len(winning_trades) / total_trades) * 100 if total_trades > 0 else 0
+    total_pnl = sum(pnl_list)
+    avg_win = sum(winning_trades) / len(winning_trades) if winning_trades else 0
+    avg_loss = abs(sum(losing_trades) / len(losing_trades)) if losing_trades else 0
+    profit_factor = sum(winning_trades) / abs(sum(losing_trades)) if losing_trades and sum(losing_trades) != 0 else np.inf
 
-# database.py dosyasının sonuna ekleyin
+    return {
+        "Toplam İşlem": total_trades,
+        "Başarı Oranı (%)": round(win_rate, 2),
+        "Toplam Getiri (%)": round(total_pnl, 2),
+        "Ortalama Kazanç (%)": round(avg_win, 2),
+        "Ortalama Kayıp (%)": round(avg_loss, 2),
+        "Profit Factor": round(profit_factor, 2)
+    }
 
 def update_strategy_status(strategy_id, status):
     """Bir stratejinin durumunu günceller (running, paused)."""
@@ -274,7 +278,6 @@ def get_and_clear_pending_actions(strategy_id):
 
             if actions:
                 action_ids = tuple(action['id'] for action in actions)
-                # Tek bir ID varsa tuple formatını düzelt
                 if len(action_ids) == 1:
                     conn.execute("UPDATE manual_actions SET status = 'completed' WHERE id = ?", (action_ids[0],))
                 else:

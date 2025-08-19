@@ -168,8 +168,9 @@ config = st.session_state.config
 st.sidebar.header("🔎 Sayfa Seçimi")
 page = st.sidebar.radio(
     "Sayfa",
-    ["Portföy Backtest", "Detaylı Grafik Analizi", "Canlı İzleme", "Optimizasyon", "🤖 RL Ajanı"]
+    ["Portföy Backtest", "Detaylı Grafik Analizi", "Canlı İzleme", "🧬 Gen Havuzu", "Optimizasyon", "🤖 RL Ajanı"]
 )
+
 
 
 if "live_tracking" not in st.session_state:
@@ -1283,6 +1284,77 @@ elif page == "Optimizasyon":
             on_click=apply_selected_params,
             args=(results_df.loc[selected_index],)
         )
+
+elif page == "🧬 Gen Havuzu":
+    st.header("🧬 Strateji Gen Havuzu ve Evrimsel Optimizasyon")
+    st.info("""
+    Bu panel, strateji ekosisteminizi yönetmenizi sağlar. Sistem, en iyi performans gösteren stratejileri
+    seçip onları "çaprazlayarak" veya "mutasyona uğratarak" yeni nesiller yaratır. En kötü performans
+    gösterenler ise doğal seçilim yoluyla elenir. Sizin rolünüz, bu evrim sürecini yönetmektir.
+    """)
+
+    # evolution_chamber.py'yi import etmeyi unutmayın (dosyanın en üstüne ekleyin)
+    from evolution_chamber import run_evolution_cycle
+
+    if 'evolution_log' not in st.session_state:
+        st.session_state.evolution_log = []
+
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("🚀 Evrim Döngüsünü Başlat", type="primary", help="En kötü stratejileri eler ve en iyilerden yenilerini üretir."):
+            with st.spinner("Evrim döngüsü çalışıyor... Stratejiler analiz ediliyor, eleniyor ve yenileri yaratılıyor..."):
+                result = run_evolution_cycle()
+                log_entry = {
+                    "time": datetime.now().strftime('%H:%M:%S'),
+                    "result": result
+                }
+                st.session_state.evolution_log.insert(0, log_entry) # En yeni logu başa ekle
+            st.rerun()
+
+    st.subheader("📈 Canlı Strateji Performans Lider Tablosu")
+
+    all_strategies = get_all_strategies()
+    strategy_performance_data = []
+    for strategy in all_strategies:
+        metrics = get_live_closed_trades_metrics(strategy_id=strategy['id'])
+        performance_score = metrics.get('Profit Factor', 0)
+        if performance_score == float('inf'):
+            performance_score = 1000
+
+        strategy_performance_data.append({
+            "Strateji Adı": strategy['name'],
+            "Profit Factor": f"{performance_score:.2f}",
+            "Başarı Oranı (%)": f"{metrics.get('Başarı Oranı (%)', 0):.2f}",
+            "Toplam İşlem": metrics.get('Toplam İşlem', 0),
+            "Durum": strategy.get('status', 'running').capitalize()
+        })
+
+    if not strategy_performance_data:
+        st.warning("Gösterilecek aktif strateji bulunamadı. Lütfen 'Canlı İzleme' sayfasından stratejiler ekleyin.")
+    else:
+        # Verileri Profit Factor'e göre sırala
+        df_performance = pd.DataFrame(strategy_performance_data)
+        df_performance['Profit Factor'] = pd.to_numeric(df_performance['Profit Factor'])
+        df_performance = df_performance.sort_values(by="Profit Factor", ascending=False).reset_index(drop=True)
+        st.dataframe(df_performance, use_container_width=True)
+
+    st.subheader("📜 Evrim Döngüsü Günlüğü")
+    if not st.session_state.evolution_log:
+        st.info("Henüz bir evrim döngüsü çalıştırılmadı.")
+    else:
+        for log in st.session_state.evolution_log:
+            with st.expander(f"Döngü Zamanı: {log['time']} - Durum: {log['result'].get('status', 'Bilinmiyor').capitalize()}"):
+                result = log['result']
+                if result['status'] == 'completed':
+                    st.markdown("**Elenen Stratejiler:**")
+                    for name in result.get('eliminated', []):
+                        st.markdown(f"- ❌ `{name}`")
+
+                    st.markdown("**Oluşturulan Yeni Stratejiler:**")
+                    for name in result.get('created', []):
+                        st.markdown(f"- ✨ `{name}`")
+                else:
+                    st.warning(f"Bu döngü atlandı. Sebep: {result.get('reason', 'Bilinmiyor')}")
 
 
 elif page == "Detaylı Grafik Analizi":

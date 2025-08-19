@@ -6,7 +6,7 @@ import json
 import threading
 import os
 from datetime import datetime
-import numpy as np # Numpy'ı import ediyoruz
+import numpy as np  # Numpy'ı import ediyoruz
 
 try:
     project_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,17 +18,31 @@ except Exception as e:
 
 db_lock = threading.Lock()
 
+
 def get_db_connection():
     """Veritabanı bağlantı nesnesini döndürür."""
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def initialize_db():
     """Veritabanını ve tabloları başlangıçta oluşturur."""
     with db_lock:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+
+            # --- ORKESTRATÖR GÜNCELLEMESİ ---
+            # Tabloya 'orchestrator_status' sütununu ekle (eğer yoksa)
+            try:
+                cursor.execute("ALTER TABLE strategies ADD COLUMN orchestrator_status TEXT DEFAULT 'active'")
+                conn.commit()
+                print("--- [DATABASE] 'strategies' tablosuna 'orchestrator_status' sütunu eklendi. ---")
+            except sqlite3.OperationalError:
+                # Sütun zaten varsa bu hata alınır, sorun değil.
+                pass
+            # --- GÜNCELLEME SONU ---
+
             cursor.execute("""
               CREATE TABLE IF NOT EXISTS strategies (
                 id TEXT PRIMARY KEY,
@@ -36,7 +50,8 @@ def initialize_db():
                 status TEXT DEFAULT 'running',
                 symbols TEXT,
                 interval TEXT,
-                strategy_params TEXT
+                strategy_params TEXT,
+                orchestrator_status TEXT DEFAULT 'active' -- Bu satırın varlığından emin oluyoruz
             )""")
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS positions (
@@ -67,6 +82,8 @@ def initialize_db():
             conn.commit()
     print("--- [DATABASE] Veritabanı başlatıldı. ---")
 
+
+# ... (dosyanın geri kalanı aynı kalacak) ...
 def add_or_update_strategy(strategy_config):
     """Veritabanına yeni bir strateji ekler veya mevcut olanı günceller."""
     print("\n--- [DATABASE: YAZMA] add_or_update_strategy çağrıldı. ---")
@@ -80,20 +97,25 @@ def add_or_update_strategy(strategy_config):
         try:
             with get_db_connection() as conn:
                 conn.execute("""
-                    INSERT INTO strategies (id, name, status, symbols, interval, strategy_params)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO strategies (id, name, status, symbols, interval, strategy_params, orchestrator_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         name=excluded.name, status=excluded.status, symbols=excluded.symbols,
-                        interval=excluded.interval, strategy_params=excluded.strategy_params
+                        interval=excluded.interval, strategy_params=excluded.strategy_params,
+                        orchestrator_status=excluded.orchestrator_status
                 """, (
                     strategy_config.get('id'), strategy_config.get('name'),
                     strategy_config.get('status', 'running'), symbols_json,
-                    strategy_config.get('interval'), params_json
+                    strategy_config.get('interval'), params_json,
+                    strategy_config.get('orchestrator_status', 'active')  # Yeni alanı ekledik
                 ))
                 conn.commit()
                 print("[YAZMA - Adım 3] Veritabanına yazma BAŞARILI.")
         except Exception as e:
             print(f"[YAZMA - HATA] SQL sorgusunda hata: {e}")
+
+
+# ... (dosyanın geri kalanı aynı kalacak, diğer fonksiyonlar değişmeyecek) ...
 
 def remove_strategy(strategy_id):
     """Veritabanından bir stratejiyi ID'sine göre siler."""
@@ -102,6 +124,7 @@ def remove_strategy(strategy_id):
             conn.execute("DELETE FROM strategies WHERE id = ?", (strategy_id,))
             conn.commit()
     print(f"--- [DATABASE] Strateji (ID: {strategy_id}) silindi. ---")
+
 
 def get_all_strategies():
     """Veritabanındaki tüm stratejileri bir liste olarak döndürür."""
@@ -122,6 +145,7 @@ def get_all_strategies():
             continue
     return result
 
+
 def update_position(strategy_id, symbol, position, entry_price):
     """Bir stratejinin pozisyon durumunu veritabanında günceller."""
     with db_lock:
@@ -134,12 +158,15 @@ def update_position(strategy_id, symbol, position, entry_price):
             """, (strategy_id, symbol, position, entry_price))
             conn.commit()
 
+
 def get_positions_for_strategy(strategy_id):
     """Belirli bir stratejiye ait tüm pozisyonları döndürür."""
     with db_lock:
         with get_db_connection() as conn:
-            positions = conn.execute("SELECT symbol, position, entry_price FROM positions WHERE strategy_id = ?", (strategy_id,)).fetchall()
+            positions = conn.execute("SELECT symbol, position, entry_price FROM positions WHERE strategy_id = ?",
+                                     (strategy_id,)).fetchall()
             return {p['symbol']: {'position': p['position'], 'entry_price': p['entry_price']} for p in positions}
+
 
 def log_alarm_db(strategy_id, symbol, signal, price):
     """Bir alarmı, ilişkili olduğu strateji ID'si ile birlikte veritabanına kaydeder."""
@@ -150,6 +177,7 @@ def log_alarm_db(strategy_id, symbol, signal, price):
                          (strategy_id, timestamp, symbol, signal, price))
             conn.commit()
     print(f"--- [DATABASE] Alarm loglandı: Strateji({strategy_id}) - {symbol} - {signal} ---")
+
 
 def get_alarm_history_db(limit=50):
     """Sadece veritabanında MEVCUT olan stratejilerden gelen son alarmları döndürür."""
@@ -164,6 +192,7 @@ def get_alarm_history_db(limit=50):
             """
             df = pd.read_sql_query(query, conn, params=(limit,))
             return df
+
 
 def get_all_open_positions():
     """Tüm stratejilerdeki mevcut açık pozisyonları bir DataFrame olarak döndürür."""
@@ -182,6 +211,7 @@ def get_all_open_positions():
             """
             df = pd.read_sql_query(query, conn)
             return df
+
 
 def get_live_closed_trades_metrics(strategy_id=None):
     """
@@ -218,7 +248,8 @@ def get_live_closed_trades_metrics(strategy_id=None):
         elif ('Kapatıldı' in signal or 'Stop-Loss' in signal) and key in open_trades:
             entry_price = open_trades[key]['entry_price']
             position_type = open_trades[key]['position_type']
-            pnl = ((price - entry_price) / entry_price) * 100 if position_type == 'Long' else ((entry_price - price) / entry_price) * 100
+            pnl = ((price - entry_price) / entry_price) * 100 if position_type == 'Long' else ((
+                                                                                                           entry_price - price) / entry_price) * 100
             trades.append({'pnl': pnl})
             del open_trades[key]
 
@@ -234,7 +265,8 @@ def get_live_closed_trades_metrics(strategy_id=None):
     total_pnl = sum(pnl_list)
     avg_win = sum(winning_trades) / len(winning_trades) if winning_trades else 0
     avg_loss = abs(sum(losing_trades) / len(losing_trades)) if losing_trades else 0
-    profit_factor = sum(winning_trades) / abs(sum(losing_trades)) if losing_trades and sum(losing_trades) != 0 else np.inf
+    profit_factor = sum(winning_trades) / abs(sum(losing_trades)) if losing_trades and sum(
+        losing_trades) != 0 else np.inf
 
     return {
         "Toplam İşlem": total_trades,
@@ -245,13 +277,22 @@ def get_live_closed_trades_metrics(strategy_id=None):
         "Profit Factor": round(profit_factor, 2)
     }
 
-def update_strategy_status(strategy_id, status):
-    """Bir stratejinin durumunu günceller (running, paused)."""
+
+def update_strategy_status(strategy_id, status, is_orchestrator_decision=False):
+    """
+    Bir stratejinin durumunu günceller.
+    'status' -> kullanıcı tarafından (running, paused)
+    'orchestrator_status' -> Orkestratör tarafından (active, inactive)
+    """
     with db_lock:
         with get_db_connection() as conn:
-            conn.execute("UPDATE strategies SET status = ? WHERE id = ?", (status, strategy_id))
+            if is_orchestrator_decision:
+                conn.execute("UPDATE strategies SET orchestrator_status = ? WHERE id = ?", (status, strategy_id))
+                print(f"--- [DATABASE] Orkestratör kararı: Strateji {strategy_id} durumu -> {status} ---")
+            else:
+                conn.execute("UPDATE strategies SET status = ? WHERE id = ?", (status, strategy_id))
+                print(f"--- [DATABASE] Strateji {strategy_id} durumu güncellendi: {status} ---")
             conn.commit()
-    print(f"--- [DATABASE] Strateji {strategy_id} durumu güncellendi: {status} ---")
 
 
 def issue_manual_action(strategy_id, symbol, action):

@@ -10,6 +10,12 @@ import os
 from datetime import datetime
 from stable_baselines3 import PPO
 
+# --- YENİ İMPORTLAR ---
+from market_regime import get_market_regime
+from orchestrator import run_orchestrator_cycle, get_strategy_dna
+from evolution_chamber import run_evolution_cycle
+# --- ---
+
 from utils import get_binance_klines, calculate_fibonacci_levels, analyze_backtest_results
 from indicators import generate_all_indicators
 from features import prepare_features
@@ -22,7 +28,7 @@ import plotly.express as px
 from database import (
     add_or_update_strategy, remove_strategy, get_all_strategies,
     initialize_db, get_alarm_history_db, get_all_open_positions,
-    get_live_closed_trades_metrics, update_strategy_status, # get_live_closed_trades_metrics'i import ediyoruz
+    get_live_closed_trades_metrics, update_strategy_status,
     issue_manual_action
 )
 from utils import (
@@ -125,6 +131,7 @@ def run_rl_backtest(model_path, backtest_df):
 
     return pd.DataFrame(trades)
 
+
 initialize_db()
 
 if 'authenticated' not in st.session_state:
@@ -133,8 +140,8 @@ if 'authenticated' not in st.session_state:
 if 'editing_strategy_id' not in st.session_state:
     st.session_state.editing_strategy_id = None
 
-
 CONFIG_FILE = "config.json"
+
 
 def load_config():
     """config.json dosyasından ayarları yükler."""
@@ -150,6 +157,7 @@ def load_config():
             "strategy_params": {}
         }
 
+
 def save_config(config):
     """Verilen ayarları config.json dosyasına kaydeder."""
     with open(CONFIG_FILE, 'w') as f:
@@ -159,20 +167,17 @@ def save_config(config):
 st.set_page_config(page_title="Veritas Point Labs", layout="wide")
 st.title("📊 Veritas Point Labs")
 
-
 if 'config' not in st.session_state:
     st.session_state.config = load_config()
 
 config = st.session_state.config
 
-
 st.sidebar.header("🔎 Sayfa Seçimi")
 page = st.sidebar.radio(
     "Sayfa",
-    ["Portföy Backtest", "Detaylı Grafik Analizi", "Canlı İzleme", "🧬 Gen Havuzu", "Optimizasyon", "🤖 RL Ajanı"]
+    ["🤖 Orkestratör", "Canlı İzleme", "🧬 Gen Havuzu", "Portföy Backtest", "Detaylı Grafik Analizi", "Optimizasyon",
+     "🤖 RL Ajanı"]
 )
-
-
 
 if "live_tracking" not in st.session_state:
     st.session_state.live_tracking = False
@@ -219,7 +224,6 @@ with st.sidebar.expander("⏳ Çoklu Zaman Dilimi Analizi (MTA)", expanded=True)
     else:
         higher_timeframe = None
         trend_ema_period = 50
-
 
 with st.sidebar.expander("🔧 Diğer Parametreler (Genişletmek için tıklayın)", expanded=False):
     st.subheader("🧩 Puzzle Strateji Botu")
@@ -268,9 +272,6 @@ else:
 
 adx_threshold = st.sidebar.slider("ADX Eşiği", 10, 50, 25, key="adx_threshold_key")
 
-
-
-
 if 'symbols_key' not in st.session_state:
     st.session_state.symbols_key = ["BTCUSDT", "ETHUSDT"]
 symbols = st.multiselect(
@@ -289,7 +290,8 @@ symbols = st.multiselect(
 )
 
 timeframe_options = ["15m", "1h", "4h"]
-default_interval_index = timeframe_options.index(st.session_state.get('interval_key', '1h')) if st.session_state.get('interval_key', '1h') in timeframe_options else 1
+default_interval_index = timeframe_options.index(st.session_state.get('interval_key', '1h')) if st.session_state.get(
+    'interval_key', '1h') in timeframe_options else 1
 
 interval = st.selectbox(
     "⏳ Zaman Dilimi Seçin",
@@ -330,8 +332,6 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
                                        key="atr_multiplier_key")
             stop_loss_pct = 0
 
-
-
     with col3:
         st.markdown("**Kademeli Kâr Al (Take-Profit)**")
         move_sl_to_be = st.checkbox("TP1 sonrası Stop'u Girişe Çek", value=True,
@@ -343,10 +343,6 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
         tp2_pct = st.slider("TP2 Kâr (%)", 0.0, 50.0, 10.0, step=0.1, key="tp2_pct_key")
         tp2_size_pct = st.slider("TP2 Pozisyon Kapatma (%)", 0, 100, 50, key="tp2_size_key",
                                  help="TP2'ye ulaşıldığında, kalan pozisyonun yüzde kaçı kapatılsın?")
-
-
-
-
 
 strategy_params = {
     'sma': sma_period, 'ema': ema_period, 'bb_period': bb_period, 'bb_std': bb_std,
@@ -431,6 +427,7 @@ def update_price_live(symbol, interval, placeholder):
             placeholder.warning(f"⚠️ Canlı veri hatası: {e}")
             break
 
+
 def run_portfolio_backtest(symbols, interval, strategy_params):
     """
     Kademeli Kâr Alma ve Stop'u Başa Çekme özelliklerini içeren,
@@ -474,7 +471,7 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
 
             prev_row, current_row = df.iloc[k - 1], df.iloc[k]
             signal, open_price, low_price, high_price = prev_row['Signal'], current_row['Open'], current_row['Low'], \
-            current_row['High']
+                current_row['High']
             time_idx, current_atr = current_row.name, prev_row.get('ATR', 0)
 
             if position is not None:
@@ -538,7 +535,7 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
                 if exit_price is not None or position_size <= 0.01:
                     if position_size > 0:
                         ret = ((exit_price - entry_price) / entry_price * 100) if position == 'Long' else (
-                                    (entry_price - exit_price) / entry_price * 100)
+                                (entry_price - exit_price) / entry_price * 100)
                         ret -= strategy_params['commission_pct']
                         trades.append({'Pozisyon': f"{position} Kalan ({exit_reason})", 'Giriş Zamanı': entry_time,
                                        'Çıkış Zamanı': time_idx, 'Giriş Fiyatı': entry_price,
@@ -560,13 +557,13 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
                     if entry_signal == 'Long':
                         stop_loss_price = entry_price * (1 - strategy_params['stop_loss_pct'] / 100) if strategy_params[
                                                                                                             'atr_multiplier'] <= 0 else entry_price - (
-                                    current_atr * strategy_params['atr_multiplier'])
+                                current_atr * strategy_params['atr_multiplier'])
                         tp1_target = entry_price * (1 + strategy_params['tp1_pct'] / 100.0)
                         tp2_target = entry_price * (1 + strategy_params['tp2_pct'] / 100.0)
                     else:
                         stop_loss_price = entry_price * (1 + strategy_params['stop_loss_pct'] / 100) if strategy_params[
                                                                                                             'atr_multiplier'] <= 0 else entry_price + (
-                                    current_atr * strategy_params['atr_multiplier'])
+                                current_atr * strategy_params['atr_multiplier'])
                         tp1_target = entry_price * (1 - strategy_params['tp1_pct'] / 100.0)
                         tp2_target = entry_price * (1 - strategy_params['tp2_pct'] / 100.0)
 
@@ -584,27 +581,28 @@ def run_portfolio_backtest(symbols, interval, strategy_params):
     else:
         st.session_state['backtest_results'] = pd.DataFrame()
 
+
 def apply_selected_params(selected_params):
-            st.session_state.rsi_buy_key = int(selected_params['rsi_buy'])
-            st.session_state.rsi_sell_key = int(selected_params['rsi_sell'])
-            st.session_state.adx_threshold_key = int(selected_params['adx_threshold'])
-            st.session_state.atr_multiplier_key = float(selected_params['atr_multiplier'])
-            st.session_state.take_profit_pct_key = float(selected_params['take_profit_pct'])
-            st.session_state.sl_type_key = "ATR"
-            st.success("Parametreler başarıyla uygulandı! Ayarlar kenar çubuğuna aktarıldı.")
+    st.session_state.rsi_buy_key = int(selected_params['rsi_buy'])
+    st.session_state.rsi_sell_key = int(selected_params['rsi_sell'])
+    st.session_state.adx_threshold_key = int(selected_params['adx_threshold'])
+    st.session_state.atr_multiplier_key = float(selected_params['atr_multiplier'])
+    st.session_state.take_profit_pct_key = float(selected_params['take_profit_pct'])
+    st.session_state.sl_type_key = "ATR"
+    st.success("Parametreler başarıyla uygulandı! Ayarlar kenar çubuğuna aktarıldı.")
 
 
 def apply_selected_params(selected_params):
-        """
-        Seçilen optimizasyon parametrelerini session_state'e uygular.
-        """
-        st.session_state.rsi_buy_key = int(selected_params['rsi_buy'])
-        st.session_state.rsi_sell_key = int(selected_params['rsi_sell'])
-        st.session_state.adx_threshold_key = int(selected_params['adx_threshold'])
-        st.session_state.atr_multiplier_key = float(selected_params['atr_multiplier'])
-        st.session_state.take_profit_pct_key = float(selected_params['take_profit_pct'])
-        st.session_state.sl_type_key = "ATR"
-        st.success("Parametreler başarıyla uygulandı! Ayarlar kenar çubuğuna aktarıldı.")
+    """
+    Seçilen optimizasyon parametrelerini session_state'e uygular.
+    """
+    st.session_state.rsi_buy_key = int(selected_params['rsi_buy'])
+    st.session_state.rsi_sell_key = int(selected_params['rsi_sell'])
+    st.session_state.adx_threshold_key = int(selected_params['adx_threshold'])
+    st.session_state.atr_multiplier_key = float(selected_params['atr_multiplier'])
+    st.session_state.take_profit_pct_key = float(selected_params['take_profit_pct'])
+    st.session_state.sl_type_key = "ATR"
+    st.success("Parametreler başarıyla uygulandı! Ayarlar kenar çubuğuna aktarıldı.")
 
 
 def live_signal_loop(symbols, interval, params, delay=60):
@@ -642,6 +640,7 @@ def live_signal_loop(symbols, interval, params, delay=60):
             except Exception as e:
                 pass
         time.sleep(delay)
+
 
 def run_portfolio_optimization(symbols, interval, strategy_params):
     st.info("""
@@ -765,7 +764,7 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
 
                         if exit_price is not None:
                             gross_ret = ((exit_price - entry_price) / entry_price * 100) if position == 'Long' else (
-                                        (entry_price - exit_price) / entry_price * 100)
+                                    (entry_price - exit_price) / entry_price * 100)
 
                             commission_cost = current_params['commission_pct'] * 2
                             ret = gross_ret - commission_cost
@@ -812,8 +811,103 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
 
         status_text.success("✅ Optimizasyon tamamlandı!")
 
-if page == "Portföy Backtest":
 
+if page == "🤖 Orkestratör":
+    st.header("🤖 Strateji Orkestratörü")
+    st.info("""
+    Bu panel, piyasanın genel durumunu (rejimini) anlık olarak analiz eder ve bu koşullara en uygun
+    stratejileri otomatik olarak aktive eder. Uygun olmayan stratejiler ise yeni pozisyon açmamaları
+    için yedek kulübesine alınır.
+    """)
+
+    if 'orchestrator_log' not in st.session_state:
+        st.session_state.orchestrator_log = []
+
+    if st.button("🔄 Orkestratör Döngüsünü Çalıştır", type="primary"):
+        with st.spinner("Piyasa rejimi analiz ediliyor ve stratejiler yeniden düzenleniyor..."):
+            result = run_orchestrator_cycle()
+            log_entry = {
+                "time": datetime.now().strftime('%H:%M:%S'),
+                "result": result
+            }
+            st.session_state.orchestrator_log.insert(0, log_entry)
+        st.rerun()
+
+    st.subheader("📊 Anlık Piyasa Rejimi")
+
+
+    # Piyasa rejimini cache'leyerek her seferinde API'ye gitmesini önleyebiliriz
+    @st.cache_data(ttl=300)  # 5 dakika cache
+    def cached_get_market_regime():
+        return get_market_regime()
+
+
+    market_regime = cached_get_market_regime()
+
+    if not market_regime:
+        st.error("Piyasa rejimi verisi alınamadı. Lütfen bir süre sonra tekrar deneyin.")
+    else:
+        cols = st.columns(3)
+        cols[0].metric("Piyasa Duygusu", market_regime.get('sentiment', 'Bilinmiyor'))
+        cols[1].metric("Trend Gücü", market_regime.get('trend_strength', 'Bilinmiyor'))
+        cols[2].metric("Volatilite", market_regime.get('volatility', 'Bilinmiyor'))
+
+    st.markdown("---")
+
+    st.subheader("🎯 Strateji Görev Durumları")
+
+    active_strategies = []
+    inactive_strategies = []
+
+    all_strategies = get_all_strategies()
+    for strategy in all_strategies:
+        dna = get_strategy_dna(strategy['strategy_params'])
+        strategy_info = f"**{strategy['name']}** (DNA: `{', '.join(dna)}`)"
+
+        if strategy.get('orchestrator_status', 'active') == 'active':
+            active_strategies.append(strategy_info)
+        else:
+            inactive_strategies.append(strategy_info)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("<h5>✅ Aktif Görevde</h5>", unsafe_allow_html=True)
+        if not active_strategies:
+            st.info("Mevcut rejime uygun aktif strateji bulunmuyor.")
+        else:
+            for s in active_strategies:
+                st.markdown(f"- {s}", unsafe_allow_html=True)
+
+    with col2:
+        st.markdown("<h5>⏸️ Yedek Kulübesi</h5>", unsafe_allow_html=True)
+        if not inactive_strategies:
+            st.info("Yedekte bekleyen strateji bulunmuyor.")
+        else:
+            for s in inactive_strategies:
+                st.markdown(f"- {s}", unsafe_allow_html=True)
+
+    st.subheader("📜 Orkestratör Günlüğü")
+    if not st.session_state.orchestrator_log:
+        st.info("Henüz bir orkestratör döngüsü çalıştırılmadı.")
+    else:
+        for log in st.session_state.orchestrator_log:
+            with st.expander(
+                    f"Döngü Zamanı: {log['time']} - Durum: {log['result'].get('status', 'Bilinmiyor').capitalize()}"):
+                result = log['result']
+                if result['status'] == 'completed':
+                    st.json(result.get('market_regime', {}))
+                    st.markdown("**Aktive Edilen Stratejiler:**")
+                    for name in result.get('activated', []):
+                        st.markdown(f"- ✅ `{name}`")
+
+                    st.markdown("**Yedeğe Alınan Stratejiler:**")
+                    for name in result.get('deactivated', []):
+                        st.markdown(f"- ⏸️ `{name}`")
+                else:
+                    st.warning(f"Bu döngü atlandı. Sebep: {result.get('reason', 'Bilinmiyor')}")
+
+
+elif page == "Portföy Backtest":
 
     st.session_state.selected_symbols = symbols
 
@@ -983,29 +1077,29 @@ elif page == "Canlı İzleme":
                 elif not symbols:
                     st.error("Lütfen en az bir sembol seçin.")
                 else:
-                        current_strategy_params = strategy_params.copy()
-                        if use_telegram:
-                            try:
-                                current_strategy_params["telegram_token"] = st.secrets["telegram"]["token"]
-                                current_strategy_params["telegram_chat_id"] = st.secrets["telegram"]["chat_id"]
-                                current_strategy_params["telegram_enabled"] = True
-                            except Exception as e:
-                                st.warning(f"Telegram bilgileri okunamadı (.streamlit/secrets.toml kontrol edin): {e}")
-                                current_strategy_params["telegram_enabled"] = False
-                        else:
+                    current_strategy_params = strategy_params.copy()
+                    if use_telegram:
+                        try:
+                            current_strategy_params["telegram_token"] = st.secrets["telegram"]["token"]
+                            current_strategy_params["telegram_chat_id"] = st.secrets["telegram"]["chat_id"]
+                            current_strategy_params["telegram_enabled"] = True
+                        except Exception as e:
+                            st.warning(f"Telegram bilgileri okunamadı (.streamlit/secrets.toml kontrol edin): {e}")
                             current_strategy_params["telegram_enabled"] = False
+                    else:
+                        current_strategy_params["telegram_enabled"] = False
 
-                        new_strategy = {
-                            "id": f"strategy_{int(time.time())}",
-                            "name": new_strategy_name,
-                            "status": "running",
-                            "symbols": symbols,
-                            "interval": interval,
-                            "strategy_params": current_strategy_params
-                        }
-                        add_or_update_strategy(new_strategy)
-                        st.success(f"'{new_strategy_name}' stratejisi başarıyla eklendi!")
-                        st.rerun()
+                    new_strategy = {
+                        "id": f"strategy_{int(time.time())}",
+                        "name": new_strategy_name,
+                        "status": "running",
+                        "symbols": symbols,
+                        "interval": interval,
+                        "strategy_params": current_strategy_params
+                    }
+                    add_or_update_strategy(new_strategy)
+                    st.success(f"'{new_strategy_name}' stratejisi başarıyla eklendi!")
+                    st.rerun()
 
         st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
         running_strategies = get_all_strategies()
@@ -1131,13 +1225,83 @@ elif page == "Canlı İzleme":
                             st.session_state.editing_strategy_id = None
                             st.rerun()
 
-
         st.subheader("🔔 Son Alarmlar (Tüm Stratejilerden)")
         alarm_history = get_alarm_history_db(limit=20)
         if alarm_history is not None and not alarm_history.empty:
             st.dataframe(alarm_history, use_container_width=True)
         else:
             st.info("Veritabanında henüz kayıtlı bir alarm yok.")
+
+elif page == "🧬 Gen Havuzu":
+    st.header("🧬 Strateji Gen Havuzu ve Evrimsel Optimizasyon")
+    st.info("""
+    Bu panel, strateji ekosisteminizi yönetmenizi sağlar. Sistem, en iyi performans gösteren stratejileri
+    seçip onları "çaprazlayarak" veya "mutasyona uğratarak" yeni nesiller yaratır. En kötü performans
+    gösterenler ise doğal seçilim yoluyla elenir. Sizin rolünüz, bu evrim sürecini yönetmektir.
+    """)
+
+    if 'evolution_log' not in st.session_state:
+        st.session_state.evolution_log = []
+
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("🚀 Evrim Döngüsünü Başlat", type="primary",
+                     help="En kötü stratejileri eler ve en iyilerden yenilerini üretir."):
+            with st.spinner(
+                    "Evrim döngüsü çalışıyor... Stratejiler analiz ediliyor, eleniyor ve yenileri yaratılıyor..."):
+                result = run_evolution_cycle()
+                log_entry = {
+                    "time": datetime.now().strftime('%H:%M:%S'),
+                    "result": result
+                }
+                st.session_state.evolution_log.insert(0, log_entry)  # En yeni logu başa ekle
+            st.rerun()
+
+    st.subheader("📈 Canlı Strateji Performans Lider Tablosu")
+
+    all_strategies = get_all_strategies()
+    strategy_performance_data = []
+    for strategy in all_strategies:
+        metrics = get_live_closed_trades_metrics(strategy_id=strategy['id'])
+        performance_score = metrics.get('Profit Factor', 0)
+        if performance_score == float('inf'):
+            performance_score = 1000
+
+        strategy_performance_data.append({
+            "Strateji Adı": strategy['name'],
+            "Profit Factor": f"{performance_score:.2f}",
+            "Başarı Oranı (%)": f"{metrics.get('Başarı Oranı (%)', 0):.2f}",
+            "Toplam İşlem": metrics.get('Toplam İşlem', 0),
+            "Durum": strategy.get('status', 'running').capitalize()
+        })
+
+    if not strategy_performance_data:
+        st.warning("Gösterilecek aktif strateji bulunamadı. Lütfen 'Canlı İzleme' sayfasından stratejiler ekleyin.")
+    else:
+        # Verileri Profit Factor'e göre sırala
+        df_performance = pd.DataFrame(strategy_performance_data)
+        df_performance['Profit Factor'] = pd.to_numeric(df_performance['Profit Factor'])
+        df_performance = df_performance.sort_values(by="Profit Factor", ascending=False).reset_index(drop=True)
+        st.dataframe(df_performance, use_container_width=True)
+
+    st.subheader("📜 Evrim Döngüsü Günlüğü")
+    if not st.session_state.evolution_log:
+        st.info("Henüz bir evrim döngüsü çalıştırılmadı.")
+    else:
+        for log in st.session_state.evolution_log:
+            with st.expander(
+                    f"Döngü Zamanı: {log['time']} - Durum: {log['result'].get('status', 'Bilinmiyor').capitalize()}"):
+                result = log['result']
+                if result['status'] == 'completed':
+                    st.markdown("**Elenen Stratejiler:**")
+                    for name in result.get('eliminated', []):
+                        st.markdown(f"- ❌ `{name}`")
+
+                    st.markdown("**Oluşturulan Yeni Stratejiler:**")
+                    for name in result.get('created', []):
+                        st.markdown(f"- ✨ `{name}`")
+                else:
+                    st.warning(f"Bu döngü atlandı. Sebep: {result.get('reason', 'Bilinmiyor')}")
 
 
 elif page == "Optimizasyon":
@@ -1286,77 +1450,6 @@ elif page == "Optimizasyon":
             args=(results_df.loc[selected_index],)
         )
 
-elif page == "🧬 Gen Havuzu":
-    st.header("🧬 Strateji Gen Havuzu ve Evrimsel Optimizasyon")
-    st.info("""
-    Bu panel, strateji ekosisteminizi yönetmenizi sağlar. Sistem, en iyi performans gösteren stratejileri
-    seçip onları "çaprazlayarak" veya "mutasyona uğratarak" yeni nesiller yaratır. En kötü performans
-    gösterenler ise doğal seçilim yoluyla elenir. Sizin rolünüz, bu evrim sürecini yönetmektir.
-    """)
-
-    # evolution_chamber.py'yi import etmeyi unutmayın (dosyanın en üstüne ekleyin)
-    from evolution_chamber import run_evolution_cycle
-
-    if 'evolution_log' not in st.session_state:
-        st.session_state.evolution_log = []
-
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        if st.button("🚀 Evrim Döngüsünü Başlat", type="primary", help="En kötü stratejileri eler ve en iyilerden yenilerini üretir."):
-            with st.spinner("Evrim döngüsü çalışıyor... Stratejiler analiz ediliyor, eleniyor ve yenileri yaratılıyor..."):
-                result = run_evolution_cycle()
-                log_entry = {
-                    "time": datetime.now().strftime('%H:%M:%S'),
-                    "result": result
-                }
-                st.session_state.evolution_log.insert(0, log_entry) # En yeni logu başa ekle
-            st.rerun()
-
-    st.subheader("📈 Canlı Strateji Performans Lider Tablosu")
-
-    all_strategies = get_all_strategies()
-    strategy_performance_data = []
-    for strategy in all_strategies:
-        metrics = get_live_closed_trades_metrics(strategy_id=strategy['id'])
-        performance_score = metrics.get('Profit Factor', 0)
-        if performance_score == float('inf'):
-            performance_score = 1000
-
-        strategy_performance_data.append({
-            "Strateji Adı": strategy['name'],
-            "Profit Factor": f"{performance_score:.2f}",
-            "Başarı Oranı (%)": f"{metrics.get('Başarı Oranı (%)', 0):.2f}",
-            "Toplam İşlem": metrics.get('Toplam İşlem', 0),
-            "Durum": strategy.get('status', 'running').capitalize()
-        })
-
-    if not strategy_performance_data:
-        st.warning("Gösterilecek aktif strateji bulunamadı. Lütfen 'Canlı İzleme' sayfasından stratejiler ekleyin.")
-    else:
-        # Verileri Profit Factor'e göre sırala
-        df_performance = pd.DataFrame(strategy_performance_data)
-        df_performance['Profit Factor'] = pd.to_numeric(df_performance['Profit Factor'])
-        df_performance = df_performance.sort_values(by="Profit Factor", ascending=False).reset_index(drop=True)
-        st.dataframe(df_performance, use_container_width=True)
-
-    st.subheader("📜 Evrim Döngüsü Günlüğü")
-    if not st.session_state.evolution_log:
-        st.info("Henüz bir evrim döngüsü çalıştırılmadı.")
-    else:
-        for log in st.session_state.evolution_log:
-            with st.expander(f"Döngü Zamanı: {log['time']} - Durum: {log['result'].get('status', 'Bilinmiyor').capitalize()}"):
-                result = log['result']
-                if result['status'] == 'completed':
-                    st.markdown("**Elenen Stratejiler:**")
-                    for name in result.get('eliminated', []):
-                        st.markdown(f"- ❌ `{name}`")
-
-                    st.markdown("**Oluşturulan Yeni Stratejiler:**")
-                    for name in result.get('created', []):
-                        st.markdown(f"- ✨ `{name}`")
-                else:
-                    st.warning(f"Bu döngü atlandı. Sebep: {result.get('reason', 'Bilinmiyor')}")
-
 
 elif page == "Detaylı Grafik Analizi":
     st.header("📈 Detaylı Grafik Analizi")
@@ -1409,10 +1502,11 @@ elif page == "🤖 RL Ajanı":
         rl_interval = st.selectbox("Eğitim için Zaman Dilimi", options=["15m", "1h", "4h"], index=1)
     with col3:
         rl_timesteps = st.number_input("Eğitim Adım Sayısı", min_value=1000, max_value=100000, value=25000, step=1000,
-                                     help="Ajanın ne kadar süreyle öğreneceğini belirler. Yüksek değerler daha iyi öğrenme ama daha uzun eğitim süresi demektir.")
+                                       help="Ajanın ne kadar süreyle öğreneceğini belirler. Yüksek değerler daha iyi öğrenme ama daha uzun eğitim süresi demektir.")
 
     if st.button("🚀 Ajan Eğitimini Başlat", type="primary"):
-        with st.spinner(f"Lütfen bekleyin... RL ajanı **{rl_symbol}** verileri üzerinde **{rl_timesteps}** adım boyunca eğitiliyor. Bu işlem birkaç dakika sürebilir."):
+        with st.spinner(
+                f"Lütfen bekleyin... RL ajanı **{rl_symbol}** verileri üzerinde **{rl_timesteps}** adım boyunca eğitiliyor. Bu işlem birkaç dakika sürebilir."):
             train_rl_agent(symbol=rl_symbol, interval=rl_interval, total_timesteps=rl_timesteps)
         st.success("Eğitim başarıyla tamamlandı! Eğitilmiş model kaydedildi.")
         st.balloons()

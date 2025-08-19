@@ -176,19 +176,16 @@ class StrategyRunner:
         try:
             data = json.loads(message)
             kline = data.get('k')
-            if not kline: return  # 'k' anahtarı yoksa devam etme
+            if not kline: return
 
-            # Mumun anlık yüksek ve düşük fiyatlarını al
             high_price = float(kline['h'])
             low_price = float(kline['l'])
 
-            # --- YENİ: AKTİF POZİSYON KONTROLÜ (TP/SL) ---
             symbol_data = self.portfolio_data.get(symbol, {})
             current_position = symbol_data.get('position')
 
             if current_position:
                 pos_closed = False
-                # 1. Stop-Loss Kontrolü
                 sl_price = symbol_data.get('stop_loss_price', 0)
                 if sl_price > 0:
                     if (current_position == 'Long' and low_price <= sl_price) or \
@@ -197,9 +194,7 @@ class StrategyRunner:
                         self._reset_position_state(symbol)
                         pos_closed = True
 
-                # 2. Take-Profit Kontrolleri (eğer pozisyon hala açıksa)
                 if not pos_closed:
-                    # TP1 Kontrolü
                     if not symbol_data.get('tp1_hit', False):
                         tp1_price = symbol_data.get('tp1_price', 0)
                         if tp1_price > 0:
@@ -208,7 +203,6 @@ class StrategyRunner:
                                 self.notify_risk_management_event(symbol, "TP1 Kâr Alındı", tp1_price)
                                 self.portfolio_data[symbol]['tp1_hit'] = True
 
-                    # TP2 Kontrolü
                     if not symbol_data.get('tp2_hit', False):
                         tp2_price = symbol_data.get('tp2_price', 0)
                         if tp2_price > 0:
@@ -217,7 +211,6 @@ class StrategyRunner:
                                 self.notify_risk_management_event(symbol, "TP2 Kâr Alındı", tp2_price)
                                 self.portfolio_data[symbol]['tp2_hit'] = True
 
-            # --- SİNYAL KONTROLÜ (Sadece mum kapandığında çalışır) ---
             is_kline_closed = kline.get('x', False)
             if not is_kline_closed: return
 
@@ -244,7 +237,6 @@ class StrategyRunner:
             current_position = self.portfolio_data.get(symbol, {}).get('position')
             entry_price = self.portfolio_data.get(symbol, {}).get('entry_price', 0)
 
-            # Karşıt sinyal ile pozisyon kapatma
             if (current_position == 'Long' and raw_signal == 'Short') or \
                     (current_position == 'Short' and raw_signal == 'Al'):
                 pnl = ((price - entry_price) / entry_price * 100) if current_position == 'Long' else (
@@ -252,10 +244,19 @@ class StrategyRunner:
                 self.notify_and_log(symbol, f"Pozisyon Karşıt Sinyal İle Kapatıldı", price, pnl)
                 self._reset_position_state(symbol)
 
-            # Yeni pozisyon açma
             elif current_position is None:
-                if self.config.get('status') == 'paused':
-                    return  # Fonksiyondan çık, işlem yapma
+                # --- ORKESTRATÖR KONTROLÜ ---
+                # config'i (ve dolayısıyla orkestratör durumunu) her seferinde yeniden yükle
+                self.config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
+
+                user_status = self.config.get('status', 'running')
+                orchestrator_status = self.config.get('orchestrator_status', 'active')
+
+                if user_status == 'paused' or orchestrator_status == 'inactive':
+                    # Eğer kullanıcı duraklattıysa VEYA orkestratör yedeğe aldıysa yeni pozisyon açma
+                    return
+                # --- KONTROL SONU ---
+
                 new_pos = None
                 if raw_signal == 'Al' and self.params.get('signal_direction', 'Both') != 'Short':
                     new_pos = 'Long'

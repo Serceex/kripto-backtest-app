@@ -1019,7 +1019,7 @@ elif page == "Canlı İzleme":
                 pnl_color = "green" if strategy_pnl >= 0 else "red"
 
                 with st.container(border=True):
-                    # --- Strateji Başlık ve Kontrol Butonları ---
+                    # Strateji Başlık ve Kontrol Butonları
                     col1_strat, col2_strat = st.columns([3, 1])
                     with col1_strat:
                         st.subheader(strategy_name)
@@ -1032,8 +1032,8 @@ elif page == "Canlı İzleme":
 
                     with col2_strat:
                         st.write("")
-                        b_col1, b_col2, b_col3, b_col4 = st.columns(4)  # 4 sütun
-                        with b_col1:  # Duraklat/Devam Et
+                        b_col1, b_col2, b_col3, b_col4 = st.columns(4)
+                        with b_col1:
                             if strategy_status == 'running':
                                 if st.button("⏸️", key=f"pause_{strategy_id}",
                                              help="Stratejinin yeni pozisyon açmasını engeller."):
@@ -1043,25 +1043,22 @@ elif page == "Canlı İzleme":
                                 if st.button("▶️", key=f"resume_{strategy_id}", help="Stratejiyi devam ettirir."):
                                     update_strategy_status(strategy_id, 'running')
                                     st.rerun()
-                        with b_col2:  # Ayarları Yükle
+                        with b_col2:
                             st.button("📥", key=f"load_{strategy_id}",
                                       help="Bu stratejinin ayarlarını kenar çubuğuna yükle",
                                       on_click=apply_full_strategy_params, args=(strategy,))
-
-                        # YENİ BUTON: Düzenle
                         with b_col3:
                             if st.button("⚙️", key=f"edit_{strategy_id}",
                                          help="Strateji parametrelerini canlı düzenle"):
                                 st.session_state.editing_strategy_id = strategy_id
                                 st.rerun()
-
-                        with b_col4:  # Sil
+                        with b_col4:
                             if st.button("🗑️", key=f"stop_{strategy_id}", help="Stratejiyi tamamen siler."):
                                 remove_strategy(strategy_id)
                                 st.warning(f"'{strategy_name}' stratejisi silindi.")
                                 st.rerun()
 
-                    # --- Canlı Performans Paneli (Aynı kalıyor) ---
+                    # Canlı Performans Paneli (Mevcut haliyle kalabilir)
                     with st.expander("📈 Canlı Performans Detayları"):
                         live_metrics_strategy = get_live_closed_trades_metrics(strategy_id=strategy_id)
                         if live_metrics_strategy['Toplam İşlem'] == 0:
@@ -1076,60 +1073,61 @@ elif page == "Canlı İzleme":
                             m_col5.metric("Ortalama Kayıp (%)", f"{live_metrics_strategy['Ortalama Kayıp (%)']}%")
                             m_col6.metric("Profit Factor", live_metrics_strategy['Profit Factor'])
 
-                    # --- YENİ BÖLÜM: Strateji Düzenleme Formu ---
+                    # --- GÜNCELLENMİŞ VE HATALARI GİDERİLMİŞ DÜZENLEME FORMU ---
                     if st.session_state.editing_strategy_id == strategy_id:
                         with st.form(key=f"edit_form_{strategy_id}"):
                             st.subheader(f"📝 '{strategy_name}' Stratejisini Düzenle")
-
                             params = strategy.get('strategy_params', {})
 
-                            # Form elemanları
+
+                            def get_slider_value(param_value, default_value):
+                                if isinstance(param_value, list):
+                                    return param_value[0]
+                                return param_value if param_value is not None else default_value
+
+
                             st.markdown("**Risk Yönetimi**")
-                            new_atr_multiplier = st.slider(
-                                "ATR Çarpanı", 1.0, 5.0, params.get('atr_multiplier', 2.0), step=0.1,
-                                key=f"atr_{strategy_id}"
-                            )
-                            new_tp1_pct = st.slider(
-                                "TP1 Kâr (%)", 0.0, 20.0, params.get('tp1_pct', 5.0), step=0.1,
-                                key=f"tp1_{strategy_id}"
-                            )
+                            atr_val = get_slider_value(params.get('atr_multiplier'), 2.0)
+                            new_atr_multiplier = st.slider("ATR Çarpanı", 1.0, 5.0, value=float(atr_val), step=0.1,
+                                                           key=f"atr_{strategy_id}")
+
+                            tp1_val = get_slider_value(params.get('tp1_pct'), 5.0)
+                            new_tp1_pct = st.slider("TP1 Kâr (%)", 0.0, 20.0, value=float(tp1_val), step=0.1,
+                                                    key=f"tp1_{strategy_id}")
 
                             st.markdown("**Sinyal Parametreleri**")
-                            new_rsi_buy = st.slider(
-                                "RSI Alış Eşiği", 0, 50, params.get('rsi_buy', 30), step=1,
-                                key=f"rsi_buy_{strategy_id}"
-                            )
-                            new_rsi_sell = st.slider(
-                                "RSI Satış Eşiği", 50, 100, params.get('rsi_sell', 70), step=1,
-                                key=f"rsi_sell_{strategy_id}"
-                            )
+                            rsi_buy_val = get_slider_value(params.get('rsi_buy'), 30)
+                            new_rsi_buy = st.slider("RSI Alış Eşiği", 0, 50, value=int(rsi_buy_val), step=1,
+                                                    key=f"rsi_buy_{strategy_id}")
 
-                            # Form butonları
+                            rsi_sell_val = get_slider_value(params.get('rsi_sell'), 70)
+                            new_rsi_sell = st.slider("RSI Satış Eşiği", 50, 100, value=int(rsi_sell_val), step=1,
+                                                     key=f"rsi_sell_{strategy_id}")
+
                             form_col1, form_col2 = st.columns([1, 1])
                             with form_col1:
-                                if st.form_submit_button("✅ Değişiklikleri Kaydet", use_container_width=True):
-                                    # Parametreleri güncelle
-                                    updated_params = params.copy()
-                                    updated_params['atr_multiplier'] = new_atr_multiplier
-                                    updated_params['tp1_pct'] = new_tp1_pct
-                                    updated_params['rsi_buy'] = new_rsi_buy
-                                    updated_params['rsi_sell'] = new_rsi_sell
-
-                                    strategy['strategy_params'] = updated_params
-
-                                    # Veritabanını güncelle
-                                    add_or_update_strategy(strategy)
-                                    st.toast(f"'{strategy_name}' güncellendi!", icon="👍")
-
-                                    # Düzenleme modundan çık
-                                    st.session_state.editing_strategy_id = None
-                                    st.rerun()
-
+                                save_button = st.form_submit_button("✅ Değişiklikleri Kaydet", use_container_width=True)
                             with form_col2:
-                                if st.form_submit_button("❌ İptal", use_container_width=True):
-                                    # Düzenleme modundan çık
-                                    st.session_state.editing_strategy_id = None
-                                    st.rerun()
+                                cancel_button = st.form_submit_button("❌ İptal", use_container_width=True)
+
+                        if save_button:
+                            updated_params = params.copy()
+                            updated_params['atr_multiplier'] = new_atr_multiplier
+                            updated_params['tp1_pct'] = new_tp1_pct
+                            updated_params['rsi_buy'] = new_rsi_buy
+                            updated_params['rsi_sell'] = new_rsi_sell
+                            strategy['strategy_params'] = updated_params
+
+                            add_or_update_strategy(strategy)
+                            st.toast(f"'{strategy_name}' güncellendi! Değişiklikler birkaç saniye içinde aktif olacak.",
+                                     icon="👍")
+
+                            st.session_state.editing_strategy_id = None
+                            st.rerun()
+
+                        if cancel_button:
+                            st.session_state.editing_strategy_id = None
+                            st.rerun()
 
 
         st.subheader("🔔 Son Alarmlar (Tüm Stratejilerden)")

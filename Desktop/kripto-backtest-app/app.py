@@ -175,8 +175,8 @@ config = st.session_state.config
 st.sidebar.header("🔎 Sayfa Seçimi")
 page = st.sidebar.radio(
     "Sayfa",
-    ["🤖 Orkestratör", "Canlı İzleme", "🧬 Gen Havuzu", "Portföy Backtest", "Detaylı Grafik Analizi", "Optimizasyon",
-     "🤖 RL Ajanı"]
+    [ "Canlı İzleme", "Strateji Koçu", "Portföy Backtest", "Gen Havuzu", "Detaylı Grafik Analizi", "Optimizasyon",
+     "RL Ajanı"]
 )
 
 if "live_tracking" not in st.session_state:
@@ -812,8 +812,8 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
         status_text.success("✅ Optimizasyon tamamlandı!")
 
 
-if page == "🤖 Orkestratör":
-    st.header("🤖 Strateji Orkestratörü")
+if page == "Strateji Koçu":
+    st.header("🤖 Strateji Koçu")
     st.info("""
     Bu panel, piyasanın genel durumunu (rejimini) anlık olarak analiz eder ve bu koşullara en uygun
     stratejileri otomatik olarak aktive eder. Uygun olmayan stratejiler ise yeni pozisyon açmamaları
@@ -886,7 +886,7 @@ if page == "🤖 Orkestratör":
             for s in inactive_strategies:
                 st.markdown(f"- {s}", unsafe_allow_html=True)
 
-    st.subheader("📜 Orkestratör Günlüğü")
+    st.subheader("📜 Koç Günlüğü")
     if not st.session_state.orchestrator_log:
         st.info("Henüz bir orkestratör döngüsü çalıştırılmadı.")
     else:
@@ -1232,7 +1232,7 @@ elif page == "Canlı İzleme":
         else:
             st.info("Veritabanında henüz kayıtlı bir alarm yok.")
 
-elif page == "🧬 Gen Havuzu":
+elif page == "Gen Havuzu":
     st.header("🧬 Strateji Gen Havuzu ve Evrimsel Optimizasyon")
     st.info("""
     Bu panel, strateji ekosisteminizi yönetmenizi sağlar. Sistem, en iyi performans gösteren stratejileri
@@ -1485,7 +1485,7 @@ elif page == "Detaylı Grafik Analizi":
             st.plotly_chart(fig, use_container_width=True)
 
 
-elif page == "🤖 RL Ajanı":
+elif page == "RL Ajanı":
     st.header("🤖 Kendi Kendine Öğrenen Ticaret Ajanı")
     st.info("""
     Bu bölümde, Pekiştirmeli Öğrenme (RL) teknolojisini kullanarak kendi ticaret stratejisini sıfırdan öğrenen

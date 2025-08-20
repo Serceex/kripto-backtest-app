@@ -1179,15 +1179,15 @@ elif page == "Canlı İzleme":
                             )
 
                         with form_cols[2]:
-                            # Stratejinin veritabanındaki ana 'is_trading_enabled' durumunu al
-                            is_trading_enabled = strategy.get('is_trading_enabled', True)
+                            is_trading_enabled = strategy.get('is_trading_enabled', False)  # Varsayılanı False yapalım
 
                             st.markdown("**Binance'de İşlem**")
-                            # Radio butonları ile daha net bir seçim sunalım
                             trade_status_text = st.radio(
                                 "Bu strateji borsada işlem açsın mı?",
                                 ["Aktif", "Pasif"],
-                                index=1 if is_trading_enabled else 1,  # Duruma göre varsayılanı ayarla
+                                # --- DEĞİŞİKLİK BURADA ---
+                                index=0 if is_trading_enabled else 1,
+                                # --------------------------
                                 key=f"trade_status_{strategy_id}",
                                 horizontal=True
                             )

@@ -59,7 +59,7 @@ def initialize_db():
                         interval TEXT,
                         strategy_params TEXT,
                         orchestrator_status TEXT DEFAULT 'active',
-                        is_trading_enabled BOOLEAN DEFAULT 1 -- Bu satırın varlığından emin oluyoruz
+                        is_trading_enabled BOOLEAN DEFAULT 0 -- Bu satırın varlığından emin oluyoruz
                     )""")
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS positions (
@@ -117,7 +117,7 @@ def add_or_update_strategy(strategy_config):
                     strategy_config.get('status', 'running'), symbols_json,
                     strategy_config.get('interval'), params_json,
                     strategy_config.get('orchestrator_status', 'active'),
-                    strategy_config.get('is_trading_enabled', True) # Yeni alanı ekledik
+                    strategy_config.get('is_trading_enabled', False) # Yeni alanı ekledik
                 ))
                 conn.commit()
                 print("[YAZMA - Adım 3] Veritabanına yazma BAŞARILI.")

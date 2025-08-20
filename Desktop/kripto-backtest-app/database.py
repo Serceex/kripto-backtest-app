@@ -41,18 +41,26 @@ def initialize_db():
             except sqlite3.OperationalError:
                 # Sütun zaten varsa bu hata alınır, sorun değil.
                 pass
-            # --- GÜNCELLEME SONU ---
+
+            try:
+                cursor.execute("ALTER TABLE strategies ADD COLUMN is_trading_enabled BOOLEAN DEFAULT 1")  # 1 = True
+                conn.commit()
+                print("--- [DATABASE] 'strategies' tablosuna 'is_trading_enabled' sütunu eklendi. ---")
+            except sqlite3.OperationalError:
+                # Sütun zaten varsa bu hata alınır, sorun değil.
+                pass
 
             cursor.execute("""
-              CREATE TABLE IF NOT EXISTS strategies (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                status TEXT DEFAULT 'running',
-                symbols TEXT,
-                interval TEXT,
-                strategy_params TEXT,
-                orchestrator_status TEXT DEFAULT 'active' -- Bu satırın varlığından emin oluyoruz
-            )""")
+                      CREATE TABLE IF NOT EXISTS strategies (
+                        id TEXT PRIMARY KEY,
+                        name TEXT,
+                        status TEXT DEFAULT 'running',
+                        symbols TEXT,
+                        interval TEXT,
+                        strategy_params TEXT,
+                        orchestrator_status TEXT DEFAULT 'active',
+                        is_trading_enabled BOOLEAN DEFAULT 1 -- Bu satırın varlığından emin oluyoruz
+                    )""")
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS positions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, strategy_id TEXT, symbol TEXT,
@@ -97,17 +105,19 @@ def add_or_update_strategy(strategy_config):
         try:
             with get_db_connection() as conn:
                 conn.execute("""
-                    INSERT INTO strategies (id, name, status, symbols, interval, strategy_params, orchestrator_status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO strategies (id, name, status, symbols, interval, strategy_params, orchestrator_status, is_trading_enabled)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         name=excluded.name, status=excluded.status, symbols=excluded.symbols,
                         interval=excluded.interval, strategy_params=excluded.strategy_params,
-                        orchestrator_status=excluded.orchestrator_status
+                        orchestrator_status=excluded.orchestrator_status,
+                        is_trading_enabled=excluded.is_trading_enabled
                 """, (
                     strategy_config.get('id'), strategy_config.get('name'),
                     strategy_config.get('status', 'running'), symbols_json,
                     strategy_config.get('interval'), params_json,
-                    strategy_config.get('orchestrator_status', 'active')  # Yeni alanı ekledik
+                    strategy_config.get('orchestrator_status', 'active'),
+                    strategy_config.get('is_trading_enabled', True) # Yeni alanı ekledik
                 ))
                 conn.commit()
                 print("[YAZMA - Adım 3] Veritabanına yazma BAŞARILI.")

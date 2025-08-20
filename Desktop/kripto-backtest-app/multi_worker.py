@@ -1,4 +1,4 @@
-# multi_worker.py (TP/SL Bildirimleri Entegre Edilmiş Nihai Hali)
+# multi_worker.py (Kaldıraçlı İşlemler Entegre Edilmiş Nihai Hali)
 
 import json
 import time
@@ -9,6 +9,7 @@ import os
 import sys
 import signal
 from datetime import datetime
+from trade_executor import set_futures_leverage_and_margin, place_futures_order, get_open_position_amount, get_symbol_info
 
 # --- Proje Modülleri ---
 from utils import get_binance_klines
@@ -20,10 +21,10 @@ from database import (
     get_positions_for_strategy, log_alarm_db,
     get_and_clear_pending_actions
 )
+# Ticaret fonksiyonlarımızı ekliyoruz
 from trade_executor import set_futures_leverage_and_margin, place_futures_order, get_open_position_amount
 
-
-# --- Lock File Mekanizması ---
+# --- Lock File Mekanizması (Çakışmayı Önler) ---
 try:
     project_dir = os.path.dirname(os.path.abspath(__file__))
     LOCK_FILE = os.path.join(project_dir, "multi_worker.lock")
@@ -77,49 +78,30 @@ class StrategyRunner:
 
     def start(self):
         print(f"✅ Strateji BAŞLATILIYOR: '{self.name}' (ID: {self.id})")
-
-        # Manuel komutları kontrol etmek için ayrı bir thread başlat
         action_checker_thread = threading.Thread(target=self._check_manual_actions, daemon=True)
         action_checker_thread.start()
-
         for symbol in self.symbols:
             try:
                 initial_df = get_binance_klines(symbol, self.interval, limit=200)
                 if initial_df is None or initial_df.empty:
                     print(f"HATA ({self.name}): {symbol} için başlangıç verisi alınamadı. Atlanıyor.")
                     continue
-
                 if symbol not in self.portfolio_data:
                     self.portfolio_data[symbol] = {
                         'position': None, 'entry_price': 0, 'stop_loss_price': 0,
                         'tp1_price': 0, 'tp2_price': 0, 'tp1_hit': False, 'tp2_hit': False
                     }
                 self.portfolio_data[symbol]['df'] = initial_df
-
                 ws_thread = threading.Thread(target=self._run_websocket, args=(symbol,), daemon=True)
                 self.ws_threads[symbol] = ws_thread
                 ws_thread.start()
-                time.sleep(0.5)
+                time.sleep(0.5)  # API rate limit'e takılmamak için kısa bir bekleme
             except Exception as e:
                 print(f"KRİTİK HATA ({self.name}): {symbol} başlatılırken sorun: {e}")
 
     def stop(self):
         print(f"🛑 Strateji DURDURULUYOR: '{self.name}' (ID: {self.id})")
         self._stop_event.set()
-
-    def _check_manual_actions(self):
-        """Periyodik olarak veritabanını manuel komutlar için kontrol eder."""
-        while not self._stop_event.is_set():
-            try:
-                actions = get_and_clear_pending_actions(self.id)
-                for action in actions:
-                    if action['action'] == 'CLOSE_POSITION':
-                        symbol_to_close = action['symbol']
-                        print(f"MANUEL KOMUT ({self.name}): {symbol_to_close} için pozisyon kapatma emri alındı.")
-                        self._close_position_manually(symbol_to_close)
-            except Exception as e:
-                print(f"HATA ({self.name}): Manuel komutlar kontrol edilirken hata: {e}")
-            time.sleep(5)  # Her 5 saniyede bir kontrol et
 
     def _close_position(self, symbol: str, close_price: float, reason: str):
         """Açık bir pozisyonu Binance üzerinde kapatır ve durumu sıfırlar."""
@@ -141,6 +123,20 @@ class StrategyRunner:
 
         self._reset_position_state(symbol)
 
+    def _check_manual_actions(self):
+        """Periyodik olarak veritabanını manuel komutlar için kontrol eder."""
+        while not self._stop_event.is_set():
+            try:
+                actions = get_and_clear_pending_actions(self.id)
+                for action in actions:
+                    if action['action'] == 'CLOSE_POSITION':
+                        symbol_to_close = action['symbol']
+                        print(f"MANUEL KOMUT ({self.name}): {symbol_to_close} için pozisyon kapatma emri alındı.")
+                        self._close_position_manually(symbol_to_close)
+            except Exception as e:
+                print(f"HATA ({self.name}): Manuel komutlar kontrol edilirken hata: {e}")
+            time.sleep(5)
+
     def _close_position_manually(self, symbol):
         """Bir pozisyonu anlık piyasa fiyatından manuel olarak kapatır."""
         if not self.portfolio_data.get(symbol, {}).get('position'):
@@ -151,7 +147,6 @@ class StrategyRunner:
             self._close_position(symbol, latest_price, "Manuel Kapatma")
         except Exception as e:
             print(f"HATA ({self.name}): Manuel kapatma için {symbol} anlık fiyatı alınamadı: {e}")
-
 
     def _run_websocket(self, symbol):
         stream_url = f"wss://stream.binance.com:9443/ws/{symbol.lower()}@kline_{self.interval}"
@@ -168,12 +163,11 @@ class StrategyRunner:
                 ws.run_forever(ping_interval=60, ping_timeout=10)
             except Exception as e:
                 print(f"KRİTİK WebSocket Hatası ({symbol}, {self.name}): {e}")
-
             if not self._stop_event.is_set():
                 time.sleep(10)
 
     def _reset_position_state(self, symbol):
-        """Bir pozisyon kapandığında tüm değerleri sıfırlar."""
+        """Bir pozisyon kapandığında tüm state ve veritabanı değerlerini sıfırlar."""
         self.portfolio_data[symbol]['position'] = None
         self.portfolio_data[symbol]['entry_price'] = 0
         self.portfolio_data[symbol]['stop_loss_price'] = 0
@@ -239,28 +233,59 @@ class StrategyRunner:
         except Exception as e:
             print(f"KRİTİK HATA ({symbol}, {self.name}): Mesaj işlenirken sorun: {e}")
 
+    # multi_worker.py - _open_new_position fonksiyonunu bununla değiştirin
+
     def _open_new_position(self, symbol, new_pos, entry_price):
         """Yeni bir VADELİ işlem pozisyonu açar, durumu kaydeder ve bildirim gönderir."""
+
+        # Stratejinin en güncel parametrelerini DB'den tekrar çekerek al
+        current_strategy_config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
+        self.params = current_strategy_config.get('strategy_params', self.params)
+
+        # Stratejinin işlem açma izni olup olmadığını veritabanından kontrol et
+        is_trading_enabled = current_strategy_config.get('is_trading_enabled', True)
+        if not is_trading_enabled:
+            print(
+                f"BİLGİ ({self.name}): {symbol} için sinyal geldi ancak canlı işlem (trading) PASİF. Emir gönderilmiyor.")
+            # Pozisyon açma sürecini burada durdur
+            return
+
+        # 1. Stratejiye özel parametreleri kullan
         leverage = self.params.get('leverage', 5)
-        trade_amount_usdt = self.params.get('trade_amount_usdt', 10)
+        trade_amount_usdt = self.params.get('trade_amount_usdt', 10.0)
 
         if entry_price <= 0:
             print(f"HATA ({self.name}): Geçersiz giriş fiyatı ({entry_price}). İşlem atlanıyor.")
             return
 
-        quantity_to_trade = round((trade_amount_usdt * leverage) / entry_price, 3)
-        if quantity_to_trade <= 0:
-            print(f"UYARI ({self.name}): Hesaplanan işlem miktarı sıfır veya daha az. İşlem atlanıyor.")
+        # 2. Sembolün kurallarını al (miktar hassasiyeti vb.)
+        symbol_info = get_symbol_info(symbol)
+        if not symbol_info:
+            print(f"HATA ({self.name}): {symbol} için işlem kuralları alınamadı. İşlem atlanıyor.")
             return
 
+        quantity_precision = int(symbol_info['quantityPrecision'])
+
+        # 3. Kurallara uygun işlem miktarını hesapla
+        quantity = (trade_amount_usdt * leverage) / entry_price
+        quantity_to_trade = round(quantity, quantity_precision)
+
+        if quantity_to_trade <= 0:
+            print(
+                f"UYARI ({self.name}): Hesaplanan işlem miktarı ({quantity_to_trade}) sıfırdan küçük. İşlem atlanıyor.")
+            return
+
+        # 4. Binance üzerinde işlem öncesi ayarları yap
         leverage_set = set_futures_leverage_and_margin(symbol, leverage)
         if not leverage_set:
             print(f"HATA ({self.name}): Kaldıraç ayarlanamadığı için pozisyon açılmıyor.")
             return
 
+        # 5. Pozisyon açma emrini gönder
         order_side = 'BUY' if new_pos == 'Long' else 'SELL'
         order_result = place_futures_order(symbol, order_side, quantity_to_trade)
 
+        # 6. Emir başarılıysa veritabanı ve state'i güncelle
         if order_result:
             self.notify_new_position(symbol, new_pos, entry_price)
             self.portfolio_data[symbol]['position'] = new_pos
@@ -274,59 +299,24 @@ class StrategyRunner:
             update_position(self.id, symbol, new_pos, entry_price)
 
     def _calculate_risk_levels(self, symbol, position_type, entry_price):
-        """Verilen giriş fiyatına göre TP ve SL seviyelerini hesaplar."""
         params = self.params
         stop_loss_price, tp1_price, tp2_price = 0, 0, 0
-
         current_atr = self.portfolio_data[symbol]['df'].iloc[-1].get('ATR', 0)
-
         if position_type == 'Long':
             if params.get('atr_multiplier', 0) > 0 and current_atr > 0:
                 stop_loss_price = entry_price - (current_atr * params['atr_multiplier'])
-            elif params.get('stop_loss_pct', 0) > 0:
-                stop_loss_price = entry_price * (1 - params['stop_loss_pct'] / 100)
-
             if params.get('tp1_pct', 0) > 0:
                 tp1_price = entry_price * (1 + params['tp1_pct'] / 100)
             if params.get('tp2_pct', 0) > 0:
                 tp2_price = entry_price * (1 + params['tp2_pct'] / 100)
-        else:  # Short
+        else:
             if params.get('atr_multiplier', 0) > 0 and current_atr > 0:
                 stop_loss_price = entry_price + (current_atr * params['atr_multiplier'])
-            elif params.get('stop_loss_pct', 0) > 0:
-                stop_loss_price = entry_price * (1 + params['stop_loss_pct'] / 100)
-
             if params.get('tp1_pct', 0) > 0:
                 tp1_price = entry_price * (1 - params['tp1_pct'] / 100)
             if params.get('tp2_pct', 0) > 0:
                 tp2_price = entry_price * (1 - params['tp2_pct'] / 100)
-
         return stop_loss_price, tp1_price, tp2_price
-
-    # --- YENİ BİLDİRİM FONKSİYONU ---
-    def notify_risk_management_event(self, symbol, event_type, price):
-        """TP veya SL tetiklendiğinde bildirim gönderir."""
-        emoji_map = {
-            "Stop-Loss": "🛡️🛑",
-            "TP1 Kâr Alındı": "💰✅",
-            "TP2 Kâr Alındı": "💰✅"
-        }
-        emoji = emoji_map.get(event_type, "ℹ️")
-
-        message = (f"{emoji} *{event_type.upper()}*\n\n"
-                   f"🔹 *Strateji:* `{self.name}`\n"
-                   f"📈 *Sembol:* `{symbol}`\n"
-                   f"🎯 *Tetiklenme Fiyatı:* `{price:.7f} USDT`")
-
-        print(f"--- {message} ---")
-        log_alarm_db(self.id, symbol, f"{event_type} ({self.name})", price)
-
-
-        if self.params.get("telegram_enabled", False):
-            token = self.params.get("telegram_token")
-            chat_id = self.params.get("telegram_chat_id")
-            if token and chat_id:
-                send_telegram_message(message, token, chat_id)
 
     def notify_and_log(self, symbol, signal_type, price, pnl=None):
         if pnl is not None:
@@ -335,15 +325,12 @@ class StrategyRunner:
             pnl_text = f"\n📈 *P&L:* `{pnl:.2f}%`"
         else:
             emoji, status_text, pnl_text = "🎯", signal_type, ""
-
         message = (f"{emoji} *{status_text}* \n\n"
                    f"🔹 *Strateji:* `{self.name}`\n"
                    f"📈 *Sembol:* `{symbol}`\n"
-                   f"💰 *Kapanış Fiyatı:* `{price:.7f} USDT`"
-                   f"{pnl_text}")
+                   f"💰 *Kapanış Fiyatı:* `{price:.7f} USDT`{pnl_text}")
         print(f"!!! {message} !!!")
         log_alarm_db(self.id, symbol, f"{status_text} ({self.name})", price)
-
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")
             chat_id = self.params.get("telegram_chat_id")
@@ -352,31 +339,15 @@ class StrategyRunner:
 
     def notify_new_position(self, symbol, signal_type, entry_price):
         params = self.params
-        stop_loss_price, tp1_price, tp2_price = self._calculate_risk_levels(symbol, signal_type, entry_price)
-
-        tp_levels = []
-        if tp1_price > 0: tp_levels.append({'price': tp1_price, 'label': 'TP1'})
-        if tp2_price > 0: tp_levels.append({'price': tp2_price, 'label': 'TP2'})
-
-        tp_text = "\n".join(
-            [f"`{lvl['label']}: {lvl['price']:.6f}$`" for lvl in tp_levels]) if tp_levels else "`Belirlenmedi`"
+        stop_loss_price, _, _ = self._calculate_risk_levels(symbol, signal_type, entry_price)
         stop_text = f"`{stop_loss_price:.6f}$`" if stop_loss_price > 0 else "`Belirlenmedi`"
         signal_emoji = "🚀" if signal_type.upper() == "LONG" else "📉"
-
-        message = (
-            f"{signal_emoji} *Yeni Pozisyon: {symbol} - {signal_type.upper()}*\n\n"
-            f"🔹 *Strateji:* `{self.name}`\n"
-            f"➡️ *Giriş Fiyatı:* `{entry_price:.4f}$`\n\n"
-            f"💰 *Kâr Al Seviyeleri:*\n{tp_text}\n\n"
-            f"🛡️ *Zarar Durdur:*\n{stop_text}\n"
-        )
-        if params.get('move_sl_to_be', False):
-            message += f"\n_📌 Not: TP1 sonrası stop girişe çekilecektir._"
-
+        message = (f"{signal_emoji} *Yeni Pozisyon: {symbol} - {signal_type.upper()}*\n\n"
+                   f"🔹 *Strateji:* `{self.name}`\n"
+                   f"➡️ *Giriş Fiyatı:* `{entry_price:.4f}$`\n\n"
+                   f"🛡️ *Zarar Durdur:* {stop_text}\n")
         print("--- YENİ POZİSYON SİNYALİ ---\n" + message + "\n-----------------------------")
         log_alarm_db(self.id, symbol, f"Yeni {signal_type.upper()} Pozisyon ({self.name})", entry_price)
-
-
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")
             chat_id = self.params.get("telegram_chat_id")
@@ -388,28 +359,22 @@ def main_manager():
     print("🚀 Çoklu Strateji Yöneticisi (Multi-Worker) Başlatıldı.")
     initialize_db()
     running_strategies = {}
-
     while True:
         try:
             strategies_in_db = get_all_strategies()
             db_strategy_map = {s['id']: s for s in strategies_in_db}
             db_ids = set(db_strategy_map.keys())
             running_ids = set(running_strategies.keys())
-
-            new_ids = db_ids - running_ids
-            for strategy_id in new_ids:
+            for strategy_id in (db_ids - running_ids):
                 strategy_config = db_strategy_map[strategy_id]
                 print(f"✅ YENİ STRATEJİ BULUNDU: '{strategy_config['name']}'. Başlatılıyor...")
                 runner = StrategyRunner(strategy_config)
                 running_strategies[runner.id] = runner
                 runner.start()
-
-            removed_ids = running_ids - db_ids
-            for strategy_id in removed_ids:
+            for strategy_id in (running_ids - db_ids):
                 print(f"🛑 SİLİNMİŞ STRATEJİ: '{running_strategies[strategy_id].name}'. Durduruluyor...")
                 running_strategies[strategy_id].stop()
                 del running_strategies[strategy_id]
-
             for strategy_id in running_ids.intersection(db_ids):
                 runner = running_strategies[strategy_id]
                 db_config = db_strategy_map[strategy_id]
@@ -419,7 +384,6 @@ def main_manager():
                     new_runner = StrategyRunner(db_config)
                     running_strategies[strategy_id] = new_runner
                     new_runner.start()
-
         except Exception as e:
             print(f"HATA: Yönetici döngüsünde beklenmedik bir hata oluştu: {e}")
             import traceback
@@ -431,10 +395,8 @@ if __name__ == "__main__":
     if not create_lock_file():
         print("❌ HATA: multi_worker.py zaten çalışıyor. Yeni bir kopya başlatılamadı.")
         sys.exit(1)
-
     signal.signal(signal.SIGTERM, graceful_shutdown)
     signal.signal(signal.SIGINT, graceful_shutdown)
-
     try:
         main_manager()
     finally:

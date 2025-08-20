@@ -73,3 +73,20 @@ def place_futures_order(symbol: str, side: str, quantity: float):
     except BinanceAPIException as e:
         print(f"EMİR HATASI: {symbol} için {side} emri gönderilemedi: {e}")
         return None
+
+    # Bu fonksiyon, API'ye sürekli aynı isteği atmamak için sonuçları hafızada tutar.
+@st.cache_data(ttl=3600)  # Sembol bilgilerini 1 saat cache'le
+def get_symbol_info(symbol: str):
+        """Binance'den bir sembol için lot büyüklüğü, hassasiyet gibi bilgileri çeker."""
+        client = get_binance_client()
+        if not client: return None
+
+        try:
+            info = client.futures_exchange_info()
+            for s in info['symbols']:
+                if s['symbol'] == symbol:
+                    return s
+            return None
+        except BinanceAPIException as e:
+            print(f"HATA: {symbol} için borsa bilgisi alınamadı: {e}")
+            return None

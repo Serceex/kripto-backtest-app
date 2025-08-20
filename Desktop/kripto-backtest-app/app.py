@@ -1117,24 +1117,21 @@ elif page == "Canlı İzleme":
                 strategy_id = strategy['id']
                 strategy_name = strategy.get('name', 'İsimsiz Strateji')
                 strategy_status = strategy.get('status', 'running')
-                strategy_pnl = pnl_by_strategy.get(strategy_name, 0.0)
-                pnl_color = "green" if strategy_pnl >= 0 else "red"
 
                 with st.container(border=True):
-                    # Strateji Başlık ve Kontrol Butonları
+                    # --- Strateji Başlığı ve Kontrol Butonları ---
                     col1_strat, col2_strat = st.columns([3, 1])
                     with col1_strat:
                         st.subheader(strategy_name)
                         status_emoji = "▶️" if strategy_status == 'running' else "⏸️"
-                        st.markdown(
-                            f"**Durum:** {status_emoji} {strategy_status.capitalize()} | **Anlık P&L:** <span style='color:{pnl_color};'>{strategy_pnl:.2f}%</span>",
-                            unsafe_allow_html=True)
+                        st.markdown(f"**Durum:** {status_emoji} {strategy_status.capitalize()}")
                         st.caption(
                             f"**ID:** `{strategy_id}` | **Zaman Dilimi:** `{strategy.get('interval')}` | **Semboller:** `{len(strategy.get('symbols', []))}`")
 
                     with col2_strat:
-                        st.write("")
-                        b_col1, b_col2, b_col3, b_col4 = st.columns(4)
+                        st.write("")  # Butonları hizalamak için boşluk
+                        b_col1, b_col2, b_col3 = st.columns(3)
+                        # Durdur / Devam Et Butonu
                         with b_col1:
                             if strategy_status == 'running':
                                 if st.button("⏸️", key=f"pause_{strategy_id}",
@@ -1145,22 +1142,74 @@ elif page == "Canlı İzleme":
                                 if st.button("▶️", key=f"resume_{strategy_id}", help="Stratejiyi devam ettirir."):
                                     update_strategy_status(strategy_id, 'running')
                                     st.rerun()
+                        # Ayarları Kenar Çubuğuna Yükle Butonu
                         with b_col2:
                             st.button("📥", key=f"load_{strategy_id}",
                                       help="Bu stratejinin ayarlarını kenar çubuğuna yükle",
                                       on_click=apply_full_strategy_params, args=(strategy,))
+                        # Stratejiyi Sil Butonu
                         with b_col3:
-                            if st.button("⚙️", key=f"edit_{strategy_id}",
-                                         help="Strateji parametrelerini canlı düzenle"):
-                                st.session_state.editing_strategy_id = strategy_id
-                                st.rerun()
-                        with b_col4:
                             if st.button("🗑️", key=f"stop_{strategy_id}", help="Stratejiyi tamamen siler."):
                                 remove_strategy(strategy_id)
                                 st.warning(f"'{strategy_name}' stratejisi silindi.")
                                 st.rerun()
 
-                    # Canlı Performans Paneli (Mevcut haliyle kalabilir)
+                    # --- Canlı İşlem Parametreleri Düzenleme Formu ---
+                    with st.form(key=f"edit_form_{strategy_id}"):
+                        st.markdown("**Canlı İşlem Parametreleri**")
+                        params = strategy.get('strategy_params', {})
+
+                        form_cols = st.columns(3)
+
+                        # Form Sütun 1: Kaldıraç
+                        with form_cols[0]:
+                            current_leverage = params.get('leverage', 5)
+                            new_leverage = st.slider(
+                                "Kaldıraç Oranı", 1, 50, current_leverage,
+                                key=f"leverage_{strategy_id}"
+                            )
+
+                        # Form Sütun 2: İşlem Tutarı
+                        with form_cols[1]:
+                            current_trade_amount = params.get('trade_amount_usdt', 10.0)
+                            new_trade_amount = st.number_input(
+                                "İşlem Tutarı (USDT)", min_value=5.0, value=current_trade_amount, step=1.0,
+                                key=f"amount_{strategy_id}",
+                                help="Her sinyalde açılacak pozisyonun kaldıraçsız büyüklüğü."
+                            )
+
+                        with form_cols[2]:
+                            # Stratejinin veritabanındaki ana 'is_trading_enabled' durumunu al
+                            is_trading_enabled = strategy.get('is_trading_enabled', True)
+
+                            st.markdown("**Binance'de İşlem**")
+                            # Radio butonları ile daha net bir seçim sunalım
+                            trade_status_text = st.radio(
+                                "Bu strateji borsada işlem açsın mı?",
+                                ["Aktif", "Pasif"],
+                                index=1 if is_trading_enabled else 1,  # Duruma göre varsayılanı ayarla
+                                key=f"trade_status_{strategy_id}",
+                                horizontal=True
+                            )
+
+                        # Formu Kaydet Butonu
+                        submitted = st.form_submit_button("✅ Ayarları Güncelle", use_container_width=True)
+
+                        if submitted:
+                            updated_params = params.copy()
+                            updated_params['leverage'] = new_leverage
+                            updated_params['trade_amount_usdt'] = new_trade_amount
+                            strategy['strategy_params'] = updated_params
+
+                            # Yeni anahtarın durumunu da stratejiye ekle
+                            strategy['is_trading_enabled'] = True if trade_status_text == "Aktif" else False
+
+                            add_or_update_strategy(strategy)
+                            st.toast(f"'{strategy_name}' stratejisinin parametreleri güncellendi!", icon="👍")
+                            time.sleep(1)
+                            st.rerun()
+
+                    # --- Canlı Performans Detayları (Açılır/Kapanır) ---
                     with st.expander("📈 Canlı Performans Detayları"):
                         live_metrics_strategy = get_live_closed_trades_metrics(strategy_id=strategy_id)
                         if live_metrics_strategy['Toplam İşlem'] == 0:
@@ -1169,11 +1218,7 @@ elif page == "Canlı İzleme":
                             m_col1, m_col2, m_col3 = st.columns(3)
                             m_col1.metric("Toplam İşlem", live_metrics_strategy['Toplam İşlem'])
                             m_col2.metric("Başarı Oranı (%)", f"{live_metrics_strategy['Başarı Oranı (%)']}%")
-                            m_col3.metric("Toplam Getiri (%)", f"{live_metrics_strategy['Toplam Getiri (%)']}%")
-                            m_col4, m_col5, m_col6 = st.columns(3)
-                            m_col4.metric("Ortalama Kazanç (%)", f"{live_metrics_strategy['Ortalama Kazanç (%)']}%")
-                            m_col5.metric("Ortalama Kayıp (%)", f"{live_metrics_strategy['Ortalama Kayıp (%)']}%")
-                            m_col6.metric("Profit Factor", live_metrics_strategy['Profit Factor'])
+                            m_col3.metric("Profit Factor", live_metrics_strategy['Profit Factor'])
 
                     # --- GÜNCELLENMİŞ VE HATALARI GİDERİLMİŞ DÜZENLEME FORMU ---
                     if st.session_state.editing_strategy_id == strategy_id:

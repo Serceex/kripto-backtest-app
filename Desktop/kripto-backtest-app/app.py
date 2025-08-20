@@ -323,6 +323,11 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
     with col2:
         st.markdown("**Zarar Durdur (Stop-Loss)**")
         sl_type = st.radio("Stop-Loss Türü", ["Yüzde (%)", "ATR"], index=1, horizontal=True, key="sl_type_key")
+
+        st.markdown("**Kaldıraç Ayarı**")
+        leverage = st.slider("Kaldıraç Oranı", 1, 50, 5, key="leverage_key",
+                             help="Vadeli işlemlerde kullanılacak kaldıraç oranı.")
+
         if sl_type == "Yüzde (%)":
             stop_loss_pct = st.slider("Stop Loss (%)", 0.0, 10.0, 2.0, step=0.1)
             atr_multiplier = 0
@@ -360,7 +365,8 @@ strategy_params = {
     'commission_pct': 0.1,
     'tp1_pct': tp1_pct, 'tp1_size_pct': tp1_size_pct,
     'tp2_pct': tp2_pct, 'tp2_size_pct': tp2_size_pct,
-    'move_sl_to_be': move_sl_to_be
+    'move_sl_to_be': move_sl_to_be,
+    'leverage': leverage
 }
 
 if "live_running" not in st.session_state: st.session_state.live_running = False

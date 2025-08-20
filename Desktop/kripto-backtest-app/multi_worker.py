@@ -20,6 +20,8 @@ from database import (
     get_positions_for_strategy, log_alarm_db,
     get_and_clear_pending_actions
 )
+from trade_executor import set_futures_leverage_and_margin, place_futures_order, get_open_position_amount
+
 
 # --- Lock File Mekanizması ---
 try:
@@ -119,28 +121,37 @@ class StrategyRunner:
                 print(f"HATA ({self.name}): Manuel komutlar kontrol edilirken hata: {e}")
             time.sleep(5)  # Her 5 saniyede bir kontrol et
 
-    def _close_position_manually(self, symbol):
-        """Bir pozisyonu anlık piyasa fiyatından manuel olarak kapatır."""
+    def _close_position(self, symbol: str, close_price: float, reason: str):
+        """Açık bir pozisyonu Binance üzerinde kapatır ve durumu sıfırlar."""
         symbol_data = self.portfolio_data.get(symbol, {})
         current_position = symbol_data.get('position')
         entry_price = symbol_data.get('entry_price', 0)
 
         if not current_position:
+            return
+
+        quantity_to_close = get_open_position_amount(symbol)
+
+        if quantity_to_close > 0:
+            close_side = 'SELL' if current_position == 'Long' else 'BUY'
+            place_futures_order(symbol, close_side, quantity_to_close)
+            pnl = ((close_price - entry_price) / entry_price * 100) if current_position == 'Long' else (
+                        (entry_price - close_price) / entry_price * 100)
+            self.notify_and_log(symbol, f"Pozisyon '{reason}' ile Kapatıldı", close_price, pnl)
+
+        self._reset_position_state(symbol)
+
+    def _close_position_manually(self, symbol):
+        """Bir pozisyonu anlık piyasa fiyatından manuel olarak kapatır."""
+        if not self.portfolio_data.get(symbol, {}).get('position'):
             print(f"BİLGİ ({self.name}): {symbol} için kapatılacak aktif pozisyon bulunamadı.")
             return
-
-        # Anlık fiyatı al
         try:
             latest_price = get_binance_klines(symbol, self.interval, limit=1).iloc[-1]['Close']
+            self._close_position(symbol, latest_price, "Manuel Kapatma")
         except Exception as e:
             print(f"HATA ({self.name}): Manuel kapatma için {symbol} anlık fiyatı alınamadı: {e}")
-            return
 
-        pnl = ((latest_price - entry_price) / entry_price * 100) if current_position == 'Long' else (
-                    (entry_price - latest_price) / entry_price * 100)
-
-        self.notify_and_log(symbol, "Pozisyon Manuel Olarak Kapatıldı", latest_price, pnl)
-        self._reset_position_state(symbol)
 
     def _run_websocket(self, symbol):
         stream_url = f"wss://stream.binance.com:9443/ws/{symbol.lower()}@kline_{self.interval}"
@@ -185,47 +196,22 @@ class StrategyRunner:
             current_position = symbol_data.get('position')
 
             if current_position:
-                pos_closed = False
                 sl_price = symbol_data.get('stop_loss_price', 0)
                 if sl_price > 0:
                     if (current_position == 'Long' and low_price <= sl_price) or \
                             (current_position == 'Short' and high_price >= sl_price):
-                        self.notify_risk_management_event(symbol, "Stop-Loss", sl_price)
-                        self._reset_position_state(symbol)
-                        pos_closed = True
-
-                if not pos_closed:
-                    if not symbol_data.get('tp1_hit', False):
-                        tp1_price = symbol_data.get('tp1_price', 0)
-                        if tp1_price > 0:
-                            if (current_position == 'Long' and high_price >= tp1_price) or \
-                                    (current_position == 'Short' and low_price <= tp1_price):
-                                self.notify_risk_management_event(symbol, "TP1 Kâr Alındı", tp1_price)
-                                self.portfolio_data[symbol]['tp1_hit'] = True
-
-                    if not symbol_data.get('tp2_hit', False):
-                        tp2_price = symbol_data.get('tp2_price', 0)
-                        if tp2_price > 0:
-                            if (current_position == 'Long' and high_price >= tp2_price) or \
-                                    (current_position == 'Short' and low_price <= tp2_price):
-                                self.notify_risk_management_event(symbol, "TP2 Kâr Alındı", tp2_price)
-                                self.portfolio_data[symbol]['tp2_hit'] = True
+                        self._close_position(symbol, sl_price, "Stop-Loss")
+                        return
 
             is_kline_closed = kline.get('x', False)
             if not is_kline_closed: return
 
             new_kline_df = pd.DataFrame([{'timestamp': pd.to_datetime(kline['t'], unit='ms'), 'Open': float(kline['o']),
-                                          'High': float(kline['h']), 'Low': float(kline['l']),
-                                          'Close': float(kline['c']), 'Volume': float(kline['v']),
+                                          'High': high_price, 'Low': low_price, 'Close': float(kline['c']),
+                                          'Volume': float(kline['v']),
                                           }]).set_index('timestamp')
-
             df = self.portfolio_data[symbol]['df']
-            if new_kline_df.index[0] in df.index:
-                df.loc[new_kline_df.index] = new_kline_df.values
-            else:
-                df = pd.concat([df, new_kline_df])
-
-            if len(df) > 201: df = df.iloc[1:]
+            df = pd.concat([df.iloc[1:], new_kline_df])
             self.portfolio_data[symbol]['df'] = df
 
             df_indicators = generate_all_indicators(df, **self.params)
@@ -235,55 +221,57 @@ class StrategyRunner:
             price = last_row['Close']
 
             current_position = self.portfolio_data.get(symbol, {}).get('position')
-            entry_price = self.portfolio_data.get(symbol, {}).get('entry_price', 0)
 
             if (current_position == 'Long' and raw_signal == 'Short') or \
                     (current_position == 'Short' and raw_signal == 'Al'):
-                pnl = ((price - entry_price) / entry_price * 100) if current_position == 'Long' else (
-                        (entry_price - price) / entry_price * 100)
-                self.notify_and_log(symbol, f"Pozisyon Karşıt Sinyal İle Kapatıldı", price, pnl)
-                self._reset_position_state(symbol)
+                self._close_position(symbol, price, "Karşıt Sinyal")
 
             elif current_position is None:
-                # --- ORKESTRATÖR KONTROLÜ ---
-                # config'i (ve dolayısıyla orkestratör durumunu) her seferinde yeniden yükle
                 self.config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
-
-                user_status = self.config.get('status', 'running')
-                orchestrator_status = self.config.get('orchestrator_status', 'active')
-
-                if user_status == 'paused' or orchestrator_status == 'inactive':
-                    # Eğer kullanıcı duraklattıysa VEYA orkestratör yedeğe aldıysa yeni pozisyon açma
-                    return
-                # --- KONTROL SONU ---
-
-                new_pos = None
-                if raw_signal == 'Al' and self.params.get('signal_direction', 'Both') != 'Short':
-                    new_pos = 'Long'
-                elif raw_signal == 'Short' and self.params.get('signal_direction', 'Both') != 'Long':
-                    new_pos = 'Short'
-
-                if new_pos:
-                    self._open_new_position(symbol, new_pos, price)
-
+                if self.config.get('status') == 'running' and self.config.get('orchestrator_status') == 'active':
+                    new_pos = None
+                    if raw_signal == 'Al' and self.params.get('signal_direction', 'Both') != 'Short':
+                        new_pos = 'Long'
+                    elif raw_signal == 'Short' and self.params.get('signal_direction', 'Both') != 'Long':
+                        new_pos = 'Short'
+                    if new_pos:
+                        self._open_new_position(symbol, new_pos, price)
         except Exception as e:
             print(f"KRİTİK HATA ({symbol}, {self.name}): Mesaj işlenirken sorun: {e}")
 
     def _open_new_position(self, symbol, new_pos, entry_price):
-        """Yeni bir pozisyon açar, durumunu kaydeder ve bildirim gönderir."""
-        self.notify_new_position(symbol, new_pos, entry_price)
-        self.portfolio_data[symbol]['position'] = new_pos
-        self.portfolio_data[symbol]['entry_price'] = entry_price
+        """Yeni bir VADELİ işlem pozisyonu açar, durumu kaydeder ve bildirim gönderir."""
+        leverage = self.params.get('leverage', 5)
+        trade_amount_usdt = self.params.get('trade_amount_usdt', 10)
 
-        # TP/SL fiyatlarını hesapla ve sakla
-        sl, tp1, tp2 = self._calculate_risk_levels(symbol, new_pos, entry_price)
-        self.portfolio_data[symbol]['stop_loss_price'] = sl
-        self.portfolio_data[symbol]['tp1_price'] = tp1
-        self.portfolio_data[symbol]['tp2_price'] = tp2
-        self.portfolio_data[symbol]['tp1_hit'] = False
-        self.portfolio_data[symbol]['tp2_hit'] = False
+        if entry_price <= 0:
+            print(f"HATA ({self.name}): Geçersiz giriş fiyatı ({entry_price}). İşlem atlanıyor.")
+            return
 
-        update_position(self.id, symbol, new_pos, entry_price)
+        quantity_to_trade = round((trade_amount_usdt * leverage) / entry_price, 3)
+        if quantity_to_trade <= 0:
+            print(f"UYARI ({self.name}): Hesaplanan işlem miktarı sıfır veya daha az. İşlem atlanıyor.")
+            return
+
+        leverage_set = set_futures_leverage_and_margin(symbol, leverage)
+        if not leverage_set:
+            print(f"HATA ({self.name}): Kaldıraç ayarlanamadığı için pozisyon açılmıyor.")
+            return
+
+        order_side = 'BUY' if new_pos == 'Long' else 'SELL'
+        order_result = place_futures_order(symbol, order_side, quantity_to_trade)
+
+        if order_result:
+            self.notify_new_position(symbol, new_pos, entry_price)
+            self.portfolio_data[symbol]['position'] = new_pos
+            self.portfolio_data[symbol]['entry_price'] = entry_price
+            sl, tp1, tp2 = self._calculate_risk_levels(symbol, new_pos, entry_price)
+            self.portfolio_data[symbol]['stop_loss_price'] = sl
+            self.portfolio_data[symbol]['tp1_price'] = tp1
+            self.portfolio_data[symbol]['tp2_price'] = tp2
+            self.portfolio_data[symbol]['tp1_hit'] = False
+            self.portfolio_data[symbol]['tp2_hit'] = False
+            update_position(self.id, symbol, new_pos, entry_price)
 
     def _calculate_risk_levels(self, symbol, position_type, entry_price):
         """Verilen giriş fiyatına göre TP ve SL seviyelerini hesaplar."""

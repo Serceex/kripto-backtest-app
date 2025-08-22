@@ -1,4 +1,4 @@
-# multi_worker.py (Çoklama/Race Condition hatası giderilmiş nihai hali)
+# multi_worker.py (İşlem akışı düzeltilmiş ve en stabil hale getirilmiş nihai hali)
 
 import json
 import time
@@ -11,7 +11,6 @@ import signal
 import logging
 import traceback
 from datetime import datetime
-import logging
 from trade_executor import set_futures_leverage_and_margin, place_futures_order, get_open_position_amount, \
     get_symbol_info
 
@@ -75,12 +74,7 @@ class StrategyRunner:
         self.portfolio_data = {}
         self.ws_threads = {}
         self._stop_event = threading.Event()
-
-        # --- ÇOKLAMA ÖNLEYİCİ KİLİT MEKANİZMASI ---
-        # Her bir sembol için ayrı bir kilit oluşturuyoruz.
         self.position_locks = {symbol: threading.Lock() for symbol in self.symbols}
-        # --- DÜZELTME SONU ---
-
         self._load_positions()
 
     def _load_positions(self):
@@ -126,19 +120,19 @@ class StrategyRunner:
         if not current_position:
             return
 
-        # --- ÇOKLAMA ÖNLEYİCİ KİLİT ---
-        # Pozisyon kapatılırken de kilidi kullanarak race condition'ı engelle
         with self.position_locks[symbol]:
-            quantity_to_close = get_open_position_amount(symbol)
-            if quantity_to_close > 0:
-                close_side = 'SELL' if current_position == 'Long' else 'BUY'
-                place_futures_order(symbol, close_side, quantity_to_close)
-                pnl = ((close_price - entry_price) / entry_price * 100) if current_position == 'Long' else (
-                        (entry_price - close_price) / entry_price * 100)
-                self.notify_and_log(symbol, f"Pozisyon '{reason}' ile Kapatıldı", close_price, pnl)
+            is_trading_enabled = self.config.get('is_trading_enabled', False)
+            if is_trading_enabled:
+                quantity_to_close = get_open_position_amount(symbol)
+                if quantity_to_close > 0:
+                    close_side = 'SELL' if current_position == 'Long' else 'BUY'
+                    place_futures_order(symbol, close_side, quantity_to_close)
+
+            pnl = ((close_price - entry_price) / entry_price * 100) if current_position == 'Long' else (
+                    (entry_price - close_price) / entry_price * 100)
+            self.notify_and_log(symbol, f"Pozisyon '{reason}' ile Kapatıldı", close_price, pnl)
 
             self._reset_position_state(symbol)
-        # --- DÜZELTME SONU ---
 
     def _check_manual_actions(self):
         while not self._stop_event.is_set():
@@ -245,14 +239,9 @@ class StrategyRunner:
             if (current_position == 'Long' and raw_signal == 'Short') or \
                     (current_position == 'Short' and raw_signal == 'Al'):
                 self._close_position(symbol, price, "Karşıt Sinyal")
-
-            # --- YENİ KİLİT KONTROLLÜ POZİSYON AÇMA ---
             elif current_position is None:
-                # Kilidi beklemeden almaya çalış. Eğer kilit başka bir thread'deyse, bu veri paketini atla.
                 if self.position_locks[symbol].acquire(blocking=False):
                     try:
-                        # Kilidi aldıktan sonra pozisyonu TEKRAR KONTROL ET.
-                        # Bu, biz kilidi alana kadar başka bir thread'in pozisyon açmadığından emin olmak için.
                         if self.portfolio_data.get(symbol, {}).get('position') is None:
                             self.config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
                             if self.config.get('status') == 'running' and self.config.get(
@@ -265,55 +254,71 @@ class StrategyRunner:
                                 if new_pos:
                                     self._open_new_position(symbol, new_pos, price)
                     finally:
-                        # İşlem ne olursa olsun (başarılı veya hatalı) kilidi serbest bırak.
                         self.position_locks[symbol].release()
-            # --- KİLİT KONTROLÜ SONU ---
-
         except Exception as e:
             logging.error(f"KRİTİK HATA ({symbol}, {self.name}): Mesaj işlenirken sorun: {e}")
             logging.error(traceback.format_exc())
 
+    # --- YENİ VE EN STABİL İŞ AKIŞI ---
     def _open_new_position(self, symbol, new_pos, entry_price):
+        """Sinyal geldiğinde pozisyon açma veya sinyal takibi yapma iş akışını yönetir."""
         current_strategy_config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
         self.params = current_strategy_config.get('strategy_params', self.params)
-        self.notify_new_position(symbol, new_pos, entry_price)
+
+        # 1. SL/TP seviyelerini hesapla
+        sl, tp1, tp2 = self._calculate_risk_levels(symbol, new_pos, entry_price)
+
+        # 2. Pozisyonu hafızaya ve veritabanına kaydet (Bu, sinyal çoklamasını engeller)
+        self.portfolio_data[symbol]['position'] = new_pos
+        self.portfolio_data[symbol]['entry_price'] = entry_price
+        self.portfolio_data[symbol]['stop_loss_price'] = sl
+        self.portfolio_data[symbol]['tp1_price'] = tp1
+        self.portfolio_data[symbol]['tp2_price'] = tp2
+        self.portfolio_data[symbol]['tp1_hit'] = False
+        self.portfolio_data[symbol]['tp2_hit'] = False
+        update_position(self.id, symbol, new_pos, entry_price)
+
+        # 3. Tüm bilgilerle birlikte Telegram bildirimini gönder
+        self.notify_new_position(symbol, new_pos, entry_price, sl)
+
+        # 4. Canlı işlem aktif ise borsaya emir gönder
         is_trading_enabled = current_strategy_config.get('is_trading_enabled', False)
-        if not is_trading_enabled:
+        if is_trading_enabled:
+            leverage = self.params.get('leverage', 5)
+            trade_amount_usdt = self.params.get('trade_amount_usdt', 10.0)
+
+            if entry_price <= 0:
+                logging.error(f"HATA ({self.name}): Geçersiz giriş fiyatı ({entry_price}). İşlem atlanıyor.")
+                return
+
+            symbol_info = get_symbol_info(symbol)
+            if not symbol_info:
+                logging.error(f"HATA ({self.name}): {symbol} için işlem kuralları alınamadı. İşlem atlanıyor.")
+                return
+
+            quantity_precision = int(symbol_info['quantityPrecision'])
+            quantity = (trade_amount_usdt * leverage) / entry_price
+            quantity_to_trade = round(quantity, quantity_precision)
+
+            if quantity_to_trade <= 0:
+                logging.warning(
+                    f"UYARI ({self.name}): Hesaplanan işlem miktarı ({quantity_to_trade}) sıfırdan küçük. İşlem atlanıyor.")
+                return
+
+            leverage_set = set_futures_leverage_and_margin(symbol, leverage)
+            if not leverage_set:
+                logging.error(f"HATA ({self.name}): Kaldıraç ayarlanamadığı için pozisyon açılmıyor.")
+                return
+
+            order_side = 'BUY' if new_pos == 'Long' else 'SELL'
+            order_result = place_futures_order(symbol, order_side, quantity_to_trade)
+
+            if not order_result:
+                logging.error(
+                    f"HATA ({self.name}): {symbol} için {order_side} emri Binance'e gönderilemedi. Pozisyon veritabanında 'paper trade' olarak kalacak.")
+        else:
             logging.info(
-                f"BİLGİ ({self.name}): {symbol} için sinyal bildirimi gönderildi ancak canlı işlem (trading) PASİF. Emir gönderilmiyor.")
-            return
-        leverage = self.params.get('leverage', 5)
-        trade_amount_usdt = self.params.get('trade_amount_usdt', 10.0)
-        if entry_price <= 0:
-            logging.error(f"HATA ({self.name}): Geçersiz giriş fiyatı ({entry_price}). İşlem atlanıyor.")
-            return
-        symbol_info = get_symbol_info(symbol)
-        if not symbol_info:
-            logging.error(f"HATA ({self.name}): {symbol} için işlem kuralları alınamadı. İşlem atlanıyor.")
-            return
-        quantity_precision = int(symbol_info['quantityPrecision'])
-        quantity = (trade_amount_usdt * leverage) / entry_price
-        quantity_to_trade = round(quantity, quantity_precision)
-        if quantity_to_trade <= 0:
-            logging.warning(
-                f"UYARI ({self.name}): Hesaplanan işlem miktarı ({quantity_to_trade}) sıfırdan küçük. İşlem atlanıyor.")
-            return
-        leverage_set = set_futures_leverage_and_margin(symbol, leverage)
-        if not leverage_set:
-            logging.error(f"HATA ({self.name}): Kaldıraç ayarlanamadığı için pozisyon açılmıyor.")
-            return
-        order_side = 'BUY' if new_pos == 'Long' else 'SELL'
-        order_result = place_futures_order(symbol, order_side, quantity_to_trade)
-        if order_result:
-            self.portfolio_data[symbol]['position'] = new_pos
-            self.portfolio_data[symbol]['entry_price'] = entry_price
-            sl, tp1, tp2 = self._calculate_risk_levels(symbol, new_pos, entry_price)
-            self.portfolio_data[symbol]['stop_loss_price'] = sl
-            self.portfolio_data[symbol]['tp1_price'] = tp1
-            self.portfolio_data[symbol]['tp2_price'] = tp2
-            self.portfolio_data[symbol]['tp1_hit'] = False
-            self.portfolio_data[symbol]['tp2_hit'] = False
-            update_position(self.id, symbol, new_pos, entry_price)
+                f"BİLGİ ({self.name}): {symbol} için sinyal kaydedildi ve bildirildi ancak canlı işlem (trading) PASİF.")
 
     def _calculate_risk_levels(self, symbol, position_type, entry_price):
         params = self.params
@@ -354,17 +359,29 @@ class StrategyRunner:
             if token and chat_id:
                 send_telegram_message(message, token, chat_id)
 
-    def notify_new_position(self, symbol, signal_type, entry_price):
-        params = self.params
-        stop_loss_price, _, _ = self._calculate_risk_levels(symbol, signal_type, entry_price)
+    # --- YENİLENMİŞ BİLDİRİM FONKSİYONU ---
+    def notify_new_position(self, symbol, signal_type, entry_price, stop_loss_price):
+        """Sinyal ve pozisyon bildirimlerini SL/TP bilgisiyle oluşturur ve gönderir."""
+        is_trading_enabled = self.config.get('is_trading_enabled', False)
+
         stop_text = f"`{stop_loss_price:.6f}$`" if stop_loss_price > 0 else "`Belirlenmedi`"
         signal_emoji = "🚀" if signal_type.upper() == "LONG" else "📉"
-        message = (f"{signal_emoji} *Yeni Pozisyon Sinyali: {symbol} - {signal_type.upper()}*\n\n"
+
+        if is_trading_enabled:
+            title = f"*Yeni Pozisyon Açıldı: {symbol} - {signal_type.upper()}*"
+            log_message = f"Yeni {signal_type.upper()} Pozisyon ({self.name})"
+        else:
+            title = f"*Sinyal Algılandı (Pasif Mod): {symbol} - {signal_type.upper()}*"
+            log_message = f"Yeni {signal_type.upper()} Sinyali (Pasif) ({self.name})"
+
+        message = (f"{signal_emoji} {title}\n\n"
                    f"🔹 *Strateji:* `{self.name}`\n"
                    f"➡️ *Giriş Fiyatı:* `{entry_price:.4f}$`\n\n"
                    f"🛡️ *Zarar Durdur:* {stop_text}\n")
-        logging.info("--- YENİ POZİSYON SİNYALİ ---\n" + message + "\n-----------------------------")
-        log_alarm_db(self.id, symbol, f"Yeni {signal_type.upper()} Sinyali ({self.name})", entry_price)
+
+        logging.info("--- YENİ SİNYAL/POZİSYON ---\n" + message + "\n-----------------------------")
+        log_alarm_db(self.id, symbol, log_message, entry_price)
+
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")
             chat_id = self.params.get("telegram_chat_id")

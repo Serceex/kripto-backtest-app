@@ -1,0 +1,14 @@
+[theme]
+# Ana renk - Canlı ve zengin bir altın/hardal rengi
+primaryColor="#9fb6cd"
+
+# Arka plan - Çok koyu, kömür grisi
+backgroundColor="#141414"
+
+# Kenar çubuğu - Kömür grisinin bir ton açığı
+secondaryBackgroundColor="#1f1f1f"
+
+# Metin rengi - Açık ve okunabilir bir gri
+textColor="#e5e5e5"
+
+font="Arial"

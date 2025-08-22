@@ -11,6 +11,7 @@ import signal
 import logging
 import traceback
 from datetime import datetime
+import logging
 from trade_executor import set_futures_leverage_and_margin, place_futures_order, get_open_position_amount, \
     get_symbol_info
 

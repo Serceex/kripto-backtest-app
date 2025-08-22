@@ -33,63 +33,65 @@ from utils import (
 from trading_env import TradingEnv
 from rl_trainer import train_rl_agent
 
-def apply_full_strategy_params(strategy):
+
+def apply_full_strategy_params(strategy, is_editing=False):
     """
-    Seçilen bir stratejinin tüm parametrelerini (semboller, zaman dilimi dahil)
-    session_state'e uygular, böylece tüm arayüz yeniden yüklendiğinde bu
-    değerlerle başlar.
+    Seçilen bir stratejinin tüm parametrelerini session_state'e uygular.
+    Eğer is_editing True ise, düzenleme modunu aktif hale getirir.
     """
     params = strategy.get('strategy_params', {})
     strategy_name = strategy.get('name', 'İsimsiz Strateji')
 
+    # Eğer düzenleme modundaysak, ID ve ismi session_state'e kaydet
+    if is_editing:
+        st.session_state.editing_strategy_id = strategy.get('id')
+        st.session_state.editing_strategy_name = strategy_name
+
+    # Kenar çubuğu widget'larının anahtarlarını strateji verileriyle doldur
     st.session_state.symbols_key = strategy.get('symbols', ["BTCUSDT"])
     st.session_state.interval_key = strategy.get('interval', '1h')
-
     st.session_state.use_rsi = params.get('use_rsi', True)
     st.session_state.rsi_period = params.get('rsi_period', 14)
     st.session_state.rsi_buy_key = params.get('rsi_buy', 30)
     st.session_state.rsi_sell_key = params.get('rsi_sell', 70)
-
     st.session_state.use_macd = params.get('use_macd', True)
     st.session_state.macd_fast = params.get('macd_fast', 12)
     st.session_state.macd_slow = params.get('macd_slow', 26)
     st.session_state.macd_signal = params.get('macd_signal', 9)
-
     st.session_state.use_bb = params.get('use_bb', False)
     st.session_state.bb_period = params.get('bb_period', 20)
     st.session_state.bb_std = params.get('bb_std', 2.0)
-
     st.session_state.use_adx = params.get('use_adx', False)
     st.session_state.adx_threshold_key = params.get('adx_threshold', 25)
-
     direction_map = {"Long": "Long Only", "Short": "Short Only", "Both": "Long & Short"}
     st.session_state.signal_mode_key = direction_map.get(params.get('signal_direction', 'Both'), "Long & Short")
     st.session_state.signal_logic_key = "AND (Teyitli)" if params.get('signal_mode') == 'and' else "OR (Hızlı)"
     st.session_state.cooldown_bars_key = params.get('cooldown_bars', 3)
     st.session_state.commission_pct_key = params.get('commission_pct', 0.1)
-
     if params.get('atr_multiplier', 0) > 0:
         st.session_state.sl_type_key = "ATR"
         st.session_state.atr_multiplier_key = params.get('atr_multiplier', 2.0)
     else:
         st.session_state.sl_type_key = "Yüzde (%)"
         st.session_state.stop_loss_pct_key = params.get('stop_loss_pct', 2.0)
-
     st.session_state.move_sl_to_be = params.get('move_sl_to_be', True)
     st.session_state.tp1_pct_key = params.get('tp1_pct', 5.0)
     st.session_state.tp1_size_key = params.get('tp1_size_pct', 50)
     st.session_state.tp2_pct_key = params.get('tp2_pct', 10.0)
     st.session_state.tp2_size_key = params.get('tp2_size_pct', 50)
-
     st.session_state.use_mta_key = params.get('use_mta', True)
     st.session_state.higher_timeframe_key = params.get('higher_timeframe', '4h')
     st.session_state.trend_ema_period_key = params.get('trend_ema_period', 50)
-
     st.session_state.puzzle_bot = params.get('use_puzzle_bot', False)
     st.session_state.ml_toggle = params.get('use_ml', False)
     st.session_state.telegram_alerts = params.get('telegram_enabled', True)
 
-    st.toast(f"'{strategy_name}' stratejisinin tüm parametreleri yüklendi!", icon="✅")
+    if is_editing:
+        st.toast(f"'{strategy_name}' için düzenleme modu aktif!", icon="✍️")
+    else:
+        st.toast(f"'{strategy_name}' stratejisinin tüm parametreleri yüklendi!", icon="✅")
+
+    st.rerun()
 
 
 def run_rl_backtest(model_path, backtest_df):
@@ -134,6 +136,9 @@ if 'authenticated' not in st.session_state:
 
 if 'editing_strategy_id' not in st.session_state:
     st.session_state.editing_strategy_id = None
+
+if 'editing_strategy_name' not in st.session_state:
+    st.session_state.editing_strategy_name = None
 
 CONFIG_FILE = "config.json"
 
@@ -266,6 +271,68 @@ else:
     macd_signal = 9
 
 adx_threshold = st.sidebar.slider("ADX Eşiği", 10, 50, 25, key="adx_threshold_key")
+
+# --- DÜZENLEME MODU İÇİN KENAR ÇUBUĞU KONTROLLERİ ---
+if st.session_state.editing_strategy_id:
+    st.sidebar.markdown("---")
+    st.sidebar.info(f"**Düzenleme Modu:** `{st.session_state.editing_strategy_name}` stratejisini güncelliyorsunuz.")
+
+    # Yeni strateji parametrelerini session_state'den topla
+    signal_mode = st.session_state.signal_mode_key
+    signal_logic = st.session_state.signal_logic_key
+    cooldown_bars = st.session_state.cooldown_bars_key
+    commission_pct = st.session_state.commission_pct_key
+    sl_type = st.session_state.sl_type_key
+    if sl_type == "Yüzde (%)":
+        stop_loss_pct = st.session_state.stop_loss_pct_key
+        atr_multiplier = 0
+    else:
+        atr_multiplier = st.session_state.atr_multiplier_key
+        stop_loss_pct = 0
+    move_sl_to_be = st.session_state.move_sl_to_be
+    tp1_pct = st.session_state.tp1_pct_key
+    tp1_size_pct = st.session_state.tp1_size_key
+    tp2_pct = st.session_state.tp2_pct_key
+    tp2_size_pct = st.session_state.tp2_size_key
+
+    updated_strategy_params = {
+        'sma': st.session_state.get('sma_period', 50), 'ema': st.session_state.get('ema_period', 20),
+        'bb_period': st.session_state.get('bb_period', 20), 'bb_std': st.session_state.get('bb_std', 2.0),
+        'rsi_buy': rsi_buy, 'rsi_sell': rsi_sell, 'rsi_period': rsi_period,
+        'macd_fast': macd_fast, 'macd_slow': macd_slow, 'macd_signal': macd_signal,
+        'adx_period': 14, 'adx_threshold': adx_threshold,
+        'use_rsi': use_rsi, 'use_macd': use_macd, 'use_bb': use_bb, 'use_adx': use_adx,
+        'stop_loss_pct': stop_loss_pct, 'atr_multiplier': atr_multiplier,
+        'cooldown_bars': cooldown_bars,
+        'signal_mode': 'and' if signal_logic == "AND (Teyitli)" else 'or',
+        'signal_direction': {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode],
+        'use_puzzle_bot': st.session_state.get('puzzle_bot', False), 'use_ml': st.session_state.get('ml_toggle', False),
+        'use_mta': st.session_state.get('use_mta_key', True),
+        'higher_timeframe': st.session_state.get('higher_timeframe_key', '4h'),
+        'trend_ema_period': st.session_state.get('trend_ema_period_key', 50),
+        'commission_pct': commission_pct,
+        'tp1_pct': tp1_pct, 'tp1_size_pct': tp1_size_pct,
+        'tp2_pct': tp2_pct, 'tp2_size_pct': tp2_size_pct,
+        'move_sl_to_be': move_sl_to_be
+    }
+
+    if st.sidebar.button("✅ Değişiklikleri Kaydet", type="primary", use_container_width=True):
+        strategy_to_update = next((s for s in get_all_strategies() if s['id'] == st.session_state.editing_strategy_id),
+                                  None)
+        if strategy_to_update:
+            strategy_to_update['strategy_params'] = updated_strategy_params
+            strategy_to_update['symbols'] = symbols
+            strategy_to_update['interval'] = interval
+            add_or_update_strategy(strategy_to_update)
+            st.toast(f"'{strategy_to_update['name']}' başarıyla güncellendi!", icon="👍")
+            st.session_state.editing_strategy_id = None
+            st.session_state.editing_strategy_name = None
+            st.rerun()
+
+    if st.sidebar.button("❌ İptal", use_container_width=True):
+        st.session_state.editing_strategy_id = None
+        st.session_state.editing_strategy_name = None
+        st.rerun()
 
 if 'symbols_key' not in st.session_state:
     st.session_state.symbols_key = ["BTCUSDT", "ETHUSDT"]
@@ -992,6 +1059,12 @@ if page == "🔬 Laboratuvar":
 
                         with form_col2:
                             st.markdown("**Kontroller**")
+
+                            if st.button("⚙️ Tam Düzenle", key=f"edit_{strategy_id}", use_container_width=True,
+                                         help="Bu stratejinin tüm ayarlarını düzenlemek için kenar çubuğuna yükler."):
+                                apply_full_strategy_params(strategy, is_editing=True)
+                                st.rerun()
+
                             if strategy_status == 'running':
                                 if st.button("⏸️ Durdur", key=f"pause_{strategy_id}", use_container_width=True):
                                     update_strategy_status(strategy_id, 'paused')
@@ -1004,6 +1077,7 @@ if page == "🔬 Laboratuvar":
                             if st.button("📥 Ayarları Yükle", key=f"load_{strategy_id}", use_container_width=True,
                                          help="Bu stratejinin ayarlarını kenar çubuğuna yükler."):
                                 apply_full_strategy_params(strategy)
+                                st.rerun()
 
                             if st.button("🗑️ Sil", key=f"stop_{strategy_id}", use_container_width=True,
                                          help="Stratejiyi tamamen siler."):

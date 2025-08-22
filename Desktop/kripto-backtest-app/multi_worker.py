@@ -183,9 +183,9 @@ class StrategyRunner:
             kline = data.get('k')
             if not kline: return
 
+            # Mum kapanana kadar SL/TP kontrolü yapmaya devam et
             high_price = float(kline['h'])
             low_price = float(kline['l'])
-
             symbol_data = self.portfolio_data.get(symbol, {})
             current_position = symbol_data.get('position')
 
@@ -195,18 +195,41 @@ class StrategyRunner:
                     if (current_position == 'Long' and low_price <= sl_price) or \
                             (current_position == 'Short' and high_price >= sl_price):
                         self._close_position(symbol, sl_price, "Stop-Loss")
+                        # SL tetiklendikten sonra mumun kapanmasını beklemeden fonksiyondan çık
                         return
 
+            # Sadece mum kapandığında sinyal analizi yap
             is_kline_closed = kline.get('x', False)
-            if not is_kline_closed: return
+            if not is_kline_closed:
+                return
 
-            new_kline_df = pd.DataFrame([{'timestamp': pd.to_datetime(kline['t'], unit='ms'), 'Open': float(kline['o']),
-                                          'High': high_price, 'Low': low_price, 'Close': float(kline['c']),
-                                          'Volume': float(kline['v']),
-                                          }]).set_index('timestamp')
+            # --- YENİ VE HATAYA DAYANIKLI VERİ İŞLEME MANTIĞI ---
             df = self.portfolio_data[symbol]['df']
-            df = pd.concat([df.iloc[1:], new_kline_df])
+
+            # 1. Gelen yeni mumun zaman damgasını al
+            kline_timestamp = pd.to_datetime(kline['t'], unit='ms')
+
+            # 2. DataFrame'in son zaman damgası ile karşılaştır
+            if not df.empty and kline_timestamp <= df.index[-1]:
+                # Eğer gelen veri, mevcut son veriden daha eskiyse veya aynıysa,
+                # sadece son satırı gelen veriyle GÜNCELLE. Bu, mükerrerliği önler.
+                df.iloc[-1] = [float(kline['o']), float(kline['h']), float(kline['l']), float(kline['c']),
+                               float(kline['v'])]
+            else:
+                # Eğer gelen veri gerçekten yeniyse, yeni bir satır olarak EKLE.
+                new_kline_df = pd.DataFrame(
+                    [{'Open': float(kline['o']), 'High': float(kline['h']), 'Low': float(kline['l']),
+                      'Close': float(kline['c']), 'Volume': float(kline['v'])}],
+                    index=[kline_timestamp]
+                )
+                df = pd.concat([df, new_kline_df])
+
+            # Veri setini belirli bir uzunlukta tut (örneğin son 201 bar)
+            if len(df) > 201:
+                df = df.iloc[1:]
+
             self.portfolio_data[symbol]['df'] = df
+            # --- GÜVENLİ VERİ İŞLEME MANTIĞI SONU ---
 
             df_indicators = generate_all_indicators(df, **self.params)
             df_signals = generate_signals(df_indicators, **self.params)
@@ -228,12 +251,15 @@ class StrategyRunner:
                         new_pos = 'Long'
                     elif raw_signal == 'Short' and self.params.get('signal_direction', 'Both') != 'Long':
                         new_pos = 'Short'
+
                     if new_pos:
                         self._open_new_position(symbol, new_pos, price)
-        except Exception as e:
-            print(f"KRİTİK HATA ({symbol}, {self.name}): Mesaj işlenirken sorun: {e}")
 
-    # multi_worker.py - _open_new_position fonksiyonunu bununla değiştirin
+        except Exception as e:
+            # Hata loguna sembol ve strateji ismini ekleyerek daha anlaşılır hale getir
+            logging.error(f"KRİTİK HATA ({symbol}, {self.name}): Mesaj işlenirken sorun: {e}")
+            import traceback
+            logging.error(traceback.format_exc())  # Tam hata çıktısını loglamak için
 
     def _open_new_position(self, symbol, new_pos, entry_price):
         """Yeni bir VADELİ işlem pozisyonu açar, durumu kaydeder ve bildirim gönderir."""

@@ -377,7 +377,9 @@ class StrategyRunner:
         message = (f"{signal_emoji} {title}\n\n"
                    f"🔹 *Strateji:* `{self.name}`\n"
                    f"➡️ *Giriş Fiyatı:* `{entry_price:.4f}$`\n\n"
-                   f"🛡️ *Zarar Durdur:* {stop_text}\n")
+                   f"🛡️ *Zarar Durdur:* {stop_text}\n"
+                   f"🎯 *Kar Al 1:* {tp1_text}\n"
+                   f"🎯 *Kar Al 2:* {tp2_text}")
 
         logging.info("--- YENİ SİNYAL/POZİSYON ---\n" + message + "\n-----------------------------")
         log_alarm_db(self.id, symbol, log_message, entry_price)
@@ -422,7 +424,6 @@ def main_manager():
             logging.error(f"HATA: Yönetici döngüsünde beklenmedik bir hata oluştu: {e}")
             logging.error(traceback.format_exc())
         time.sleep(5)
-
 
 
 if __name__ == "__main__":

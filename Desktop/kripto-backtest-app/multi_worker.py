@@ -1,4 +1,4 @@
-# multi_worker.py (İşlem akışı düzeltilmiş ve en stabil hale getirilmiş nihai hali)
+# multi_worker.py (Tüm hataları giderilmiş, en stabil ve tam özellikli nihai hali)
 
 import json
 import time
@@ -259,16 +259,10 @@ class StrategyRunner:
             logging.error(f"KRİTİK HATA ({symbol}, {self.name}): Mesaj işlenirken sorun: {e}")
             logging.error(traceback.format_exc())
 
-    # --- YENİ VE EN STABİL İŞ AKIŞI ---
     def _open_new_position(self, symbol, new_pos, entry_price):
-        """Sinyal geldiğinde pozisyon açma veya sinyal takibi yapma iş akışını yönetir."""
         current_strategy_config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
         self.params = current_strategy_config.get('strategy_params', self.params)
-
-        # 1. SL/TP seviyelerini hesapla
         sl, tp1, tp2 = self._calculate_risk_levels(symbol, new_pos, entry_price)
-
-        # 2. Pozisyonu hafızaya ve veritabanına kaydet (Bu, sinyal çoklamasını engeller)
         self.portfolio_data[symbol]['position'] = new_pos
         self.portfolio_data[symbol]['entry_price'] = entry_price
         self.portfolio_data[symbol]['stop_loss_price'] = sl
@@ -277,42 +271,31 @@ class StrategyRunner:
         self.portfolio_data[symbol]['tp1_hit'] = False
         self.portfolio_data[symbol]['tp2_hit'] = False
         update_position(self.id, symbol, new_pos, entry_price)
-
-        # 3. Tüm bilgilerle birlikte Telegram bildirimini gönder
-        self.notify_new_position(symbol, new_pos, entry_price, sl)
-
-        # 4. Canlı işlem aktif ise borsaya emir gönder
+        self.notify_new_position(symbol, new_pos, entry_price, sl, tp1, tp2)
         is_trading_enabled = current_strategy_config.get('is_trading_enabled', False)
         if is_trading_enabled:
             leverage = self.params.get('leverage', 5)
             trade_amount_usdt = self.params.get('trade_amount_usdt', 10.0)
-
             if entry_price <= 0:
                 logging.error(f"HATA ({self.name}): Geçersiz giriş fiyatı ({entry_price}). İşlem atlanıyor.")
                 return
-
             symbol_info = get_symbol_info(symbol)
             if not symbol_info:
                 logging.error(f"HATA ({self.name}): {symbol} için işlem kuralları alınamadı. İşlem atlanıyor.")
                 return
-
             quantity_precision = int(symbol_info['quantityPrecision'])
             quantity = (trade_amount_usdt * leverage) / entry_price
             quantity_to_trade = round(quantity, quantity_precision)
-
             if quantity_to_trade <= 0:
                 logging.warning(
                     f"UYARI ({self.name}): Hesaplanan işlem miktarı ({quantity_to_trade}) sıfırdan küçük. İşlem atlanıyor.")
                 return
-
             leverage_set = set_futures_leverage_and_margin(symbol, leverage)
             if not leverage_set:
                 logging.error(f"HATA ({self.name}): Kaldıraç ayarlanamadığı için pozisyon açılmıyor.")
                 return
-
             order_side = 'BUY' if new_pos == 'Long' else 'SELL'
             order_result = place_futures_order(symbol, order_side, quantity_to_trade)
-
             if not order_result:
                 logging.error(
                     f"HATA ({self.name}): {symbol} için {order_side} emri Binance'e gönderilemedi. Pozisyon veritabanında 'paper trade' olarak kalacak.")
@@ -359,12 +342,16 @@ class StrategyRunner:
             if token and chat_id:
                 send_telegram_message(message, token, chat_id)
 
-    # --- YENİLENMİŞ BİLDİRİM FONKSİYONU ---
-    def notify_new_position(self, symbol, signal_type, entry_price, stop_loss_price):
+    # --- TAMAMEN DÜZELTİLMİŞ BİLDİRİM FONKSİYONU ---
+    def notify_new_position(self, symbol, signal_type, entry_price, stop_loss_price, tp1_price, tp2_price):
         """Sinyal ve pozisyon bildirimlerini SL/TP bilgisiyle oluşturur ve gönderir."""
         is_trading_enabled = self.config.get('is_trading_enabled', False)
 
-        stop_text = f"`{stop_loss_price:.6f}$`" if stop_loss_price > 0 else "`Belirlenmedi`"
+        # tp1_text ve tp2_text değişkenlerini burada tanımlıyoruz
+        stop_text = f"`{stop_loss_price:.6f}$`" if stop_loss_price > 0 else "`Yok`"
+        tp1_text = f"`{tp1_price:.6f}$`" if tp1_price > 0 else "`Yok`"
+        tp2_text = f"`{tp2_price:.6f}$`" if tp2_price > 0 else "`Yok`"
+
         signal_emoji = "🚀" if signal_type.upper() == "LONG" else "📉"
 
         if is_trading_enabled:
@@ -374,6 +361,7 @@ class StrategyRunner:
             title = f"*Sinyal Algılandı (Pasif Mod): {symbol} - {signal_type.upper()}*"
             log_message = f"Yeni {signal_type.upper()} Sinyali (Pasif) ({self.name})"
 
+        # Mesaj oluşturma bloğu
         message = (f"{signal_emoji} {title}\n\n"
                    f"🔹 *Strateji:* `{self.name}`\n"
                    f"➡️ *Giriş Fiyatı:* `{entry_price:.4f}$`\n\n"

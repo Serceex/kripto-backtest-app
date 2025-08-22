@@ -9,6 +9,7 @@ import os
 import sys
 import signal
 from datetime import datetime
+import logging
 from trade_executor import set_futures_leverage_and_margin, place_futures_order, get_open_position_amount, get_symbol_info
 
 # --- Proje Modülleri ---
@@ -24,6 +25,12 @@ from database import (
 # Ticaret fonksiyonlarımızı ekliyoruz
 from trade_executor import set_futures_leverage_and_margin, place_futures_order, get_open_position_amount
 
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(threadName)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        logging.FileHandler("multi_worker.log"),
+                        logging.StreamHandler()
+                    ])
 # --- Lock File Mekanizması (Çakışmayı Önler) ---
 try:
     project_dir = os.path.dirname(os.path.abspath(__file__))

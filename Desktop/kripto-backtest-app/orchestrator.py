@@ -1,11 +1,10 @@
-# orchestrator.py
+# orchestrator.py (DNA havuzu zenginleştirilmiş ve karar mekanizması güncellenmiş nihai hali)
 
 import time
 import copy
 import random
 
-# Projemizin veritabanı fonksiyonlarını dahil ediyoruz
-from database import get_all_strategies, add_or_update_strategy  # HATA DÜZELTMESİ: Bu satır güncellendi
+from database import get_all_strategies, add_or_update_strategy
 from market_regime import get_market_regime
 
 
@@ -16,22 +15,34 @@ def get_strategy_dna(strategy_params):
     """
     dna = set()
 
-    # 1. Trend Karakteri
+    # --- TEMEL DNA'LAR ---
     if strategy_params.get('use_adx', False) and strategy_params.get('adx_threshold', 20) >= 22:
-        dna.add("TREND_RIDER")  # Trend takipçisi
+        dna.add("TREND TAKİPÇİSİ")
 
-    # 2. Volatilite/Yatay Piyasa Karakteri
     if strategy_params.get('use_bb', False):
-        dna.add("VOLATILITY_TRADER")  # Bollinger bandı kullananlar yatay/volatil piyasaları sever
+        dna.add("VOLATİLİTE ODAKLI")
 
-    # 3. Aşırı Alım/Satım (Mean Reversion) Karakteri
     if strategy_params.get('use_rsi', False):
         if strategy_params.get('rsi_buy', 30) <= 30 and strategy_params.get('rsi_sell', 70) >= 70:
-            dna.add("MEAN_REVERSION")  # Düşükten alıp yüksekten satmaya odaklı
+            dna.add("ORTALAMAYA DÖNÜŞ")
 
-    # Eğer hiçbir belirgin özellik yoksa, genel bir etiket ver
+    # --- YENİ VE DETAYLI DNA'LAR ---
+    if strategy_params.get('use_macd', False):
+        dna.add("MOMENTUM ODAKLI")
+
+    if strategy_params.get('signal_mode') == 'and':
+        dna.add("TEYİT ODAKLI")
+    else:
+        dna.add("HIZLI SİNYAL")
+
+    if strategy_params.get('use_mta', False):
+        dna.add("TREND TEYİTLİ")
+
+    if strategy_params.get('tp1_pct', 5.0) <= 2.0:  # TP1 hedefi %2'den küçükse
+        dna.add("SCALPER (HIZLI KAZANÇ)")
+
     if not dna:
-        dna.add("GENERALIST")
+        dna.add("GENEL STRATEJİ")
 
     return list(dna)
 
@@ -43,13 +54,11 @@ def run_orchestrator_cycle():
     """
     print("\n--- 🤖 ORKESTRATÖR DÖNGÜSÜ BAŞLATILDI ---")
 
-    # 1. Mevcut Piyasa Rejimini Al
     market_regime = get_market_regime()
     if not market_regime:
         print("Orkestratör: Piyasa rejimi alınamadı, döngü atlanıyor.")
         return {"status": "skipped", "reason": "Piyasa rejimi alınamadı."}
 
-    # 2. Tüm Stratejileri Al
     all_strategies = get_all_strategies()
     if not all_strategies:
         print("Orkestratör: Yönetilecek strateji bulunamadı.")
@@ -58,44 +67,52 @@ def run_orchestrator_cycle():
     activated_strategies = []
     deactivated_strategies = []
 
-    # 3. Her Stratejiyi Değerlendir ve Karar Ver
     print("\n--- Strateji Değerlendirmesi ---")
     for strategy in all_strategies:
         strategy_params = strategy['strategy_params']
         dna = get_strategy_dna(strategy_params)
+        is_suitable = False
 
-        is_suitable = False  # Strateji mevcut rejime uygun mu?
+        # --- YENİ VE GELİŞMİŞ KARAR VERME MANTIĞI ---
+        trend = market_regime.get('trend_strength', '')
+        volatility = market_regime.get('volatility', '')
+        sentiment = market_regime.get('sentiment', '')
 
-        # --- KARAR VERME MANTIĞI ---
-        # Bu mantık zamanla daha da karmaşık hale getirilebilir.
-
-        # Güçlü trend piyasasında, trend takipçisi stratejileri aktive et
-        if "GÜÇLÜ TREND" in market_regime.get('trend_strength', ''):
-            if "TREND_RIDER" in dna or "GENERALIST" in dna:
+        # Güçlü trend piyasasında: Trend takipçileri ve teyitli stratejiler öncelikli
+        if "GÜÇLÜ TREND" in trend:
+            if "TREND TAKİPÇİSİ" in dna or "TREND TEYİTLİ" in dna or "MOMENTUM ODAKLI" in dna:
                 is_suitable = True
 
-        # Yüksek volatilitede, volatilite stratejilerini aktive et
-        if "YÜKSEK VOLATİLİTE" in market_regime.get('volatility', ''):
-            if "VOLATILITY_TRADER" in dna or "GENERALIST" in dna:
+        # Yüksek volatilitede: Hızlı tepki veren ve volatiliteyi kullananlar
+        if "YÜKSEK VOLATİLİTE" in volatility:
+            if "VOLATİLİTE ODAKLI" in dna or "HIZLI SİNYAL" in dna:
                 is_suitable = True
 
-        # Trendsiz piyasada, yatay piyasa (mean reversion) stratejilerini aktive et
-        if "TRENDSİZ PİYASA" in market_regime.get('trend_strength', ''):
-            if "MEAN_REVERSION" in dna or "VOLATILITY_TRADER" in dna or "GENERALIST" in dna:
+        # Trendsiz piyasada: Yatay piyasa ve scalper'lar
+        if "TRENDSİZ PİYASA" in trend:
+            if "ORTALAMAYA DÖNÜŞ" in dna or "VOLATİLİTE ODAKLI" in dna or "SCALPER (HIZLI KAZANÇ)" in dna:
                 is_suitable = True
 
-        # Aşırı korku anlarında, dipten alım yapabilecek (mean reversion) stratejileri aktive et
-        if "AŞIRI KORKU" in market_regime.get('sentiment', ''):
-            if "MEAN_REVERSION" in dna:
+        # Aşırı korku anlarında: Dipten alım yapabilecek stratejiler
+        if "AŞIRI KORKU" in sentiment:
+            if "ORTALAMAYA DÖNÜŞ" in dna and "TEYİT ODAKLI" in dna:  # Teyitli dipten alım
                 is_suitable = True
 
-        # Kararı veritabanına işle
+        # Aşırı açgözlülükte: Hızlı kâr realize eden scalper'lar veya temkinli olanlar
+        if "AŞIRI AÇGÖZLÜLÜK" in sentiment:
+            if "SCALPER (HIZLI KAZANÇ)" in dna or "TEYİT ODAKLI" in dna:
+                is_suitable = True
+
+        # Her durumda çalışabilecek genel stratejiler
+        if "GENEL STRATEJİ" in dna:
+            is_suitable = True
+
         current_status = strategy.get('orchestrator_status', 'active')
         new_status = 'active' if is_suitable else 'inactive'
 
         if current_status != new_status:
             strategy['orchestrator_status'] = new_status
-            add_or_update_strategy(strategy)  # Stratejinin tamamını güncelliyoruz
+            add_or_update_strategy(strategy)
 
             if new_status == 'active':
                 activated_strategies.append(strategy['name'])

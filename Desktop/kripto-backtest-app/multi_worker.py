@@ -252,17 +252,18 @@ class StrategyRunner:
                     if not current_pos_check or not current_pos_check.get('position'):
                         return
 
-                        # Veritabanını tek gerçek kaynak olarak kullan
-                        current_position = current_pos_check.get('position')
-                        sl_price = current_pos_check.get('stop_loss_price', 0)
-                        tp1_price = current_pos_check.get('tp1_price', 0)
-                        tp2_price = current_pos_check.get('tp2_price', 0)
-                        tp1_hit = bool(current_pos_check.get('tp1_hit', False))
-                        tp2_hit = bool(current_pos_check.get('tp2_hit', False))
+                    # Veritabanını tek gerçek kaynak olarak kullan (GİRİNTİ DÜZELTİLDİ)
+                    current_position = current_pos_check.get('position')
+                    sl_price = current_pos_check.get('stop_loss_price', 0)
+                    tp1_price = current_pos_check.get('tp1_price', 0)
+                    tp2_price = current_pos_check.get('tp2_price', 0)
+                    tp1_hit = bool(current_pos_check.get('tp1_hit', False))
+                    tp2_hit = bool(current_pos_check.get('tp2_hit', False))
 
                     # 1. Stop-Loss Kontrolü (Tüm pozisyonu kapatır)
                     if sl_price > 0 and ((current_position == 'Long' and low_price <= sl_price) or \
                                          (current_position == 'Short' and high_price >= sl_price)):
+
                         self._close_position(symbol, sl_price, "Stop-Loss", size_pct_to_close=100.0)
                         return
 

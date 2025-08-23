@@ -77,11 +77,19 @@ class StrategyRunner:
         self.position_locks = {symbol: threading.Lock() for symbol in self.symbols}
         self._load_positions()
 
+
     def _load_positions(self):
         try:
+            # Veritabanından pozisyonları tam detaylarıyla yükle
             loaded_positions = get_positions_for_strategy(self.id)
-            self.portfolio_data.update(loaded_positions)
-            logging.info(f"BİLGİ ({self.name}): Veritabanından mevcut pozisyonlar yüklendi.")
+            for symbol, pos_data in loaded_positions.items():
+                # Başlangıçta hafızayı doldur
+                self.portfolio_data[symbol] = {
+                    'position': pos_data.get('position'),
+                    'entry_price': pos_data.get('entry_price', 0),
+                    'df': self.portfolio_data.get(symbol, {}).get('df')  # Mevcut DataFrame'i koru
+                }
+            logging.info(f"BİLGİ ({self.name}): Veritabanından başlangıç pozisyonları yüklendi.")
         except Exception as e:
             logging.error(f"HATA ({self.name}): Veritabanından pozisyonlar okunurken hata: {e}")
             self.portfolio_data = {}
@@ -232,19 +240,25 @@ class StrategyRunner:
 
             high_price = float(kline['h'])
             low_price = float(kline['l'])
-            symbol_data = self.portfolio_data.get(symbol, {})
-            current_position = symbol_data.get('position')
 
-            if current_position:
+            # === DEĞİŞİKLİK: HER SEFERİNDE VERİTABANINDAN GÜNCEL POZİSYON BİLGİSİNİ AL ===
+            all_positions_from_db = get_positions_for_strategy(self.id)
+            symbol_data_from_db = all_positions_from_db.get(symbol)
+
+            if symbol_data_from_db and symbol_data_from_db.get('position'):
                 with self.position_locks[symbol]:
-                    if not self.portfolio_data.get(symbol, {}).get('position'):
+                    # Kilitten sonra verinin hala geçerli olduğunu teyit et
+                    current_pos_check = get_positions_for_strategy(self.id).get(symbol)
+                    if not current_pos_check or not current_pos_check.get('position'):
                         return
 
-                    sl_price = symbol_data.get('stop_loss_price', 0)
-                    tp1_price = symbol_data.get('tp1_price', 0)
-                    tp2_price = symbol_data.get('tp2_price', 0)
-                    tp1_hit = symbol_data.get('tp1_hit', False)
-                    tp2_hit = symbol_data.get('tp2_hit', False)  # TP2 hit'i de takip edelim
+                        # Veritabanını tek gerçek kaynak olarak kullan
+                        current_position = current_pos_check.get('position')
+                        sl_price = current_pos_check.get('stop_loss_price', 0)
+                        tp1_price = current_pos_check.get('tp1_price', 0)
+                        tp2_price = current_pos_check.get('tp2_price', 0)
+                        tp1_hit = bool(current_pos_check.get('tp1_hit', False))
+                        tp2_hit = bool(current_pos_check.get('tp2_hit', False))
 
                     # 1. Stop-Loss Kontrolü (Tüm pozisyonu kapatır)
                     if sl_price > 0 and ((current_position == 'Long' and low_price <= sl_price) or \

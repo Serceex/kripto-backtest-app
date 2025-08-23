@@ -50,6 +50,21 @@ def initialize_db():
                 # Sütun zaten varsa bu hata alınır, sorun değil.
                 pass
 
+            # ================== HATA DÜZELTME BAŞLANGICI ==================
+            # 'positions' tablosuna eksik olan SL/TP sütunlarını eklemeyi dene
+            try:
+                cursor.execute("ALTER TABLE positions ADD COLUMN stop_loss_price REAL DEFAULT 0")
+                cursor.execute("ALTER TABLE positions ADD COLUMN tp1_price REAL DEFAULT 0")
+                cursor.execute("ALTER TABLE positions ADD COLUMN tp2_price REAL DEFAULT 0")
+                cursor.execute("ALTER TABLE positions ADD COLUMN tp1_hit BOOLEAN DEFAULT 0")
+                cursor.execute("ALTER TABLE positions ADD COLUMN tp2_hit BOOLEAN DEFAULT 0")
+                conn.commit()
+                print("--- [DATABASE] 'positions' tablosuna SL/TP sütunları eklendi (Migration). ---")
+            except sqlite3.OperationalError:
+                # Sütunlar zaten varsa bu hata alınır, bu normal bir durumdur.
+                pass
+            # ================== HATA DÜZELTME SONU ==================
+
             cursor.execute("""
                       CREATE TABLE IF NOT EXISTS strategies (
                         id TEXT PRIMARY KEY,
@@ -61,6 +76,8 @@ def initialize_db():
                         orchestrator_status TEXT DEFAULT 'active',
                         is_trading_enabled BOOLEAN DEFAULT 0 -- Bu satırın varlığından emin oluyoruz
                     )""")
+
+            # 'positions' tablosunun CREATE sorgusunu tüm sütunları içerecek şekilde güncelle
             cursor.execute("""
                         CREATE TABLE IF NOT EXISTS positions (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,7 +142,7 @@ def add_or_update_strategy(strategy_config):
                     strategy_config.get('status', 'running'), symbols_json,
                     strategy_config.get('interval'), params_json,
                     strategy_config.get('orchestrator_status', 'active'),
-                    strategy_config.get('is_trading_enabled', False) # Yeni alanı ekledik
+                    strategy_config.get('is_trading_enabled', False)  # Yeni alanı ekledik
                 ))
                 conn.commit()
                 print("[YAZMA - Adım 3] Veritabanına yazma BAŞARILI.")
@@ -164,8 +181,8 @@ def get_all_strategies():
     return result
 
 
-
-def update_position(strategy_id, symbol, position, entry_price, sl_price=0, tp1_price=0, tp2_price=0, tp1_hit=False, tp2_hit=False):
+def update_position(strategy_id, symbol, position, entry_price, sl_price=0, tp1_price=0, tp2_price=0, tp1_hit=False,
+                    tp2_hit=False):
     """Bir stratejinin pozisyon durumunu tüm detaylarıyla veritabanında günceller."""
     with db_lock:
         with get_db_connection() as conn:
@@ -226,7 +243,10 @@ def get_all_open_positions():
                     s.name as "Strateji Adı",
                     p.symbol as "Sembol",
                     p.position as "Pozisyon",
-                    p.entry_price as "Giriş Fiyatı"
+                    p.entry_price as "Giriş Fiyatı",
+                    p.stop_loss_price as "Stop Loss",
+                    p.tp1_price as "TP1",
+                    p.tp2_price as "TP2"
                 FROM positions p
                 JOIN strategies s ON p.strategy_id = s.id
                 WHERE p.position IS NOT NULL AND p.position != ''
@@ -283,7 +303,7 @@ def get_live_closed_trades_metrics(strategy_id=None):
             entry_price = open_trades[key]['entry_price']
             position_type = open_trades[key]['position_type']
             pnl = ((price - entry_price) / entry_price) * 100 if position_type == 'Long' else ((
-                                                                                                           entry_price - price) / entry_price) * 100
+                                                                                                       entry_price - price) / entry_price) * 100
             trades.append({'pnl': pnl})
             del open_trades[key]
 

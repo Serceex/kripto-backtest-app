@@ -1027,8 +1027,7 @@ if page == "🔬 Laboratuvar":
                     strategy_status = strategy.get('status', 'running')
                     status_emoji = "▶️" if strategy_status == 'running' else "⏸️"
 
-                    with st.expander(
-                            f"{status_emoji} **{strategy_name}** (`{strategy.get('interval')}`, `{len(strategy.get('symbols', []))}` sembol)"):
+                    with st.expander(f"{status_emoji} **{strategy_name}** (`{strategy.get('interval')}`, `{len(strategy.get('symbols', []))}` sembol)"):
 
                         live_metrics = get_live_closed_trades_metrics(strategy_id=strategy_id)
 
@@ -1040,62 +1039,81 @@ if page == "🔬 Laboratuvar":
                         st.caption(f"ID: `{strategy_id}`")
                         st.markdown("---")
 
-                        form_col1, form_col2 = st.columns([3, 1])
+                        # --- KONTROL VE AYARLAR (YENİ KOMPAKT TASARIM) ---
+                        main_controls_col, trade_settings_col = st.columns([1, 2])
 
-                        with form_col1:
-                            with st.form(key=f"edit_form_{strategy_id}"):
-                                st.markdown("**Canlı İşlem Parametreleri**")
-                                params = strategy.get('strategy_params', {})
-                                form_cols = st.columns(3)
-                                new_leverage = form_cols[0].slider("Kaldıraç", 1, 50, params.get('leverage', 5),
-                                                                   key=f"lev_{strategy_id}")
-                                new_trade_amount = form_cols[1].number_input("İşlem Tutarı ($)", min_value=5.0,
-                                                                             value=params.get('trade_amount_usdt',
-                                                                                              10.0),
-                                                                             key=f"amount_{strategy_id}")
-                                is_trading_enabled = strategy.get('is_trading_enabled', False)
-                                trade_status_text = form_cols[2].radio("Borsada İşlem", ["Aktif", "Pasif"],
-                                                                       index=0 if is_trading_enabled else 1,
-                                                                       key=f"trade_{strategy_id}", horizontal=True)
-
-                                if st.form_submit_button("✅ Ayarları Güncelle", use_container_width=True):
-                                    updated_params = params.copy()
-                                    updated_params['leverage'] = new_leverage
-                                    updated_params['trade_amount_usdt'] = new_trade_amount
-                                    strategy['strategy_params'] = updated_params
-                                    strategy['is_trading_enabled'] = True if trade_status_text == "Aktif" else False
-                                    add_or_update_strategy(strategy)
-                                    st.toast(f"'{strategy_name}' güncellendi!", icon="👍")
-                                    time.sleep(1)
-                                    st.rerun()
-
-                        with form_col2:
-                            st.markdown("**Kontroller**")
-
-                            if st.button("⚙️ Tam Düzenle", key=f"edit_{strategy_id}", use_container_width=True,
-                                         help="Bu stratejinin tüm ayarlarını düzenlemek için kenar çubuğuna yükler."):
-                                apply_full_strategy_params(strategy, is_editing=True)
+                        # --- Sağ Sütun: Canlı İşlem Ayarları ---
+                        with trade_settings_col:
+                            st.markdown("**Canlı İşlem Parametreleri**")
+                            params = strategy.get('strategy_params', {})
 
 
+                            # Değişiklikleri anında kaydetmek için bir yardımcı fonksiyon
+                            def update_trade_params():
+                                # session_state'den en güncel değerleri al
+                                new_leverage = st.session_state[f"lev_{strategy_id}"]
+                                new_trade_amount = st.session_state[f"amount_{strategy_id}"]
+                                new_trade_status = st.session_state[f"trade_{strategy_id}"]
+
+                                updated_params = strategy.get('strategy_params', {}).copy()
+                                updated_params['leverage'] = new_leverage
+                                updated_params['trade_amount_usdt'] = new_trade_amount
+                                strategy['strategy_params'] = updated_params
+                                strategy['is_trading_enabled'] = True if new_trade_status == "Aktif" else False
+
+                                add_or_update_strategy(strategy)
+                                st.toast(f"'{strategy_name}' güncellendi!", icon="👍")
+
+
+                            trade_cols = st.columns(3)
+                            # Kaldıraç
+                            trade_cols[0].slider(
+                                "Kaldıraç", 1, 50, params.get('leverage', 5),
+                                key=f"lev_{strategy_id}",
+                                on_change=update_trade_params
+                            )
+                            # İşlem Tutarı
+                            trade_cols[1].number_input(
+                                "Tutar ($)", min_value=5.0, value=params.get('trade_amount_usdt', 10.0),
+                                key=f"amount_{strategy_id}",
+                                on_change=update_trade_params
+                            )
+                            # İşlem Durumu
+                            trade_cols[2].radio(
+                                "Borsada İşlem", ["Aktif", "Pasif"],
+                                index=0 if strategy.get('is_trading_enabled', False) else 1,
+                                key=f"trade_{strategy_id}",
+                                on_change=update_trade_params,
+                                horizontal=True
+                            )
+
+                        # --- Sol Sütun: Strateji Kontrolleri ---
+                        with main_controls_col:
+                            st.markdown("**Strateji Kontrolleri**")
+                            control_cols = st.columns(2)
+
+                            # Durdurma / Devam Ettirme Butonları
                             if strategy_status == 'running':
-                                if st.button("⏸️ Durdur", key=f"pause_{strategy_id}", use_container_width=True):
-                                    update_strategy_status(strategy_id, 'paused')
-                                    st.rerun()
+                                control_cols[0].button("⏸️ Durdur", key=f"pause_{strategy_id}",
+                                                       use_container_width=True, on_click=update_strategy_status,
+                                                       args=(strategy_id, 'paused'))
                             else:
-                                if st.button("▶️ Devam Et", key=f"resume_{strategy_id}", use_container_width=True):
-                                    update_strategy_status(strategy_id, 'running')
-                                    st.rerun()
+                                control_cols[0].button("▶️ Devam Et", key=f"resume_{strategy_id}",
+                                                       use_container_width=True, on_click=update_strategy_status,
+                                                       args=(strategy_id, 'running'))
 
-                            if st.button("📥 Ayarları Yükle", key=f"load_{strategy_id}", use_container_width=True,
-                                         help="Bu stratejinin ayarlarını kenar çubuğuna yükler."):
-                                apply_full_strategy_params(strategy)
-                                st.rerun()
+                            # Silme Butonu
+                            control_cols[1].button("🗑️ Sil", key=f"stop_{strategy_id}", use_container_width=True,
+                                                   help="Stratejiyi tamamen siler.", on_click=remove_strategy,
+                                                   args=(strategy_id,))
 
-                            if st.button("🗑️ Sil", key=f"stop_{strategy_id}", use_container_width=True,
-                                         help="Stratejiyi tamamen siler."):
-                                remove_strategy(strategy_id)
-                                st.warning(f"'{strategy_name}' stratejisi silindi.")
-                                st.rerun()
+                            # Ayarları Yükleme ve Düzenleme Butonları
+                            st.button("⚙️ Ayarları Tam Düzenle", key=f"edit_{strategy_id}", use_container_width=True,
+                                      help="Bu stratejinin tüm ayarlarını düzenlemek için kenar çubuğuna yükler.",
+                                      on_click=apply_full_strategy_params, args=(strategy, True))
+                            st.button("📥 Ayarları Kenar Çubuğuna Yükle", key=f"load_{strategy_id}",
+                                      use_container_width=True, help="Bu stratejinin ayarlarını kenar çubuğuna yükler.",
+                                      on_click=apply_full_strategy_params, args=(strategy, False))
 
         # Sekme 3: Strateji Koçu
         with tab3:
@@ -1191,47 +1209,62 @@ if page == "🔬 Laboratuvar":
                         else:
                             st.warning(f"Bu döngü atlandı. Sebep: {result.get('reason', 'Bilinmiyor')}")
 
-        # Sekme 4: Açık Pozisyonlar
+
         with tab4:
-            st.subheader("📊 Anlık Açık Pozisyonlar")
-            open_positions_df = get_all_open_positions()
+                    st.subheader("📊 Anlık Açık Pozisyonlar")
+                    open_positions_df = get_all_open_positions()
 
-            if open_positions_df.empty:
-                st.info("Mevcutta açık pozisyon bulunmuyor.")
-            else:
-                symbols_for_prices = open_positions_df['Sembol'].unique().tolist()
-                live_prices = get_current_prices(symbols_for_prices)
+                    if open_positions_df.empty:
+                        st.info("Mevcutta açık pozisyon bulunmuyor.")
+                    else:
+                        symbols_for_prices = open_positions_df['Sembol'].unique().tolist()
+                        live_prices = get_current_prices(symbols_for_prices)
 
-                open_positions_df['Anlık Fiyat'] = open_positions_df['Sembol'].map(live_prices).fillna(0)
-                open_positions_df['PnL (%)'] = open_positions_df.apply(
-                    lambda row: ((row['Anlık Fiyat'] - row['Giriş Fiyatı']) / row['Giriş Fiyatı']) * 100 if row[
-                                                                                                                'Pozisyon'] == 'Long' else (
-                        ((row['Giriş Fiyatı'] - row['Anlık Fiyat']) / row['Giriş Fiyatı']) * 100 if row[
-                                                                                                        'Giriş Fiyatı'] > 0 else 0),
-                    axis=1
-                )
+                        open_positions_df['Anlık Fiyat'] = open_positions_df['Sembol'].map(live_prices).fillna(0)
+                        open_positions_df['PnL (%)'] = open_positions_df.apply(
+                            lambda row: ((row['Anlık Fiyat'] - row['Giriş Fiyatı']) / row['Giriş Fiyatı']) * 100 if row[
+                                                                                                                        'Pozisyon'] == 'Long' else (
+                                ((row['Giriş Fiyatı'] - row['Anlık Fiyat']) / row['Giriş Fiyatı']) * 100 if row[
+                                                                                                                'Giriş Fiyatı'] > 0 else 0),
+                            axis=1
+                        )
 
-                for index, row in open_positions_df.iterrows():
-                    with st.container(border=True):
-                        col1, col2, col3 = st.columns([2, 3, 1])
-                        emoji = "🟢" if row['Pozisyon'] == 'Long' else "🔴"
-                        pnl_color = "green" if row['PnL (%)'] >= 0 else "red"
-                        with col1:
-                            st.markdown(f"<h5>{emoji} {row['Sembol']}</h5>", unsafe_allow_html=True)
-                            st.markdown(f"**Strateji:** {row['Strateji Adı']}")
-                        with col2:
-                            st.markdown(
-                                f"**Giriş:** `{row['Giriş Fiyatı']:.4f}` | **Anlık:** `{row['Anlık Fiyat']:.4f}`")
-                            st.markdown(
-                                f"**Kâr/Zarar:** <span style='color:{pnl_color}; font-weight: bold;'>{row['PnL (%)']:.2f}%</span>",
-                                unsafe_allow_html=True)
-                        with col3:
-                            if st.button("KAPAT", key=f"close_{row['strategy_id']}_{row['Sembol']}",
-                                         help="Pozisyonu piyasa fiyatından hemen kapatır."):
-                                issue_manual_action(row['strategy_id'], row['Sembol'], 'CLOSE_POSITION')
-                                st.toast(f"{row['Sembol']} için pozisyon kapatma emri gönderildi!", icon="📨")
-                                time.sleep(1)
-                                st.rerun()
+                        for index, row in open_positions_df.iterrows():
+                            with st.container(border=True):
+                                col1, col2, col3 = st.columns([2, 3, 1])
+                                emoji = "🟢" if row['Pozisyon'] == 'Long' else "🔴"
+                                pnl_color = "green" if row['PnL (%)'] >= 0 else "red"
+
+                                with col1:
+                                    st.markdown(f"<h5>{emoji} {row['Sembol']}</h5>", unsafe_allow_html=True)
+                                    st.markdown(f"**Strateji:** {row['Strateji Adı']}")
+                                    st.markdown(
+                                        f"**Kâr/Zarar:** <span style='color:{pnl_color}; font-weight: bold;'>{row['PnL (%)']:.2f}%</span>",
+                                        unsafe_allow_html=True)
+
+                                with col2:
+                                    # Giriş ve Anlık Fiyatları yan yana göster
+                                    price_col1, price_col2 = st.columns(2)
+                                    price_col1.metric("Giriş Fiyatı", f"{row['Giriş Fiyatı']:.4f}")
+                                    price_col2.metric("Anlık Fiyat", f"{row['Anlık Fiyat']:.4f}")
+
+                                    # SL ve TP Seviyelerini göster
+                                    st.markdown(
+                                        f"**SL:** `{row['Stop Loss']:.4f}` | "
+                                        f"**TP1:** `{row['TP1']:.4f}` | "
+                                        f"**TP2:** `{row['TP2']:.4f}`",
+                                        help="Stop-Loss | Take-Profit 1 | Take-Profit 2"
+                                    )
+
+                                with col3:
+                                    if st.button("KAPAT", key=f"close_{row['strategy_id']}_{row['Sembol']}",
+                                                 help="Pozisyonu piyasa fiyatından hemen kapatır."):
+                                        issue_manual_action(row['strategy_id'], row['Sembol'], 'CLOSE_POSITION')
+                                        st.toast(f"{row['Sembol']} için pozisyon kapatma emri gönderildi!", icon="📨")
+                                        time.sleep(1)
+                                        st.rerun()
+
+        # ... (app.py dosyasındaki diğer kodlar) ...
 
         # Sekme 5: Alarm Geçmişi
         with tab5:

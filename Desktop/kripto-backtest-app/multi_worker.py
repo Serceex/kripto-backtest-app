@@ -383,9 +383,30 @@ class StrategyRunner:
             logging.error(f"KRİTİK HATA ({symbol}, {self.name}): Mesaj işlenirken sorun: {e}")
             logging.error(traceback.format_exc())
 
+    # multi_worker.py içine yerleştirilecek YENİ ve GÜVENLİ _open_new_position fonksiyonu
+
     def _open_new_position(self, symbol, new_pos, entry_price, df_with_indicators):
+        # Veritabanından en güncel strateji yapılandırmasını al
         current_strategy_config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
-        self.params = current_strategy_config.get('strategy_params', self.params)
+
+        # --- BAŞLANGIÇ: PARAMETRE GÜVENLİK KONTROLÜ VE DÖNÜŞÜM ---
+        # Bu blok, veritabanından gelen parametrelerin doğru formatta olmasını garanti eder.
+        params_from_db = current_strategy_config.get('strategy_params', {})
+
+        # Eğer parametreler yanlışlıkla metin (string) olarak gelirse, onu JSON'a çevir.
+        if isinstance(params_from_db, str):
+            try:
+                self.params = json.loads(params_from_db)
+                logging.warning(f"UYARI ({self.name}): Strateji parametreleri metin olarak geldi ve JSON'a çevrildi.")
+            except json.JSONDecodeError:
+                logging.error(f"HATA ({self.name}): Strateji parametreleri çözümlenemedi. Boş olarak kabul ediliyor.")
+                self.params = {}  # Hata durumunda boş bir sözlükle devam et
+        else:
+            # Eğer zaten doğru formattaysa (sözlük), doğrudan kullan.
+            self.params = params_from_db
+        # --- BİTİŞ: PARAMETRE GÜVENLİK KONTROLÜ ---
+
+        # Risk seviyelerini (SL/TP) GÜVENLİ parametrelerle hesapla
         sl, tp1, tp2 = self._calculate_risk_levels(df_with_indicators, symbol, new_pos, entry_price)
 
         # Önce hafızadaki durumu güncelle
@@ -394,6 +415,8 @@ class StrategyRunner:
             'stop_loss_price': sl, 'tp1_price': tp1, 'tp2_price': tp2,
             'tp1_hit': False, 'tp2_hit': False
         })
+
+        # Veritabanına doğru hesaplanmış SL/TP değerlerini kaydet
         update_position(self.id, symbol, new_pos, entry_price, sl, tp1, tp2, False, False)
         self.notify_new_position(symbol, new_pos, entry_price, sl, tp1, tp2)
 

@@ -446,15 +446,32 @@ class StrategyRunner:
 
     def notify_and_log(self, symbol, signal_type, price, pnl=None):
         if pnl is not None:
-            emoji = "✅💰" if pnl >= 0 else "❌🛑"
-            status_text = "Pozisyon Kârla Kapatıldı" if pnl >= 0 else "Pozisyon Zararla Kapatıldı"
+            # Kapanış nedenine göre emoji ve başlık belirle
+            if "Take-Profit" in signal_type:
+                emoji = "✅💰"
+                status_text = f"Pozisyon Kârla Kapatıldı ({signal_type})"
+            elif "Stop-Loss" in signal_type:
+                emoji = "❌🛑"
+                status_text = f"Pozisyon Stop-Loss Oldu"
+            elif "Karşıt Sinyal" in signal_type:
+                emoji = "🔄"
+                status_text = "Pozisyon Karşıt Sinyal ile Kapatıldı"
+            elif "Manuel" in signal_type:
+                emoji = "🖐️"
+                status_text = "Pozisyon Manuel Olarak Kapatıldı"
+            else:  # Diğer durumlar için genel bir mesaj
+                emoji = "✅" if pnl >= 0 else "❌"
+                status_text = "Pozisyon Kapatıldı"
+
             pnl_text = f"\n📈 *P&L:* `{pnl:.2f}%`"
-        else:
+        else:  # Bu blok yeni pozisyon açılışları için kullanılır ve değişmez
             emoji, status_text, pnl_text = "🎯", signal_type, ""
+
         message = (f"{emoji} *{status_text}* \n\n"
                    f"🔹 *Strateji:* `{self.name}`\n"
                    f"📈 *Sembol:* `{symbol}`\n"
                    f"💰 *Kapanış Fiyatı:* `{price:.7f} USDT`{pnl_text}")
+
         logging.info(f"!!! {message} !!!")
         log_alarm_db(self.id, symbol, f"{status_text} ({self.name})", price)
         if self.params.get("telegram_enabled", False):

@@ -295,8 +295,33 @@ class StrategyRunner:
 
             self.portfolio_data[symbol]['df'] = df
 
+            # 1. Göstergeleri hesapla
             df_indicators = generate_all_indicators(df, **self.params)
+
+            # 2. Ham sinyalleri üret
             df_signals = generate_signals(df_indicators, **self.params)
+
+            # 3. MTA (Çoklu Zaman Dilimi) Filtresini Uygula
+            if self.params.get('use_mta', False):
+                higher_tf = self.params.get('higher_timeframe', '4h')
+                trend_ema = self.params.get('trend_ema_period', 50)
+
+                # Üst zaman dilimi verisini çek (limit backtest ile uyumlu)
+                df_higher = get_binance_klines(symbol=symbol, interval=higher_tf, limit=1000)
+
+                if df_higher is not None and not df_higher.empty:
+                    # Trendi ekle ve sinyalleri filtrele
+                    df_with_trend = add_higher_timeframe_trend(df_signals, df_higher, trend_ema)
+                    df_filtered = filter_signals_with_trend(df_with_trend)
+                    final_df = df_filtered
+                else:
+                    logging.warning(
+                        f"UYARI ({self.name}): {symbol} için MTA verisi ({higher_tf}) alınamadı. Filtre atlanıyor.")
+                    final_df = df_signals
+            else:
+                final_df = df_signals
+
+
             last_row = df_signals.iloc[-1]
             raw_signal = last_row['Signal']
             price = last_row['Close']

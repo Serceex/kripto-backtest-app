@@ -218,3 +218,72 @@ def get_and_clear_pending_actions(strategy_id):
                 cursor.execute("UPDATE manual_actions SET status = 'completed' WHERE id IN %s", (action_ids,))
         conn.commit()
         return actions
+
+
+def get_live_closed_trades_metrics(strategy_id=None):
+    """
+    Canlıda kapanan işlemlerin detaylı metriklerini hesaplar.
+    Eğer strategy_id verilirse, sadece o strateji için hesaplar.
+    """
+    default_metrics = {
+        "Toplam İşlem": 0, "Başarı Oranı (%)": 0.0, "Toplam Getiri (%)": 0.0,
+        "Ortalama Kazanç (%)": 0.0, "Ortalama Kayıp (%)": 0.0, "Profit Factor": 0.0
+    }
+
+    with get_db_connection() as conn:
+        base_query = "SELECT strategy_id, symbol, signal, price, timestamp FROM alarms WHERE "
+        conditions = "(signal LIKE '%%Yeni%%' OR signal LIKE '%%Kapatıldı%%' OR signal LIKE '%%Stop-Loss%%')"
+
+        if strategy_id:
+            query = base_query + "strategy_id = %s AND " + conditions + " ORDER BY timestamp ASC"
+            params = (strategy_id,)
+        else:
+            query = base_query + conditions + " ORDER BY timestamp ASC"
+            params = ()
+
+        df = pd.read_sql_query(query, conn, params=params)
+
+    if df.empty:
+        return default_metrics
+
+    trades = []
+    open_trades = {}
+
+    for _, row in df.iterrows():
+        key = (row['strategy_id'], row['symbol'])
+        signal = row['signal']
+        price = row['price']
+
+        if 'Yeni' in signal and key not in open_trades:
+            open_trades[key] = {'entry_price': price, 'position_type': 'Long' if 'LONG' in signal.upper() else 'Short'}
+        elif ('Kapatıldı' in signal or 'Stop-Loss' in signal) and key in open_trades:
+            entry_price = open_trades[key]['entry_price']
+            position_type = open_trades[key]['position_type']
+            pnl = ((price - entry_price) / entry_price) * 100 if position_type == 'Long' else ((
+                                                                                                           entry_price - price) / entry_price) * 100
+            trades.append({'pnl': pnl})
+            del open_trades[key]
+
+    if not trades:
+        return default_metrics
+
+    pnl_list = [t['pnl'] for t in trades]
+    total_trades = len(pnl_list)
+    winning_trades = [p for p in pnl_list if p > 0]
+    losing_trades = [p for p in pnl_list if p <= 0]
+
+    win_rate = (len(winning_trades) / total_trades) * 100 if total_trades > 0 else 0
+    total_pnl = sum(pnl_list)
+    avg_win = sum(winning_trades) / len(winning_trades) if winning_trades else 0
+    avg_loss = abs(sum(losing_trades) / len(losing_trades)) if losing_trades else 0
+    profit_factor = sum(winning_trades) / abs(sum(losing_trades)) if losing_trades and sum(
+        losing_trades) != 0 else np.inf
+
+    return {
+        "Toplam İşlem": total_trades,
+        "Başarı Oranı (%)": round(win_rate, 2),
+        "Toplam Getiri (%)": round(total_pnl, 2),
+        "Ortalama Kazanç (%)": round(avg_win, 2),
+        "Ortalama Kayıp (%)": round(avg_loss, 2),
+        "Profit Factor": round(profit_factor, 2)
+    }

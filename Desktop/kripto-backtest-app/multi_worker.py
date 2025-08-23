@@ -374,20 +374,32 @@ class StrategyRunner:
         params = self.params
         stop_loss_price, tp1_price, tp2_price = 0, 0, 0
         current_atr = self.portfolio_data[symbol]['df'].iloc[-1].get('ATR', 0)
+
         if position_type == 'Long':
-            if params.get('atr_multiplier', 0) > 0 and current_atr > 0:
+            # === DEĞİŞİKLİK BAŞLANGICI: Yüzde SL kontrolü eklendi ===
+            if params.get('stop_loss_pct', 0) > 0:
+                stop_loss_price = entry_price * (1 - params['stop_loss_pct'] / 100)
+            elif params.get('atr_multiplier', 0) > 0 and current_atr > 0:
                 stop_loss_price = entry_price - (current_atr * params['atr_multiplier'])
+            # === DEĞİŞİKLİK SONU ===
+
             if params.get('tp1_pct', 0) > 0:
                 tp1_price = entry_price * (1 + params['tp1_pct'] / 100)
             if params.get('tp2_pct', 0) > 0:
                 tp2_price = entry_price * (1 + params['tp2_pct'] / 100)
-        else:
-            if params.get('atr_multiplier', 0) > 0 and current_atr > 0:
+        else: # Short Pozisyon
+            # === DEĞİŞİKLİK BAŞLANGICI: Yüzde SL kontrolü eklendi ===
+            if params.get('stop_loss_pct', 0) > 0:
+                stop_loss_price = entry_price * (1 + params['stop_loss_pct'] / 100)
+            elif params.get('atr_multiplier', 0) > 0 and current_atr > 0:
                 stop_loss_price = entry_price + (current_atr * params['atr_multiplier'])
+            # === DEĞİŞİKLİK SONU ===
+
             if params.get('tp1_pct', 0) > 0:
                 tp1_price = entry_price * (1 - params['tp1_pct'] / 100)
             if params.get('tp2_pct', 0) > 0:
                 tp2_price = entry_price * (1 - params['tp2_pct'] / 100)
+
         return stop_loss_price, tp1_price, tp2_price
 
     def notify_and_log(self, symbol, signal_type, price, pnl=None):

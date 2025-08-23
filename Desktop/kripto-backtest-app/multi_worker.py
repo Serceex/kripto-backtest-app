@@ -272,14 +272,12 @@ class StrategyRunner:
                         if not tp1_hit and tp1_price > 0 and high_price >= tp1_price:
                             tp1_size = self.params.get('tp1_size_pct', 100)
                             self._close_position(symbol, tp1_price, "Take-Profit 1", size_pct_to_close=tp1_size)
-                            self.portfolio_data[symbol]['tp1_hit'] = True
                             # TP1 sonrası SL'i girişe çekme mantığı
                             if self.params.get('move_sl_to_be', False):
                                 self.portfolio_data[symbol]['stop_loss_price'] = symbol_data.get('entry_price', 0)
 
                         # TP2 Kontrolü (TP1 vurulmuşsa ve TP2 hedefi varsa)
-                        if self.portfolio_data[symbol][
-                            'tp1_hit'] and not tp2_hit and tp2_price > 0 and high_price >= tp2_price:
+                        if tp1_hit and not tp2_hit and tp2_price > 0 and high_price >= tp2_price:
                             # Kalan tüm pozisyonu kapat
                             self._close_position(symbol, tp2_price, "Take-Profit 2", size_pct_to_close=100.0)
                             return
@@ -289,13 +287,11 @@ class StrategyRunner:
                         if not tp1_hit and tp1_price > 0 and low_price <= tp1_price:
                             tp1_size = self.params.get('tp1_size_pct', 100)
                             self._close_position(symbol, tp1_price, "Take-Profit 1", size_pct_to_close=tp1_size)
-                            self.portfolio_data[symbol]['tp1_hit'] = True
                             if self.params.get('move_sl_to_be', False):
                                 self.portfolio_data[symbol]['stop_loss_price'] = symbol_data.get('entry_price', 0)
 
                         # TP2 Kontrolü
-                        if self.portfolio_data[symbol][
-                            'tp1_hit'] and not tp2_hit and tp2_price > 0 and low_price <= tp2_price:
+                        if tp1_hit and not tp2_hit and tp2_price > 0 and low_price <= tp2_price:
                             self._close_position(symbol, tp2_price, "Take-Profit 2", size_pct_to_close=100.0)
                             return
 
@@ -369,7 +365,7 @@ class StrategyRunner:
             logging.error(f"KRİTİK HATA ({symbol}, {self.name}): Mesaj işlenirken sorun: {e}")
             logging.error(traceback.format_exc())
 
-    def _open_new_position(self, symbol, new_pos, entry_price):
+    def _open_new_position(self, symbol, new_pos, entry_price, df_with_indicators):
         current_strategy_config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
         self.params = current_strategy_config.get('strategy_params', self.params)
         sl, tp1, tp2 = self._calculate_risk_levels(df_with_indicators, symbol, new_pos, entry_price)

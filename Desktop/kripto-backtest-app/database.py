@@ -62,12 +62,20 @@ def initialize_db():
                         is_trading_enabled BOOLEAN DEFAULT 0 -- Bu satırın varlığından emin oluyoruz
                     )""")
             cursor.execute("""
-            CREATE TABLE IF NOT EXISTS positions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, strategy_id TEXT, symbol TEXT,
-                position TEXT, entry_price REAL,
-                FOREIGN KEY (strategy_id) REFERENCES strategies (id) ON DELETE CASCADE,
-                UNIQUE(strategy_id, symbol)
-            )""")
+                        CREATE TABLE IF NOT EXISTS positions (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            strategy_id TEXT,
+                            symbol TEXT,
+                            position TEXT,
+                            entry_price REAL,
+                            stop_loss_price REAL DEFAULT 0,
+                            tp1_price REAL DEFAULT 0,
+                            tp2_price REAL DEFAULT 0,
+                            tp1_hit BOOLEAN DEFAULT 0,
+                            tp2_hit BOOLEAN DEFAULT 0,
+                            FOREIGN KEY (strategy_id) REFERENCES strategies (id) ON DELETE CASCADE,
+                            UNIQUE(strategy_id, symbol)
+                        )""")
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS alarms (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,26 +164,30 @@ def get_all_strategies():
     return result
 
 
-def update_position(strategy_id, symbol, position, entry_price):
-    """Bir stratejinin pozisyon durumunu veritabanında günceller."""
+
+def update_position(strategy_id, symbol, position, entry_price, sl_price=0, tp1_price=0, tp2_price=0, tp1_hit=False, tp2_hit=False):
+    """Bir stratejinin pozisyon durumunu tüm detaylarıyla veritabanında günceller."""
     with db_lock:
         with get_db_connection() as conn:
             conn.execute("""
-                INSERT INTO positions (strategy_id, symbol, position, entry_price)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO positions (strategy_id, symbol, position, entry_price, stop_loss_price, tp1_price, tp2_price, tp1_hit, tp2_hit)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(strategy_id, symbol) DO UPDATE SET
-                    position=excluded.position, entry_price=excluded.entry_price
-            """, (strategy_id, symbol, position, entry_price))
+                    position=excluded.position, entry_price=excluded.entry_price,
+                    stop_loss_price=excluded.stop_loss_price, tp1_price=excluded.tp1_price,
+                    tp2_price=excluded.tp2_price, tp1_hit=excluded.tp1_hit,
+                    tp2_hit=excluded.tp2_hit
+            """, (strategy_id, symbol, position, entry_price, sl_price, tp1_price, tp2_price, tp1_hit, tp2_hit))
             conn.commit()
 
 
 def get_positions_for_strategy(strategy_id):
-    """Belirli bir stratejiye ait tüm pozisyonları döndürür."""
+    """Belirli bir stratejiye ait tüm pozisyonları tüm detaylarıyla döndürür."""
     with db_lock:
         with get_db_connection() as conn:
-            positions = conn.execute("SELECT symbol, position, entry_price FROM positions WHERE strategy_id = ?",
-                                     (strategy_id,)).fetchall()
-            return {p['symbol']: {'position': p['position'], 'entry_price': p['entry_price']} for p in positions}
+            positions = conn.execute("SELECT * FROM positions WHERE strategy_id = ?", (strategy_id,)).fetchall()
+            # SQLite'dan gelen her satırı bir sözlüğe çevir
+            return {p['symbol']: dict(p) for p in positions}
 
 
 def log_alarm_db(strategy_id, symbol, signal, price):

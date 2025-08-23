@@ -155,6 +155,16 @@ class StrategyRunner:
             if size_pct_to_close >= 100.0:
                 self._reset_position_state(symbol)
 
+            else:
+                # Eğer kısmen kapatılıyorsa (örneğin TP1), sadece ilgili durumu DB'de güncelle
+                current_state = self.portfolio_data.get(symbol, {})
+                if "Take-Profit 1" in reason:
+                    update_position(self.id, symbol, current_state.get('position'), current_state.get('entry_price'),
+                                    sl_price=current_state.get('stop_loss_price'),
+                                    tp1_price=current_state.get('tp1_price'),
+                                    tp2_price=current_state.get('tp2_price'), tp1_hit=True,
+                                    tp2_hit=current_state.get('tp2_hit'))
+
     def _check_manual_actions(self):
         while not self._stop_event.is_set():
             try:
@@ -197,17 +207,22 @@ class StrategyRunner:
             if not self._stop_event.is_set():
                 time.sleep(10)
 
-    def _reset_position_state(self, symbol):
-        self.portfolio_data[symbol]['position'] = None
-        self.portfolio_data[symbol]['entry_price'] = 0
-        self.portfolio_data[symbol]['stop_loss_price'] = 0
-        self.portfolio_data[symbol]['tp1_price'] = 0
-        self.portfolio_data[symbol]['tp2_price'] = 0
-        self.portfolio_data[symbol]['tp1_hit'] = False
-        self.portfolio_data[symbol]['tp2_hit'] = False
-        update_position(self.id, symbol, None, 0)
 
-    # multi_worker.py içindeki _on_message fonksiyonunu bununla değiştirin
+    def _reset_position_state(self, symbol):
+        # Hafızadaki durumu sıfırla
+        if symbol in self.portfolio_data:
+            self.portfolio_data[symbol]['position'] = None
+            self.portfolio_data[symbol]['entry_price'] = 0
+            self.portfolio_data[symbol]['stop_loss_price'] = 0
+            self.portfolio_data[symbol]['tp1_price'] = 0
+            self.portfolio_data[symbol]['tp2_price'] = 0
+            self.portfolio_data[symbol]['tp1_hit'] = False
+            self.portfolio_data[symbol]['tp2_hit'] = False
+
+        # Veritabanındaki pozisyonu temizle
+        update_position(self.id, symbol, None, 0, 0, 0, 0, False, False)
+
+
 
     def _on_message(self, ws, message, symbol):
         try:
@@ -355,15 +370,17 @@ class StrategyRunner:
         current_strategy_config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
         self.params = current_strategy_config.get('strategy_params', self.params)
         sl, tp1, tp2 = self._calculate_risk_levels(symbol, new_pos, entry_price)
-        self.portfolio_data[symbol]['position'] = new_pos
-        self.portfolio_data[symbol]['entry_price'] = entry_price
-        self.portfolio_data[symbol]['stop_loss_price'] = sl
-        self.portfolio_data[symbol]['tp1_price'] = tp1
-        self.portfolio_data[symbol]['tp2_price'] = tp2
-        self.portfolio_data[symbol]['tp1_hit'] = False
-        self.portfolio_data[symbol]['tp2_hit'] = False
-        update_position(self.id, symbol, new_pos, entry_price)
+
+        # Önce hafızadaki durumu güncelle
+        self.portfolio_data[symbol] = {
+            'position': new_pos, 'entry_price': entry_price,
+            'stop_loss_price': sl, 'tp1_price': tp1, 'tp2_price': tp2,
+            'tp1_hit': False, 'tp2_hit': False,
+            'df': self.portfolio_data[symbol]['df']  # DataFrame'i koru
+        }
+        update_position(self.id, symbol, new_pos, entry_price, sl, tp1, tp2, False, False)
         self.notify_new_position(symbol, new_pos, entry_price, sl, tp1, tp2)
+
         is_trading_enabled = current_strategy_config.get('is_trading_enabled', False)
         if is_trading_enabled:
             leverage = self.params.get('leverage', 5)

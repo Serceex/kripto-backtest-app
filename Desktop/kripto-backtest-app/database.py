@@ -235,11 +235,21 @@ def get_live_closed_trades_metrics(strategy_id=None):
 
     with db_lock:
         with get_db_connection() as conn:
-            query = "SELECT strategy_id, symbol, signal, price, timestamp FROM alarms WHERE signal LIKE '%Pozisyon%' ORDER BY timestamp ASC"
-            params = ()
+            # === DEĞİŞİKLİK BAŞLANGICI ===
+            # Orijinal, kısıtlayıcı sorgu yerine daha kapsayıcı bir sorgu kullanıyoruz.
+            # Bu sorgu, bir işlemin başlangıcını ('Yeni') ve bitişini ('Kapatıldı', 'Stop-Loss')
+            # belirten tüm alarmları çeker.
+            base_query = "SELECT strategy_id, symbol, signal, price, timestamp FROM alarms WHERE "
+            conditions = "(signal LIKE '%Yeni%' OR signal LIKE '%Kapatıldı%' OR signal LIKE '%Stop-Loss%')"
+
             if strategy_id:
-                query = "SELECT strategy_id, symbol, signal, price, timestamp FROM alarms WHERE strategy_id = ? AND signal LIKE '%Pozisyon%' ORDER BY timestamp ASC"
+                query = base_query + "strategy_id = ? AND " + conditions + " ORDER BY timestamp ASC"
                 params = (strategy_id,)
+            else:
+                query = base_query + conditions + " ORDER BY timestamp ASC"
+                params = ()
+            # === DEĞİŞİKLİK SONU ===
+
             df = pd.read_sql_query(query, conn, params=params)
 
     if df.empty:
@@ -253,8 +263,10 @@ def get_live_closed_trades_metrics(strategy_id=None):
         signal = row['signal']
         price = row['price']
 
+        # 'Yeni' içeren sinyalleri açılış olarak kabul et
         if 'Yeni' in signal and key not in open_trades:
             open_trades[key] = {'entry_price': price, 'position_type': 'Long' if 'LONG' in signal else 'Short'}
+        # 'Kapatıldı' veya 'Stop-Loss' içerenleri kapanış olarak kabul et
         elif ('Kapatıldı' in signal or 'Stop-Loss' in signal) and key in open_trades:
             entry_price = open_trades[key]['entry_price']
             position_type = open_trades[key]['position_type']

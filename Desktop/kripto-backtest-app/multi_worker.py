@@ -113,7 +113,13 @@ class StrategyRunner:
         logging.info(f"🛑 Strateji DURDURULUYOR: '{self.name}' (ID: {self.id})")
         self._stop_event.set()
 
-    def _close_position(self, symbol: str, close_price: float, reason: str):
+    # multi_worker.py içindeki _close_position fonksiyonunu bununla değiştirin
+
+    def _close_position(self, symbol: str, close_price: float, reason: str, size_pct_to_close: float = 100.0):
+        """
+        Pozisyonun belirtilen yüzdesini kapatır.
+        size_pct_to_close: 1.0 ile 100.0 arasında bir değer.
+        """
         symbol_data = self.portfolio_data.get(symbol, {})
         current_position = symbol_data.get('position')
         entry_price = symbol_data.get('entry_price', 0)
@@ -123,16 +129,31 @@ class StrategyRunner:
         with self.position_locks[symbol]:
             is_trading_enabled = self.config.get('is_trading_enabled', False)
             if is_trading_enabled:
-                quantity_to_close = get_open_position_amount(symbol)
-                if quantity_to_close > 0:
-                    close_side = 'SELL' if current_position == 'Long' else 'BUY'
-                    place_futures_order(symbol, close_side, quantity_to_close)
+                # Mevcut açık pozisyon miktarını al
+                total_quantity = get_open_position_amount(symbol)
+                if total_quantity > 0:
+                    # Kapatılacak miktarı hesapla
+                    quantity_to_close = total_quantity * (size_pct_to_close / 100.0)
+
+                    # Binance için miktar hassasiyetini (precision) al
+                    symbol_info = get_symbol_info(symbol)
+                    if symbol_info:
+                        quantity_precision = int(symbol_info['quantityPrecision'])
+                        quantity_to_close = round(quantity_to_close, quantity_precision)
+
+                    if quantity_to_close > 0:
+                        close_side = 'SELL' if current_position == 'Long' else 'BUY'
+                        place_futures_order(symbol, close_side, quantity_to_close)
 
             pnl = ((close_price - entry_price) / entry_price * 100) if current_position == 'Long' else (
                     (entry_price - close_price) / entry_price * 100)
-            self.notify_and_log(symbol, f"Pozisyon '{reason}' ile Kapatıldı", close_price, pnl)
 
-            self._reset_position_state(symbol)
+            log_reason = f"{reason} ({size_pct_to_close}%)"
+            self.notify_and_log(symbol, log_reason, close_price, pnl)
+
+            # Eğer pozisyonun tamamı kapatılıyorsa, durumu sıfırla
+            if size_pct_to_close >= 100.0:
+                self._reset_position_state(symbol)
 
     def _check_manual_actions(self):
         while not self._stop_event.is_set():
@@ -186,6 +207,8 @@ class StrategyRunner:
         self.portfolio_data[symbol]['tp2_hit'] = False
         update_position(self.id, symbol, None, 0)
 
+    # multi_worker.py içindeki _on_message fonksiyonunu bununla değiştirin
+
     def _on_message(self, ws, message, symbol):
         try:
             data = json.loads(message)
@@ -198,17 +221,61 @@ class StrategyRunner:
             current_position = symbol_data.get('position')
 
             if current_position:
-                sl_price = symbol_data.get('stop_loss_price', 0)
-                if sl_price > 0:
-                    if (current_position == 'Long' and low_price <= sl_price) or \
-                            (current_position == 'Short' and high_price >= sl_price):
-                        self._close_position(symbol, sl_price, "Stop-Loss")
+                with self.position_locks[symbol]:
+                    if not self.portfolio_data.get(symbol, {}).get('position'):
                         return
 
+                    sl_price = symbol_data.get('stop_loss_price', 0)
+                    tp1_price = symbol_data.get('tp1_price', 0)
+                    tp2_price = symbol_data.get('tp2_price', 0)
+                    tp1_hit = symbol_data.get('tp1_hit', False)
+                    tp2_hit = symbol_data.get('tp2_hit', False)  # TP2 hit'i de takip edelim
+
+                    # 1. Stop-Loss Kontrolü (Tüm pozisyonu kapatır)
+                    if sl_price > 0 and ((current_position == 'Long' and low_price <= sl_price) or \
+                                         (current_position == 'Short' and high_price >= sl_price)):
+                        self._close_position(symbol, sl_price, "Stop-Loss", size_pct_to_close=100.0)
+                        return
+
+                    # 2. Kademeli Take-Profit Kontrolü
+                    if current_position == 'Long':
+                        # TP1 Kontrolü
+                        if not tp1_hit and tp1_price > 0 and high_price >= tp1_price:
+                            tp1_size = self.params.get('tp1_size_pct', 100)
+                            self._close_position(symbol, tp1_price, "Take-Profit 1", size_pct_to_close=tp1_size)
+                            self.portfolio_data[symbol]['tp1_hit'] = True
+                            # TP1 sonrası SL'i girişe çekme mantığı
+                            if self.params.get('move_sl_to_be', False):
+                                self.portfolio_data[symbol]['stop_loss_price'] = symbol_data.get('entry_price', 0)
+
+                        # TP2 Kontrolü (TP1 vurulmuşsa ve TP2 hedefi varsa)
+                        if self.portfolio_data[symbol][
+                            'tp1_hit'] and not tp2_hit and tp2_price > 0 and high_price >= tp2_price:
+                            # Kalan tüm pozisyonu kapat
+                            self._close_position(symbol, tp2_price, "Take-Profit 2", size_pct_to_close=100.0)
+                            return
+
+                    elif current_position == 'Short':
+                        # TP1 Kontrolü
+                        if not tp1_hit and tp1_price > 0 and low_price <= tp1_price:
+                            tp1_size = self.params.get('tp1_size_pct', 100)
+                            self._close_position(symbol, tp1_price, "Take-Profit 1", size_pct_to_close=tp1_size)
+                            self.portfolio_data[symbol]['tp1_hit'] = True
+                            if self.params.get('move_sl_to_be', False):
+                                self.portfolio_data[symbol]['stop_loss_price'] = symbol_data.get('entry_price', 0)
+
+                        # TP2 Kontrolü
+                        if self.portfolio_data[symbol][
+                            'tp1_hit'] and not tp2_hit and tp2_price > 0 and low_price <= tp2_price:
+                            self._close_position(symbol, tp2_price, "Take-Profit 2", size_pct_to_close=100.0)
+                            return
+
+            # Mum kapanışındaki sinyal mantığı (değişiklik yok)
             is_kline_closed = kline.get('x', False)
             if not is_kline_closed:
                 return
 
+            # ... (fonksiyonun geri kalanı aynı)
             df = self.portfolio_data[symbol]['df']
             kline_timestamp = pd.to_datetime(kline['t'], unit='ms')
 
@@ -238,7 +305,7 @@ class StrategyRunner:
 
             if (current_position == 'Long' and raw_signal == 'Short') or \
                     (current_position == 'Short' and raw_signal == 'Al'):
-                self._close_position(symbol, price, "Karşıt Sinyal")
+                self._close_position(symbol, price, "Karşıt Sinyal", size_pct_to_close=100.0)
             elif current_position is None:
                 if self.position_locks[symbol].acquire(blocking=False):
                     try:

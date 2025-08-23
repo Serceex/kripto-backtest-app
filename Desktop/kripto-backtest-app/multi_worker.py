@@ -17,7 +17,8 @@ from trade_executor import set_futures_leverage_and_margin, place_futures_order,
 # --- Proje Modülleri ---
 from utils import get_binance_klines
 from indicators import generate_all_indicators
-from signals import generate_signals
+# GEREKLİ FONKSİYONLAR İÇİN signals.py DOSYASINDAN İçe Aktarma
+from signals import generate_signals, add_higher_timeframe_trend, filter_signals_with_trend
 from telegram_alert import send_telegram_message
 from database import (
     initialize_db, get_all_strategies, update_position,
@@ -327,12 +328,28 @@ class StrategyRunner:
             # 2. Ham sinyalleri üret
             df_signals = generate_signals(df_indicators, **self.params)
 
+            # ================== DÜZELTME BAŞLANGICI ==================
             # 3. MTA (Çoklu Zaman Dilimi) Filtresini Uygula
             if self.params.get('use_mta', False):
-                # ... (MTA Kodu) ...
-                final_df = df_filtered  # (veya df_signals)
+                higher_tf = self.params.get('higher_timeframe', '4h')
+                trend_ema = self.params.get('trend_ema_period', 50)
+
+                # Üst zaman dilimi verisini çek
+                df_higher = get_binance_klines(symbol, higher_tf, limit=1000)
+
+                if df_higher is not None and not df_higher.empty:
+                    # Trendi hesapla ve alt zaman dilimine ekle
+                    df_with_trend = add_higher_timeframe_trend(df_signals, df_higher, trend_ema)
+                    # Sinyalleri filtrele
+                    df_filtered = filter_signals_with_trend(df_with_trend)
+                    final_df = df_filtered
+                else:
+                    logging.warning(f"UYARI ({self.name}): {symbol} için üst zaman dilimi ({higher_tf}) verisi alınamadı. MTA filtresi atlanıyor.")
+                    final_df = df_signals
             else:
                 final_df = df_signals
+            # ================== DÜZELTME SONU ==================
+
 
             # Ana veri çerçevesini güncel göstergelerle değiştir
             self.portfolio_data[symbol]['df'] = final_df

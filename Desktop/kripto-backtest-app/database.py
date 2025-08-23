@@ -21,7 +21,7 @@ try:
 except Exception as e:
     print(f"--- [HATA] PostgreSQL bağlantı bilgileri okunamadı. Lütfen .streamlit/secrets.toml dosyasını kontrol edin: {e} ---")
     # Uygulamanın çökmemesi için varsayılan değerler atanabilir veya çıkış yapılabilir.
-    st.error("Veritabanı bağlantı bilgileri bulunamadı!")z
+    st.error("Veritabanı bağlantı bilgileri bulunamadı!")
     st.stop()
 
 

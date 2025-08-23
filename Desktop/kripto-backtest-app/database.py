@@ -181,20 +181,50 @@ def get_all_strategies():
     return result
 
 
-def update_position(strategy_id, symbol, position, entry_price, sl_price=0, tp1_price=0, tp2_price=0, tp1_hit=False,
-                    tp2_hit=False):
-    """Bir stratejinin pozisyon durumunu tüm detaylarıyla veritabanında günceller."""
+def update_position(strategy_id, symbol, position, entry_price, sl_price=None, tp1_price=None, tp2_price=None, tp1_hit=None, tp2_hit=None):
+    """
+    Bir stratejinin pozisyon durumunu akıllı bir şekilde günceller.
+    Sadece dolu gelen parametreler güncellenir, böylece yanlışlıkla veri ezilmesi önlenir.
+    """
     with db_lock:
         with get_db_connection() as conn:
-            conn.execute("""
-                INSERT INTO positions (strategy_id, symbol, position, entry_price, stop_loss_price, tp1_price, tp2_price, tp1_hit, tp2_hit)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(strategy_id, symbol) DO UPDATE SET
-                    position=excluded.position, entry_price=excluded.entry_price,
-                    stop_loss_price=excluded.stop_loss_price, tp1_price=excluded.tp1_price,
-                    tp2_price=excluded.tp2_price, tp1_hit=excluded.tp1_hit,
-                    tp2_hit=excluded.tp2_hit
-            """, (strategy_id, symbol, position, entry_price, sl_price, tp1_price, tp2_price, tp1_hit, tp2_hit))
+            # Önce mevcut pozisyonu veritabanından oku (varsa)
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM positions WHERE strategy_id = ? AND symbol = ?", (strategy_id, symbol))
+            existing_pos = cursor.fetchone()
+
+            if existing_pos:
+                # POZİSYON VARSA: UPDATE MANTIĞI
+                updates = {
+                    'position': position,
+                    'entry_price': entry_price,
+                    # Gelen değer None değilse onu kullan, değilse mevcut değeri koru
+                    'stop_loss_price': sl_price if sl_price is not None else existing_pos['stop_loss_price'],
+                    'tp1_price': tp1_price if tp1_price is not None else existing_pos['tp1_price'],
+                    'tp2_price': tp2_price if tp2_price is not None else existing_pos['tp2_price'],
+                    'tp1_hit': tp1_hit if tp1_hit is not None else existing_pos['tp1_hit'],
+                    'tp2_hit': tp2_hit if tp2_hit is not None else existing_pos['tp2_hit'],
+                }
+                cursor.execute("""
+                    UPDATE positions SET
+                        position = :position, entry_price = :entry_price, stop_loss_price = :stop_loss_price,
+                        tp1_price = :tp1_price, tp2_price = :tp2_price, tp1_hit = :tp1_hit, tp2_hit = :tp2_hit
+                    WHERE strategy_id = :strategy_id AND symbol = :symbol
+                """, {**updates, 'strategy_id': strategy_id, 'symbol': symbol})
+            else:
+                # POZİSYON YOKSA: INSERT MANTIĞI
+                # None gelen değerler için varsayılan 0 veya False kullanılır
+                cursor.execute("""
+                    INSERT INTO positions (strategy_id, symbol, position, entry_price, stop_loss_price, tp1_price, tp2_price, tp1_hit, tp2_hit)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    strategy_id, symbol, position, entry_price,
+                    sl_price if sl_price is not None else 0,
+                    tp1_price if tp1_price is not None else 0,
+                    tp2_price if tp2_price is not None else 0,
+                    tp1_hit if tp1_hit is not None else False,
+                    tp2_hit if tp2_hit is not None else False
+                ))
             conn.commit()
 
 

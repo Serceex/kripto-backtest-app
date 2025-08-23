@@ -318,26 +318,15 @@ class StrategyRunner:
 
             # 3. MTA (Çoklu Zaman Dilimi) Filtresini Uygula
             if self.params.get('use_mta', False):
-                higher_tf = self.params.get('higher_timeframe', '4h')
-                trend_ema = self.params.get('trend_ema_period', 50)
-
-                # Üst zaman dilimi verisini çek (limit backtest ile uyumlu)
-                df_higher = get_binance_klines(symbol=symbol, interval=higher_tf, limit=1000)
-
-                if df_higher is not None and not df_higher.empty:
-                    # Trendi ekle ve sinyalleri filtrele
-                    df_with_trend = add_higher_timeframe_trend(df_signals, df_higher, trend_ema)
-                    df_filtered = filter_signals_with_trend(df_with_trend)
-                    final_df = df_filtered
-                else:
-                    logging.warning(
-                        f"UYARI ({self.name}): {symbol} için MTA verisi ({higher_tf}) alınamadı. Filtre atlanıyor.")
-                    final_df = df_signals
+                # ... (MTA Kodu) ...
+                final_df = df_filtered  # (veya df_signals)
             else:
                 final_df = df_signals
 
+            # Ana veri çerçevesini güncel göstergelerle değiştir
+            self.portfolio_data[symbol]['df'] = final_df
 
-            last_row = df_signals.iloc[-1]
+            last_row = final_df.iloc[-1]
             raw_signal = last_row['Signal']
             price = last_row['Close']
 
@@ -359,7 +348,7 @@ class StrategyRunner:
                                 elif raw_signal == 'Short' and self.params.get('signal_direction', 'Both') != 'Long':
                                     new_pos = 'Short'
                                 if new_pos:
-                                    self._open_new_position(symbol, new_pos, price)
+                                    self._open_new_position(symbol, new_pos, price, final_df)
                     finally:
                         self.position_locks[symbol].release()
         except Exception as e:
@@ -369,15 +358,14 @@ class StrategyRunner:
     def _open_new_position(self, symbol, new_pos, entry_price):
         current_strategy_config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
         self.params = current_strategy_config.get('strategy_params', self.params)
-        sl, tp1, tp2 = self._calculate_risk_levels(symbol, new_pos, entry_price)
+        sl, tp1, tp2 = self._calculate_risk_levels(df_with_indicators, symbol, new_pos, entry_price)
 
         # Önce hafızadaki durumu güncelle
-        self.portfolio_data[symbol] = {
+        self.portfolio_data[symbol].update({
             'position': new_pos, 'entry_price': entry_price,
             'stop_loss_price': sl, 'tp1_price': tp1, 'tp2_price': tp2,
-            'tp1_hit': False, 'tp2_hit': False,
-            'df': self.portfolio_data[symbol]['df']  # DataFrame'i koru
-        }
+            'tp1_hit': False, 'tp2_hit': False
+        })
         update_position(self.id, symbol, new_pos, entry_price, sl, tp1, tp2, False, False)
         self.notify_new_position(symbol, new_pos, entry_price, sl, tp1, tp2)
 
@@ -415,7 +403,8 @@ class StrategyRunner:
     def _calculate_risk_levels(self, symbol, position_type, entry_price):
         params = self.params
         stop_loss_price, tp1_price, tp2_price = 0, 0, 0
-        current_atr = self.portfolio_data[symbol]['df'].iloc[-1].get('ATR', 0)
+        current_atr = df_with_indicators.iloc[-1].get('ATR', 0)
+
 
         if position_type == 'Long':
             # === DEĞİŞİKLİK BAŞLANGICI: Yüzde SL kontrolü eklendi ===

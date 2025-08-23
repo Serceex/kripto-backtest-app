@@ -414,7 +414,7 @@ class StrategyRunner:
             logging.info(
                 f"BİLGİ ({self.name}): {symbol} için sinyal kaydedildi ve bildirildi ancak canlı işlem (trading) PASİF.")
 
-    def _calculate_risk_levels(self, symbol, position_type, entry_price):
+    def _calculate_risk_levels(self, df_with_indicators, symbol, position_type, entry_price):
         params = self.params
         stop_loss_price, tp1_price, tp2_price = 0, 0, 0
         current_atr = df_with_indicators.iloc[-1].get('ATR', 0)

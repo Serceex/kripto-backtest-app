@@ -216,7 +216,7 @@ class StrategyRunner:
             time.sleep(5)
 
 
-        def _close_position_manually(self, symbol):
+    def _close_position_manually(self, symbol):
             if not self.portfolio_data.get(symbol, {}).get('position'):
                 logging.info(f"BİLGİ ({self.name}): {symbol} için kapatılacak aktif pozisyon bulunamadı.")
                 return

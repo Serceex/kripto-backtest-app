@@ -26,7 +26,7 @@ from database import (
     initialize_db, get_alarm_history_db, get_all_open_positions,
     get_live_closed_trades_metrics, update_strategy_status,
     issue_manual_action,
-    get_all_rl_models_info,  
+    get_all_rl_models_info,
     get_rl_model_by_id
 )
 from utils import (

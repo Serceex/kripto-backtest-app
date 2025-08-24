@@ -88,11 +88,17 @@ def initialize_db():
             if conn is None: raise Exception("Veritabanı bağlantısı yok.")
             with conn.cursor() as cursor:
                 cursor.execute("""
-                                CREATE TABLE IF NOT EXISTS strategies (
-                                    id TEXT PRIMARY KEY, name TEXT, status TEXT, symbols JSONB, interval TEXT,
-                                    strategy_params JSONB, orchestrator_status TEXT, is_trading_enabled BOOLEAN,
-                                    rl_model_id INTEGER DEFAULT NULL
-                                )""")
+                                                CREATE TABLE IF NOT EXISTS strategies (
+                                                    id TEXT PRIMARY KEY,
+                                                    name TEXT,
+                                                    status TEXT,
+                                                    symbols JSONB,
+                                                    interval TEXT,
+                                                    strategy_params JSONB,
+                                                    orchestrator_status TEXT,
+                                                    is_trading_enabled BOOLEAN,
+                                                    rl_model_id INTEGER DEFAULT NULL
+                                                )""")
                 cursor.execute("""
                 CREATE TABLE IF NOT EXISTS positions (
                     id SERIAL PRIMARY KEY, strategy_id TEXT, symbol TEXT, position TEXT, entry_price REAL,

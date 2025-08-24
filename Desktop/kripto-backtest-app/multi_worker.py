@@ -11,13 +11,14 @@ import signal
 import logging
 import traceback
 from datetime import datetime
+from stable_baselines3 import PPO
+import numpy as np
 from trade_executor import set_futures_leverage_and_margin, place_futures_order, get_open_position_amount, \
     get_symbol_info
 
-# --- Proje Modülleri ---
 from utils import get_binance_klines
 from indicators import generate_all_indicators
-# GEREKLİ FONKSİYONLAR İÇİN signals.py DOSYASINDAN İçe Aktarma
+
 from signals import generate_signals, add_higher_timeframe_trend, filter_signals_with_trend
 from telegram_alert import send_telegram_message
 from database import (
@@ -25,6 +26,7 @@ from database import (
     get_positions_for_strategy, log_alarm_db,
     get_and_clear_pending_actions
 )
+from trading_env import TradingEnv
 
 # --- Loglama Yapılandırması ---
 logging.basicConfig(level=logging.INFO,
@@ -87,6 +89,19 @@ class StrategyRunner:
         self.ws_threads = {}
         self._stop_event = threading.Event()
         self.position_locks = {symbol: threading.Lock() for symbol in self.symbols}
+
+        # --- YENİ: RL Modeli Yükleme ---
+        self.rl_model = None
+        self.rl_model_path = self.params.get('rl_model_path')
+        if self.rl_model_path and os.path.exists(self.rl_model_path):
+            try:
+                logging.info(f"🤖 RL AJANI YÜKLENİYOR ({self.name}): '{self.rl_model_path}'")
+                self.rl_model = PPO.load(self.rl_model_path)
+                logging.info(f"✅ RL Ajanı başarıyla yüklendi: '{self.name}'")
+            except Exception as e:
+                logging.error(f"❌ KRİTİK HATA ({self.name}): RL Ajanı '{self.rl_model_path}' yüklenemedi: {e}")
+                self.rl_model = None  # Hata durumunda modeli None olarak ayarla
+
         self._load_positions()
 
 
@@ -333,63 +348,111 @@ class StrategyRunner:
 
             self.portfolio_data[symbol]['df'] = df
 
-            # 1. Göstergeleri hesapla
-            df_indicators = generate_all_indicators(df, **self.params)
+            # --- YENİ: Sinyal Üretme Mantığı ---
+            raw_signal = 'Bekle'  # Varsayılan sinyal
+            price = df.iloc[-1]['Close']
 
-            # 2. Ham sinyalleri üret
-            df_signals = generate_signals(df_indicators, **self.params)
+            # EĞER RL MODELİ ATANMIŞSA, KARARI AJANA BIRAK
+            if self.rl_model:
+                try:
+                    # 1. Gözlem verisini hazırla (trading_env.py'deki mantıkla aynı)
+                    temp_env = TradingEnv(df)  # Veriyi hazırlamak için geçici bir env oluştur
+                    obs_df = temp_env.df
 
-            # ================== DÜZELTME BAŞLANGICI ==================
-            # 3. MTA (Çoklu Zaman Dilimi) Filtresini Uygula
-            if self.params.get('use_mta', False):
-                higher_tf = self.params.get('higher_timeframe', '4h')
-                trend_ema = self.params.get('trend_ema_period', 50)
+                    # Son adıma ait gözlemi al
+                    last_obs_series = obs_df.iloc[-1]
 
-                # Üst zaman dilimi verisini çek
-                df_higher = get_binance_klines(symbol, higher_tf, limit=1000)
+                    # Ortamdaki ek bilgileri ekle (bakiye, pozisyon, giriş fiyatı)
+                    # Canlı işlemde bakiye takibi karmaşık olacağından, şimdilik temsili değerler kullanıyoruz.
+                    # Asıl önemli olan piyasa verisidir.
+                    current_position_state = 1 if self.portfolio_data.get(symbol, {}).get('position') == 'Long' else 0
+                    entry_price = self.portfolio_data.get(symbol, {}).get('entry_price', 0)
+                    pnl = 0 if entry_price == 0 else (price - entry_price) / entry_price
 
-                if df_higher is not None and not df_higher.empty:
-                    # Trendi hesapla ve alt zaman dilimine ekle
-                    df_with_trend = add_higher_timeframe_trend(df_signals, df_higher, trend_ema)
-                    # Sinyalleri filtrele
-                    df_filtered = filter_signals_with_trend(df_with_trend)
-                    final_df = df_filtered
-                else:
-                    logging.warning(f"UYARI ({self.name}): {symbol} için üst zaman dilimi ({higher_tf}) verisi alınamadı. MTA filtresi atlanıyor.")
-                    final_df = df_signals
+                    additional_info = np.array([10000, current_position_state, entry_price, pnl], dtype=np.float32)
+
+                    # Gözlemi oluştur
+                    obs = np.concatenate((last_obs_series.values.astype(np.float32), additional_info))
+
+                    # 2. Modelden tahmin al
+                    action, _ = self.rl_model.predict(obs, deterministic=True)
+
+                    # 3. Aksiyonu sinyale çevir
+                    if action == 1:
+                        raw_signal = 'Al'
+                    elif action == 2:
+                        raw_signal = 'Short'  # RL ortamında SAT = Short pozisyon açmak
+                    else:
+                        raw_signal = 'Bekle'
+
+                    logging.info(f"🤖 RL AJAN KARARI ({self.name}/{symbol}): Aksiyon={action} -> Sinyal='{raw_signal}'")
+
+                except Exception as e:
+                    logging.error(f"❌ RL AJAN HATA ({self.name}/{symbol}): Sinyal üretilemedi: {e}")
+                    raw_signal = 'Bekle'  # Hata durumunda bekle
+
+            # EĞER RL MODELİ YOKSA, STANDART İNDİKATÖR MANTIĞINI KULLAN
             else:
-                final_df = df_signals
-            # ================== DÜZELTME SONU ==================
 
+                # 1. Göstergeleri hesapla
+                df_indicators = generate_all_indicators(df, **self.params)
 
-            # Ana veri çerçevesini güncel göstergelerle değiştir
-            self.portfolio_data[symbol]['df'] = final_df
+                # 2. Ham sinyalleri üret
+                df_signals = generate_signals(df_indicators, **self.params)
 
-            last_row = final_df.iloc[-1]
-            raw_signal = last_row['Signal']
-            price = last_row['Close']
+                # ================== DÜZELTME BAŞLANGICI ==================
+                # 3. MTA (Çoklu Zaman Dilimi) Filtresini Uygula
+                if self.params.get('use_mta', False):
+                    higher_tf = self.params.get('higher_timeframe', '4h')
+                    trend_ema = self.params.get('trend_ema_period', 50)
 
-            current_position = self.portfolio_data.get(symbol, {}).get('position')
+                    # Üst zaman dilimi verisini çek
+                    df_higher = get_binance_klines(symbol, higher_tf, limit=1000)
 
-            if (current_position == 'Long' and raw_signal == 'Short') or \
-                    (current_position == 'Short' and raw_signal == 'Al'):
-                self._close_position(symbol, price, "Karşıt Sinyal", size_pct_to_close=100.0)
-            elif current_position is None:
-                if self.position_locks[symbol].acquire(blocking=False):
-                    try:
-                        if self.portfolio_data.get(symbol, {}).get('position') is None:
-                            self.config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
-                            if self.config.get('status') == 'running' and self.config.get(
-                                    'orchestrator_status') == 'active':
-                                new_pos = None
-                                if raw_signal == 'Al' and self.params.get('signal_direction', 'Both') != 'Short':
-                                    new_pos = 'Long'
-                                elif raw_signal == 'Short' and self.params.get('signal_direction', 'Both') != 'Long':
-                                    new_pos = 'Short'
-                                if new_pos:
-                                    self._open_new_position(symbol, new_pos, price, final_df)
-                    finally:
-                        self.position_locks[symbol].release()
+                    if df_higher is not None and not df_higher.empty:
+                        # Trendi hesapla ve alt zaman dilimine ekle
+                        df_with_trend = add_higher_timeframe_trend(df_signals, df_higher, trend_ema)
+                        # Sinyalleri filtrele
+                        df_filtered = filter_signals_with_trend(df_with_trend)
+                        final_df = df_filtered
+                    else:
+                        logging.warning(
+                            f"UYARI ({self.name}): {symbol} için üst zaman dilimi ({higher_tf}) verisi alınamadı. MTA filtresi atlanıyor.")
+                        final_df = df_signals
+                else:
+                    final_df = df_signals
+                # ================== DÜZELTME SONU ==================
+
+                # Ana veri çerçevesini güncel göstergelerle değiştir
+                self.portfolio_data[symbol]['df'] = final_df
+
+                last_row = final_df.iloc[-1]
+                raw_signal = last_row['Signal']
+                price = last_row['Close']
+
+                current_position = self.portfolio_data.get(symbol, {}).get('position')
+
+                if (current_position == 'Long' and raw_signal == 'Short') or \
+                        (current_position == 'Short' and raw_signal == 'Al'):
+                    self._close_position(symbol, price, "Karşıt Sinyal", size_pct_to_close=100.0)
+                elif current_position is None:
+                    if self.position_locks[symbol].acquire(blocking=False):
+                        try:
+                            if self.portfolio_data.get(symbol, {}).get('position') is None:
+                                self.config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
+                                if self.config.get('status') == 'running' and self.config.get(
+                                        'orchestrator_status') == 'active':
+                                    new_pos = None
+                                    if raw_signal == 'Al' and self.params.get('signal_direction', 'Both') != 'Short':
+                                        new_pos = 'Long'
+                                    elif raw_signal == 'Short' and self.params.get('signal_direction',
+                                                                                   'Both') != 'Long':
+                                        new_pos = 'Short'
+                                    if new_pos:
+                                        self._open_new_position(symbol, new_pos, price, final_df)
+                        finally:
+                            self.position_locks[symbol].release()
+
         except Exception as e:
             logging.error(f"KRİTİK HATA ({symbol}, {self.name}): Mesaj işlenirken sorun: {e}")
             logging.error(traceback.format_exc())

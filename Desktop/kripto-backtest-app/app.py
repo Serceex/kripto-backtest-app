@@ -1287,9 +1287,14 @@ if page == "🔬 Laboratuvar":
                                                                strategy_config.get('strategy_params', {}))
 
                             st.markdown(f"**Pozisyon:** {row['Pozisyon']} | **Sinyal:** {current_signal}")
-                            st.caption(f"Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`")
-                            st.caption(
-                                f"SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`")
+
+                            st.markdown(
+                                f"<small>Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`</small>",
+                                unsafe_allow_html=True)
+                            st.markdown(
+                                f"<small>SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`</small>",
+                                unsafe_allow_html=True)
+
 
                             if st.button("Kapat", key=f"close_{row['strategy_id']}_{row['Sembol']}",
                                          use_container_width=True):
@@ -1316,9 +1321,14 @@ if page == "🔬 Laboratuvar":
                                 current_signal = get_latest_signal(row['Sembol'], strategy_config.get('interval', '1h'),
                                                                    strategy_config.get('strategy_params', {}))
                                 st.markdown(f"**Pozisyon:** {row['Pozisyon']} | **Sinyal:** {current_signal}")
-                                st.caption(f"Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`")
-                                st.caption(
-                                    f"SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`")
+
+                                st.markdown(
+                                    f"<small>Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`</small>",
+                                    unsafe_allow_html=True)
+                                st.markdown(
+                                    f"<small>SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`</small>",
+                                    unsafe_allow_html=True)
+
                                 if st.button("Kapat", key=f"close_{row['strategy_id']}_{row['Sembol']}",
                                              use_container_width=True):
                                     issue_manual_action(row['strategy_id'], row['Sembol'], 'CLOSE_POSITION')
@@ -1342,9 +1352,14 @@ if page == "🔬 Laboratuvar":
                                 current_signal = get_latest_signal(row['Sembol'], strategy_config.get('interval', '1h'),
                                                                    strategy_config.get('strategy_params', {}))
                                 st.markdown(f"**Pozisyon:** {row['Pozisyon']} | **Sinyal:** {current_signal}")
-                                st.caption(f"Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`")
-                                st.caption(
-                                    f"SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`")
+                              
+                                st.markdown(
+                                    f"<small>Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`</small>",
+                                    unsafe_allow_html=True)
+                                st.markdown(
+                                    f"<small>SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`</small>",
+                                    unsafe_allow_html=True)
+
                                 if st.button("Kapat", key=f"close_{row['strategy_id']}_{row['Sembol']}",
                                              use_container_width=True):
                                     issue_manual_action(row['strategy_id'], row['Sembol'], 'CLOSE_POSITION')

@@ -5,6 +5,7 @@ from gymnasium import spaces
 import numpy as np
 import pandas as pd
 import pandas_ta as ta
+import math
 
 from indicators import generate_all_indicators
 from market_regime import analyze_volatility, analyze_trend
@@ -103,39 +104,53 @@ class TradingEnv(gym.Env):
         current_price = self.df['Close'].iloc[self.current_step]
         prev_net_worth = self.net_worth
         transaction_cost = 0
+        reward = 0  # Ödül her adımda sıfırlanır
 
-        if action == 1:
+        # İşlem yapma (Al/Tut/Sat)
+        if action == 1:  # Al
             if self.position == 0:
+                # Yeni pozisyon açarken ödül sıfır, sadece komisyon cezası ekliyoruz
                 self.position = 1
                 self.entry_price = current_price
                 transaction_cost = self.commission
-        elif action == 2:
+        elif action == 2:  # Sat
             if self.position == 1:
+                # Pozisyonu kapat
+                pnl = (self.net_worth / prev_net_worth) - 1
+                # Kapatılan pozisyondan elde edilen kar/zarar, doğrudan ödül olarak verilir
+                reward += pnl * 100  # Yüzde olarak ödüllendir
                 self.position = 0
-                transaction_cost = self.commission
                 self.entry_price = 0
+                transaction_cost = self.commission
 
+        # Pozisyon açıksa (Tutma)
         if self.position == 1:
+            # Anlık PnL'i ödül olarak ekle
+            instant_pnl = (current_price - self.entry_price) / self.entry_price
+            reward += instant_pnl * 100  # Anlık yüzde karı ödül olarak ekle
+
+            # Varlık değerini güncelle
             self.net_worth = self.balance * (current_price / self.entry_price)
+
+            # Drawdown cezası ekle (sermaye azalırsa)
+            if self.net_worth < self.initial_balance:
+                drawdown_penalty = (self.initial_balance - self.net_worth) / self.initial_balance
+                reward -= drawdown_penalty * 5  # Cezayı daha etkili hale getirmek için çarpan kullan
         else:
             self.balance = self.net_worth
 
+        # Komisyon cezasını uygula
+        if transaction_cost > 0:
+            reward -= transaction_cost * 1000  # Komisyonu cezalandır
+
         self.net_worth *= (1 - transaction_cost)
 
-        daily_return = (self.net_worth / prev_net_worth) - 1
-        self.returns_history.append(daily_return)
+        # Bitirme koşulları
+        self.done = self.current_step >= len(self.df) - 1 or self.net_worth <= self.initial_balance / 2
 
-        if len(self.returns_history) > 1:
-            sharpe_ratio = self._calculate_sharpe_ratio(self.returns_history)
-            reward = sharpe_ratio
-        else:
-            reward = 0
-
-        if self.current_step >= len(self.df) - 1 or self.net_worth <= self.initial_balance / 2:
-            self.done = True
-
+        # Epizod sonunda açık pozisyon varsa ceza
         if self.done and self.position == 1:
-            reward -= 0.1
+            reward -= 5.0  # Kapatılmamış pozisyon için ceza
 
         return self._get_obs(), reward, self.done, False, {}
 

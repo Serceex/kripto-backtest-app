@@ -1560,6 +1560,10 @@ if page == "🔬 Laboratuvar":
 
             st.subheader("2. Eğitilmiş Ajanı Test Et (Backtest)")
 
+            # --- DEĞİŞİKLİK BAŞLANGICI ---
+            # `database.py` dosyasından yeni fonksiyonu içe aktar
+            from database import remove_rl_model_by_id
+
             st.session_state.rl_models_list = get_all_rl_models_info()
             if not st.session_state.rl_models_list:
                 st.warning("Henüz veritabanında kayıtlı bir model bulunmuyor. Lütfen önce bir ajan eğitin.")
@@ -1567,11 +1571,25 @@ if page == "🔬 Laboratuvar":
                 model_options_test = {
                     model['id']: f"{model['name']} (Eğitim: {model['created_at'].strftime('%Y-%m-%d %H:%M')})" for model
                     in st.session_state.rl_models_list}
-                selected_model_id_test = st.selectbox(
-                    "Test edilecek eğitilmiş modeli seçin",
-                    options=model_options_test.keys(),
-                    format_func=lambda x: model_options_test[x]
-                )
+
+                # Selectbox ve butonu yan yana getirmek için sütun yapısı kullan
+                col1_test, col2_test = st.columns([3, 1])
+                with col1_test:
+                    selected_model_id_test = st.selectbox(
+                        "Test edilecek eğitilmiş modeli seçin",
+                        options=model_options_test.keys(),
+                        format_func=lambda x: model_options_test[x],
+                        key="rl_model_selectbox"  # Butonun selectbox'ın değerine erişmesi için bir anahtar ekledik
+                    )
+                with col2_test:
+                    st.markdown("<div style='height: 28px;'></div>",
+                                unsafe_allow_html=True)  # Dikey hizalama için boşluk
+                    if st.button("🗑️ Sil", key="delete_rl_model", use_container_width=True,
+                                 help="Seçili modeli kalıcı olarak siler."):
+                        if selected_model_id_test:
+                            remove_rl_model_by_id(selected_model_id_test)
+                            st.toast("Model başarıyla silindi.", icon="🗑️")
+                            st.rerun()
 
                 if st.button("📈 RL Ajanı ile Backtest Yap"):
                     model_info = next((m for m in st.session_state.rl_models_list if m['id'] == selected_model_id_test),

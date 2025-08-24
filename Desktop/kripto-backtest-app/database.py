@@ -405,3 +405,12 @@ def get_live_closed_trades_metrics(strategy_id=None):
         "Ortalama Kayıp (%)": round(avg_loss, 2),
         "Profit Factor": round(profit_factor, 2)
     }
+
+
+def remove_rl_model_by_id(model_id):
+    """Veritabanından bir RL modelini ID'sine göre siler."""
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM rl_models WHERE id = %s", (model_id,))
+        conn.commit()
+    print(f"--- [DATABASE] RL Modeli (ID: {model_id}) başarıyla silindi. ---")

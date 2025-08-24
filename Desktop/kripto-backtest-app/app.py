@@ -90,7 +90,7 @@ def apply_full_strategy_params(strategy, is_editing=False):
         st.toast(f"'{strategy_name}' için düzenleme modu aktif!", icon="✍️")
     else:
         st.toast(f"'{strategy_name}' stratejisinin tüm parametreleri yüklendi!", icon="✅")
-    st.rerun()
+
 
 
 def run_rl_backtest(model_path, backtest_df):
@@ -1284,8 +1284,7 @@ if page == "🔬 Laboratuvar":
                                          use_container_width=True):
                                 issue_manual_action(row['strategy_id'], row['Sembol'], 'CLOSE_POSITION')
                                 st.toast(f"{row['Sembol']} için kapatma emri gönderildi!", icon="📨")
-                                time.sleep(1);
-                                st.rerun()
+                                
 
                     # --- İkinci ve Üçüncü Kartlar ---
                     if i + 1 < len(positions_list):

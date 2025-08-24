@@ -526,6 +526,8 @@ class StrategyRunner:
                 logging.error(f"HATA ({self.name}): Kaldıraç veya marjin tipi ayarlanamadığı için pozisyon açılmıyor.")
                 return
             order_side = 'BUY' if new_pos == 'Long' else 'SELL'
+            sl, tp1, tp2 = self._calculate_risk_levels(df_with_indicators, symbol, new_pos, entry_price)
+
             order_result = place_futures_order(symbol, order_side, quantity_to_trade)
             if order_result:
                 logging.info(
@@ -535,18 +537,27 @@ class StrategyRunner:
                 tp_side = 'SELL' if new_pos == 'Long' else 'BUY'
                 sl_side = 'SELL' if new_pos == 'Long' else 'BUY'
 
+                # SL emrini tüm pozisyon için gönder
                 if sl > 0:
                     place_futures_stop_market_order(symbol, sl_side, quantity_to_trade, sl)
 
-                # Sadece tp1 veya tp2 emri varsa gönder
+                # TP1 ve TP2 emirlerini parsiyel olarak gönder
                 if tp1 > 0:
-                    place_futures_take_profit_order(symbol, tp_side, quantity_to_trade, tp1)
+                    tp1_size = self.params.get('tp1_size_pct', 50) / 100.0
+                    tp1_quantity = round(quantity_to_trade * tp1_size, quantity_precision)
+                    if tp1_quantity > 0:
+                        place_futures_take_profit_order(symbol, tp_side, tp1_quantity, tp1)
 
-                # Not: Eğer pozisyonu tek bir TP2 emriyle kapatmak isterseniz, bu mantığı düzenlemeniz gerekir.
-                # Mevcut kod, kademeli kapatma (TP1 sonrası TP2) mantığını destekler.
+                if tp2 > 0:
+                    tp2_size = self.params.get('tp2_size_pct', 50) / 100.0
+                    tp2_quantity = round(quantity_to_trade * tp2_size, quantity_precision)
+                    if tp2_quantity > 0:
+                        place_futures_take_profit_order(symbol, tp_side, tp2_quantity, tp2)
+
             else:
                 logging.error(
                     f"HATA ({self.name}): {symbol} için {order_side} emri Binance'e gönderilemedi. Pozisyon veritabanında 'paper trade' olarak kalacak.")
+
         else:
             logging.info(
                 f"BİLGİ ({self.name}): {symbol} için sinyal kaydedildi ve bildirildi ancak canlı işlem (trading) PASİF.")

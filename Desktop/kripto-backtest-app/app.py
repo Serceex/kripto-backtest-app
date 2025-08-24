@@ -1235,6 +1235,7 @@ if page == "🔬 Laboratuvar":
                         else:
                             st.warning(f"Bu döngü atlandı. Sebep: {result.get('reason', 'Bilinmiyor')}")
 
+        # app.py dosyasındaki "with tab4:" ile başlayan mevcut bloğu silip bunu yapıştırın
 
         with tab4:
             st.subheader("📊 Anlık Açık Pozisyonlar")
@@ -1257,80 +1258,100 @@ if page == "🔬 Laboratuvar":
                     axis=1
                 )
 
-                # --- BAŞLANGIÇ: FİNAL KART TASARIMI ---
+                # --- BAŞLANGIÇ: 3'LÜ MİNİ KART TASARIMI ---
                 positions_list = open_positions_df.to_dict('records')
 
-                for i in range(0, len(positions_list), 2):
-                    col1, col2 = st.columns(2)
+                # Her satırda 3 pozisyon olacak şekilde döngü kur
+                for i in range(0, len(positions_list), 3):
+                    # Her döngüde 3 sütunluk yeni bir satır oluştur
+                    col1, col2, col3 = st.columns(3)
 
                     # --- Birinci Pozisyon Kartı (SOL SÜTUN) ---
                     with col1:
-                        row1 = positions_list[i]
+                        row = positions_list[i]
                         with st.container(border=True):
-                            top_col1, top_col2 = st.columns([1, 1])
-                            emoji = "🟢" if row1['Pozisyon'] == 'Long' else "🔴"
-                            pnl_color = "green" if row1['PnL (%)'] >= 0 else "red"
-                            top_col1.markdown(f"**{emoji} {row1['Sembol']}**")
-                            top_col2.markdown(
-                                f"<p style='color:{pnl_color}; font-weight: bold; text-align: right; margin-bottom: -1rem;'>{row1['PnL (%)']:.2f}%</p>",
-                                unsafe_allow_html=True)
-                            st.caption(f"{row1['Strateji Adı']}")
+                            pnl_color = "green" if row['PnL (%)'] >= 0 else "red"
+                            emoji = "🟢" if row['Pozisyon'] == 'Long' else "🔴"
+                            # Sembol ve PnL'yi aynı satırda birleştir
+                            st.markdown(f"""
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: -0.5rem;">
+                                    <span style="font-weight: bold;">{emoji} {row['Sembol']}</span>
+                                    <span style="color:{pnl_color}; font-weight: bold;">{row['PnL (%)']:.2f}%</span>
+                                </div>
+                            """, unsafe_allow_html=True)
+                            st.caption(f"{row['Strateji Adı']}")
 
-                            strategy_id = row1['strategy_id']
+                            strategy_id = row['strategy_id']
                             strategy_config = all_strategies.get(strategy_id, {})
-                            current_signal = get_latest_signal(row1['Sembol'], strategy_config.get('interval', '1h'),
+                            current_signal = get_latest_signal(row['Sembol'], strategy_config.get('interval', '1h'),
                                                                strategy_config.get('strategy_params', {}))
 
-                            # Pozisyon ve Sinyal bilgilerini tek satırda birleştir
-                            st.markdown(f"**Pozisyon:** {row1['Pozisyon']} | **Sinyal:** {current_signal}")
-
-                            st.caption(f"Giriş: `{row1['Giriş Fiyatı']:.4f}` | Anlık: `{row1['Anlık Fiyat']:.4f}`")
-                            # TP2 bilgisini ekle
+                            st.markdown(f"**Pozisyon:** {row['Pozisyon']} | **Sinyal:** {current_signal}")
+                            st.caption(f"Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`")
                             st.caption(
-                                f"SL: `{row1['Stop Loss']:.4f}` | TP1: `{row1['TP1']:.4f}` | TP2: `{row1['TP2']:.4f}`")
+                                f"SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`")
 
-                            if st.button("Kapat", key=f"close_{row1['strategy_id']}_{row1['Sembol']}",
+                            if st.button("Kapat", key=f"close_{row['strategy_id']}_{row['Sembol']}",
                                          use_container_width=True):
-                                issue_manual_action(row1['strategy_id'], row1['Sembol'], 'CLOSE_POSITION')
-                                st.toast(f"{row1['Sembol']} için kapatma emri gönderildi!", icon="📨")
+                                issue_manual_action(row['strategy_id'], row['Sembol'], 'CLOSE_POSITION')
+                                st.toast(f"{row['Sembol']} için kapatma emri gönderildi!", icon="📨")
                                 time.sleep(1);
                                 st.rerun()
 
-                    # --- İkinci Pozisyon Kartı (SAĞ SÜTUN) ---
+                    # --- İkinci ve Üçüncü Kartlar (eğer varsa) ---
+                    # Bu yapı, kod tekrarını azaltır ve daha temiz bir görünüm sağlar
                     if i + 1 < len(positions_list):
                         with col2:
-                            row2 = positions_list[i + 1]
+                            row = positions_list[i + 1]
+                            # (Kart içeriği tekrarı)
                             with st.container(border=True):
-                                top_col1, top_col2 = st.columns([1, 1])
-                                emoji = "🟢" if row2['Pozisyon'] == 'Long' else "🔴"
-                                pnl_color = "green" if row2['PnL (%)'] >= 0 else "red"
-                                top_col1.markdown(f"**{emoji} {row2['Sembol']}**")
-                                top_col2.markdown(
-                                    f"<p style='color:{pnl_color}; font-weight: bold; text-align: right; margin-bottom: -1rem;'>{row2['PnL (%)']:.2f}%</p>",
+                                pnl_color = "green" if row['PnL (%)'] >= 0 else "red"
+                                emoji = "🟢" if row['Pozisyon'] == 'Long' else "🔴"
+                                st.markdown(
+                                    f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: -0.5rem;"><span style="font-weight: bold;">{emoji} {row['Sembol']}</span><span style="color:{pnl_color}; font-weight: bold;">{row['PnL (%)']:.2f}%</span></div>""",
                                     unsafe_allow_html=True)
-                                st.caption(f"{row2['Strateji Adı']}")
-
-                                strategy_id = row2['strategy_id']
+                                st.caption(f"{row['Strateji Adı']}")
+                                strategy_id = row['strategy_id']
                                 strategy_config = all_strategies.get(strategy_id, {})
-                                current_signal = get_latest_signal(row2['Sembol'],
-                                                                   strategy_config.get('interval', '1h'),
+                                current_signal = get_latest_signal(row['Sembol'], strategy_config.get('interval', '1h'),
                                                                    strategy_config.get('strategy_params', {}))
-
-                                # Pozisyon ve Sinyal bilgilerini tek satırda birleştir
-                                st.markdown(f"**Pozisyon:** {row2['Pozisyon']} | **Sinyal:** {current_signal}")
-
-                                st.caption(f"Giriş: `{row2['Giriş Fiyatı']:.4f}` | Anlık: `{row2['Anlık Fiyat']:.4f}`")
-                                # TP2 bilgisini ekle
+                                st.markdown(f"**Pozisyon:** {row['Pozisyon']} | **Sinyal:** {current_signal}")
+                                st.caption(f"Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`")
                                 st.caption(
-                                    f"SL: `{row2['Stop Loss']:.4f}` | TP1: `{row2['TP1']:.4f}` | TP2: `{row2['TP2']:.4f}`")
-
-                                if st.button("Kapat", key=f"close_{row2['strategy_id']}_{row2['Sembol']}",
+                                    f"SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`")
+                                if st.button("Kapat", key=f"close_{row['strategy_id']}_{row['Sembol']}",
                                              use_container_width=True):
-                                    issue_manual_action(row2['strategy_id'], row2['Sembol'], 'CLOSE_POSITION')
-                                    st.toast(f"{row2['Sembol']} için kapatma emri gönderildi!", icon="📨")
+                                    issue_manual_action(row['strategy_id'], row['Sembol'], 'CLOSE_POSITION')
+                                    st.toast(f"{row['Sembol']} için kapatma emri gönderildi!", icon="📨")
                                     time.sleep(1);
                                     st.rerun()
-                # --- BİTİŞ: FİNAL KART TASARIMI ---
+
+                    if i + 2 < len(positions_list):
+                        with col3:
+                            row = positions_list[i + 2]
+                            # (Kart içeriği tekrarı)
+                            with st.container(border=True):
+                                pnl_color = "green" if row['PnL (%)'] >= 0 else "red"
+                                emoji = "🟢" if row['Pozisyon'] == 'Long' else "🔴"
+                                st.markdown(
+                                    f"""<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: -0.5rem;"><span style="font-weight: bold;">{emoji} {row['Sembol']}</span><span style="color:{pnl_color}; font-weight: bold;">{row['PnL (%)']:.2f}%</span></div>""",
+                                    unsafe_allow_html=True)
+                                st.caption(f"{row['Strateji Adı']}")
+                                strategy_id = row['strategy_id']
+                                strategy_config = all_strategies.get(strategy_id, {})
+                                current_signal = get_latest_signal(row['Sembol'], strategy_config.get('interval', '1h'),
+                                                                   strategy_config.get('strategy_params', {}))
+                                st.markdown(f"**Pozisyon:** {row['Pozisyon']} | **Sinyal:** {current_signal}")
+                                st.caption(f"Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`")
+                                st.caption(
+                                    f"SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`")
+                                if st.button("Kapat", key=f"close_{row['strategy_id']}_{row['Sembol']}",
+                                             use_container_width=True):
+                                    issue_manual_action(row['strategy_id'], row['Sembol'], 'CLOSE_POSITION')
+                                    st.toast(f"{row['Sembol']} için kapatma emri gönderildi!", icon="📨")
+                                    time.sleep(1);
+                                    st.rerun()
+                # --- BİTİŞ: 3'LÜ MİNİ KART TASARIMI ---
 
         # Sekme 5: Alarm Geçmişi
         with tab5:

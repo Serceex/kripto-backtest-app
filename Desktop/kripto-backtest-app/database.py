@@ -219,8 +219,9 @@ def issue_manual_action(strategy_id, symbol, action):
     timestamp = datetime.now()
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("INSERT INTO manual_actions (strategy_id, symbol, action, timestamp) VALUES (%s, %s, %s, %s)",
-                         (strategy_id, symbol, action, timestamp))
+            # 'status' sütununu 'pending' olarak ekliyoruz
+            cursor.execute("INSERT INTO manual_actions (strategy_id, symbol, action, timestamp, status) VALUES (%s, %s, %s, %s, %s)",
+                         (strategy_id, symbol, action, timestamp, 'pending'))
         conn.commit()
 
 def get_and_clear_pending_actions(strategy_id):

@@ -1155,11 +1155,13 @@ if page == "🔬 Laboratuvar":
                                 new_trade_amount = st.session_state[f"amount_{strategy_id_to_update}"]
                                 new_trade_status = st.session_state[f"trade_{strategy_id_to_update}"]
                                 new_telegram_status = st.session_state[f"telegram_{strategy_id_to_update}"]
+                                new_margin_type = st.session_state[f"margin_{strategy_id_to_update}"]
 
                                 updated_params = strategy_to_update.get('strategy_params', {}).copy()
                                 updated_params['leverage'] = new_leverage
                                 updated_params['trade_amount_usdt'] = new_trade_amount
                                 updated_params['telegram_enabled'] = True if new_telegram_status == "Evet" else False
+                                updated_params['margin_type'] = new_margin_type
 
                                 strategy_to_update['strategy_params'] = updated_params
                                 strategy_to_update[
@@ -1172,28 +1174,30 @@ if page == "🔬 Laboratuvar":
                             # Sütunları 4'e çıkarıyoruz
                             trade_cols = st.columns(4)
 
-                            trade_cols[0].slider(
+                            # Yeni: Marjin Tipi Seçimi
+                            margin_type_options = ["ISOLATED", "CROSSED"]
+                            margin_type = trade_cols[0].radio(
+                                "Marjin Tipi", margin_type_options,
+                                index=margin_type_options.index(params.get('margin_type', 'ISOLATED')),
+                                key=f"margin_{strategy_id}",
+                                on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy)
+                            )
+
+                            trade_cols[1].slider(
                                 "Kaldıraç", 1, 50, params.get('leverage', 5),
                                 key=f"lev_{strategy_id}",
                                 # kwargs ile doğru stratejiyi fonksiyona iletiyoruz
                                 on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy)
                             )
-                            trade_cols[1].number_input(
+                            trade_cols[2].number_input(
                                 "Tutar ($)", min_value=5.0, value=params.get('trade_amount_usdt', 10.0),
                                 key=f"amount_{strategy_id}",
                                 on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy)
                             )
-                            trade_cols[2].radio(
+                            trade_cols[3].radio(
                                 "Borsada İşlem", ["Aktif", "Pasif"],
                                 index=0 if strategy.get('is_trading_enabled', False) else 1,
                                 key=f"trade_{strategy_id}",
-                                on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy),
-                                horizontal=True
-                            )
-                            trade_cols[3].radio(
-                                "Telegram Bildirim", ["Evet", "Hayır"],
-                                index=0 if params.get('telegram_enabled', True) else 1,
-                                key=f"telegram_{strategy_id}",
                                 on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy),
                                 horizontal=True
                             )

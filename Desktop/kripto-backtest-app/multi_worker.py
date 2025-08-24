@@ -269,71 +269,69 @@ class StrategyRunner:
         # Veritabanındaki pozisyonu temizle
         update_position(self.id, symbol, None, 0, 0, 0, 0, False, False)
 
-
-
-    def _on_message(self, ws, message, symbol):
+    def _on_message(self, ws, message):
+        """WebSocket'ten gelen mesajları işler."""
         try:
-            data = json.loads(message)
-            kline = data.get('k')
-            if not kline: return
+            json_message = json.loads(message)
+            if 'k' in json_message:
+                kline = json_message['k']
+                symbol = kline['s']
+                is_closed = kline['x']
 
-            high_price = float(kline['h'])
-            low_price = float(kline['l'])
+                # Sadece ilgili stratejinin sembollerini dinle
+                if symbol not in self.symbols_to_track:
+                    return
 
-            # === DEĞİŞİKLİK: HER SEFERİNDE VERİTABANINDAN GÜNCEL POZİSYON BİLGİSİNİ AL ===
-            all_positions_from_db = get_positions_for_strategy(self.id)
-            symbol_data_from_db = all_positions_from_db.get(symbol)
+                high_price = float(kline['h'])
+                low_price = float(kline['l'])
+                close_price = float(kline['c'])
 
-            if symbol_data_from_db and symbol_data_from_db.get('position'):
-                with self.position_locks[symbol]:
-                    # Kilitten sonra verinin hala geçerli olduğunu teyit et
-                    current_pos_check = get_positions_for_strategy(self.id).get(symbol)
-                    if not current_pos_check or not current_pos_check.get('position'):
-                        return
+                # Log için son fiyatı kaydet
+                self.last_prices[symbol] = close_price
 
-                    # Veritabanını tek gerçek kaynak olarak kullan (GİRİNTİ DÜZELTİLDİ)
-                    current_position = current_pos_check.get('position')
-                    sl_price = current_pos_check.get('stop_loss_price', 0)
-                    tp1_price = current_pos_check.get('tp1_price', 0)
-                    tp2_price = current_pos_check.get('tp2_price', 0)
-                    tp1_hit = bool(current_pos_check.get('tp1_hit', False))
-                    tp2_hit = bool(current_pos_check.get('tp2_hit', False))
+                # --- Mevcut açık pozisyonlar için SL/TP kontrolü ---
+                open_position = self.portfolio_data.get(symbol, {})
+                if open_position and open_position.get('position'):
+                    pos_type = open_position['position']
+                    sl_price = open_position.get('stop_loss_price')
+                    tp1_price = open_position.get('tp1_price')
+                    tp2_price = open_position.get('tp2_price')
 
-                    # 1. Stop-Loss Kontrolü (Tüm pozisyonu kapatır)
-                    if sl_price > 0 and ((current_position == 'Long' and low_price <= sl_price) or \
-                                         (current_position == 'Short' and high_price >= sl_price)):
+                    # LONG Pozisyon için kontrol
+                    if pos_type == 'Long':
+                        # Stop-Loss kontrolü
+                        if sl_price and low_price <= sl_price:
+                            self._close_position(symbol, sl_price, "Stop-Loss")
+                            return  # Pozisyon kapandığı için döngüden çık
 
-                        self._close_position(symbol, sl_price, "Stop-Loss", size_pct_to_close=100.0)
-                        return
+                        # Take-Profit 1 kontrolü (henüz TP1 vurulmadıysa)
+                        if tp1_price and not open_position.get('tp1_hit', False) and high_price >= tp1_price:
+                            tp1_size_pct = self.params.get('tp1_size_pct', 50)
+                            self._close_position(symbol, tp1_price, "Take-Profit 1", size_pct_to_close=tp1_size_pct)
 
-                    # 2. Kademeli Take-Profit Kontrolü
-                    if current_position == 'Long':
-                        # TP1 Kontrolü
-                        if not tp1_hit and tp1_price > 0 and high_price >= tp1_price:
-                            tp1_size = self.params.get('tp1_size_pct', 100)
-                            self._close_position(symbol, tp1_price, "Take-Profit 1", size_pct_to_close=tp1_size)
-                            # TP1 sonrası SL'i girişe çekme mantığı
-                            if self.params.get('move_sl_to_be', False):
-                                self.portfolio_data[symbol]['stop_loss_price'] = symbol_data.get('entry_price', 0)
+                        # Take-Profit 2 kontrolü (TP1 vurulduysa)
+                        if open_position.get('tp1_hit', False) and tp2_price and not open_position.get('tp2_hit',
+                                                                                                       False) and high_price >= tp2_price:
+                            tp2_size_pct = self.params.get('tp2_size_pct', 50)
+                            self._close_position(symbol, tp2_price, "Take-Profit 2", size_pct_to_close=tp2_size_pct)
 
-                        # TP2 Kontrolü (TP1 vurulmuşsa ve TP2 hedefi varsa)
-                        if tp1_hit and not tp2_hit and tp2_price > 0 and high_price >= tp2_price:
-                            # Kalan tüm pozisyonu kapat
-                            self._close_position(symbol, tp2_price, "Take-Profit 2", size_pct_to_close=100.0)
-                            return
+                    # SHORT Pozisyon için kontrol
+                    elif pos_type == 'Short':
+                        # Stop-Loss kontrolü
+                        if sl_price and high_price >= sl_price:
+                            self._close_position(symbol, sl_price, "Stop-Loss")
+                            return  # Pozisyon kapandığı için döngüden çık
 
-                    elif current_position == 'Short':
-                        # TP1 Kontrolü
-                        if not tp1_hit and tp1_price > 0 and low_price <= tp1_price:
-                            tp1_size = self.params.get('tp1_size_pct', 100)
-                            self._close_position(symbol, tp1_price, "Take-Profit 1", size_pct_to_close=tp1_size)
-                            if self.params.get('move_sl_to_be', False):
-                                self.portfolio_data[symbol]['stop_loss_price'] = symbol_data.get('entry_price', 0)
+                        # Take-Profit 1 kontrolü (henüz TP1 vurulmadıysa)
+                        if tp1_price and not open_position.get('tp1_hit', False) and low_price <= tp1_price:
+                            tp1_size_pct = self.params.get('tp1_size_pct', 50)
+                            self._close_position(symbol, tp1_price, "Take-Profit 1", size_pct_to_close=tp1_size_pct)
 
-                        # TP2 Kontrolü
-                        if tp1_hit and not tp2_hit and tp2_price > 0 and low_price <= tp2_price:
-                            self._close_position(symbol, tp2_price, "Take-Profit 2", size_pct_to_close=100.0)
-                            return
+                        # Take-Profit 2 kontrolü (TP1 vurulduysa)
+                        if open_position.get('tp1_hit', False) and tp2_price and not open_position.get('tp2_hit',
+                                                                                                       False) and low_price <= tp2_price:
+                            tp2_size_pct = self.params.get('tp2_size_pct', 50)
+                            self._close_position(symbol, tp2_price, "Take-Profit 2", size_pct_to_close=tp2_size_pct)
 
             # Mum kapanışındaki sinyal mantığı (değişiklik yok)
             is_kline_closed = kline.get('x', False)
@@ -474,9 +472,6 @@ class StrategyRunner:
     def _open_new_position(self, symbol, new_pos, entry_price, df_with_indicators):
         # Veritabanından en güncel strateji yapılandırmasını al
         current_strategy_config = next((s for s in get_all_strategies() if s['id'] == self.id), self.config)
-
-        # --- BAŞLANGIÇ: PARAMETRE GÜVENLİK KONTROLÜ VE DÖNÜŞÜM ---
-        # Bu blok, veritabanından gelen parametrelerin doğru formatta olmasını garanti eder.
         params_from_db = current_strategy_config.get('strategy_params', {})
 
         # Eğer parametreler yanlışlıkla metin (string) olarak gelirse, onu JSON'a çevir.
@@ -510,6 +505,7 @@ class StrategyRunner:
         if is_trading_enabled:
             leverage = self.params.get('leverage', 5)
             trade_amount_usdt = self.params.get('trade_amount_usdt', 10.0)
+            margin_type = self.params.get('margin_type', 'ISOLATED')
             if entry_price <= 0:
                 logging.error(f"HATA ({self.name}): Geçersiz giriş fiyatı ({entry_price}). İşlem atlanıyor.")
                 return
@@ -524,9 +520,9 @@ class StrategyRunner:
                 logging.warning(
                     f"UYARI ({self.name}): Hesaplanan işlem miktarı ({quantity_to_trade}) sıfırdan küçük. İşlem atlanıyor.")
                 return
-            leverage_set = set_futures_leverage_and_margin(symbol, leverage)
+            leverage_set = set_futures_leverage_and_margin(symbol, leverage, margin_type=margin_type)
             if not leverage_set:
-                logging.error(f"HATA ({self.name}): Kaldıraç ayarlanamadığı için pozisyon açılmıyor.")
+                logging.error(f"HATA ({self.name}): Kaldıraç veya marjin tipi ayarlanamadığı için pozisyon açılmıyor.")
                 return
             order_side = 'BUY' if new_pos == 'Long' else 'SELL'
             order_result = place_futures_order(symbol, order_side, quantity_to_trade)

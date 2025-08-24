@@ -1285,10 +1285,10 @@ if page == "🔬 Laboratuvar":
 
                             # --- DEĞİŞİKLİK BURADA ---
                             st.markdown(
-                                f"<span style='font-size: 90%;'>Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`</span>",
+                                f"<span style='font-size: 100%;'>Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`</span>",
                                 unsafe_allow_html=True)
                             st.markdown(
-                                f"<span style='font-size: 90%;'>SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`</span>",
+                                f"<span style='font-size: 100%;'>SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`</span>",
                                 unsafe_allow_html=True)
                             # --- DEĞİŞİKLİK BİTİŞ ---
 
@@ -1318,10 +1318,10 @@ if page == "🔬 Laboratuvar":
 
                                 # --- DEĞİŞİKLİK BURADA ---
                                 st.markdown(
-                                    f"<span style='font-size: 90%;'>Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`</span>",
+                                    f"<span style='font-size: 100%;'>Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`</span>",
                                     unsafe_allow_html=True)
                                 st.markdown(
-                                    f"<span style='font-size: 90%;'>SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`</span>",
+                                    f"<span style='font-size: 100%;'>SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`</span>",
                                     unsafe_allow_html=True)
                                 # --- DEĞİŞİKLİK BİTİŞ ---
 
@@ -1350,10 +1350,10 @@ if page == "🔬 Laboratuvar":
 
                                 # --- DEĞİŞİKLİK BURADA ---
                                 st.markdown(
-                                    f"<span style='font-size: 90%;'>Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`</span>",
+                                    f"<span style='font-size: 100%;'>Giriş: `{row['Giriş Fiyatı']:.4f}` | Anlık: `{row['Anlık Fiyat']:.4f}`</span>",
                                     unsafe_allow_html=True)
                                 st.markdown(
-                                    f"<span style='font-size: 90%;'>SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`</span>",
+                                    f"<span style='font-size: 100%;'>SL: `{row['Stop Loss']:.4f}` | TP1: `{row['TP1']:.4f}` | TP2: `{row['TP2']:.4f}`</span>",
                                     unsafe_allow_html=True)
                                 # --- DEĞİŞİKLİK BİTİŞ ---
 

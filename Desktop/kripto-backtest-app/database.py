@@ -9,7 +9,6 @@ from datetime import datetime
 import numpy as np
 import toml
 
-print("--- [DEBUG] database.py dosyası import ediliyor...")
 
 DB_CONFIG = None
 
@@ -50,7 +49,6 @@ def get_db_connection():
         print("--- [HATA] Veritabanı yapılandırması bulunamadı. Bağlantı kurulamıyor.")
         return None
 
-    print(f"--- [DEBUG] PostgreSQL'e bağlanılıyor -> Host: {config.get('host')}, DB: {config.get('database')}")
     try:
         conn = psycopg2.connect(
             dbname=config["database"],
@@ -60,7 +58,6 @@ def get_db_connection():
             port=config.get("port", "5432"),
             connect_timeout=5  # 5 saniye zaman aşımı ekledik!
         )
-        print("--- [DEBUG] PostgreSQL bağlantısı BAŞARILI.")
         return conn
     except psycopg2.OperationalError as e:
         print("--- [KRİTİK BAĞLANTI HATASI] ---")

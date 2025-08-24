@@ -1171,22 +1171,19 @@ if page == "🔬 Laboratuvar":
                                 st.toast(f"'{strategy_to_update['name']}' güncellendi!", icon="👍")
 
 
-                            # Sütunları 4'e çıkarıyoruz
-                            trade_cols = st.columns(4)
+                            trade_cols = st.columns(5)
 
                             # Yeni: Marjin Tipi Seçimi
                             margin_type_options = ["ISOLATED", "CROSSED"]
-                            margin_type = trade_cols[0].radio(
+                            trade_cols[0].radio(
                                 "Marjin Tipi", margin_type_options,
                                 index=margin_type_options.index(params.get('margin_type', 'ISOLATED')),
                                 key=f"margin_{strategy_id}",
                                 on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy)
                             )
-
                             trade_cols[1].slider(
                                 "Kaldıraç", 1, 50, params.get('leverage', 5),
                                 key=f"lev_{strategy_id}",
-                                # kwargs ile doğru stratejiyi fonksiyona iletiyoruz
                                 on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy)
                             )
                             trade_cols[2].number_input(
@@ -1194,10 +1191,19 @@ if page == "🔬 Laboratuvar":
                                 key=f"amount_{strategy_id}",
                                 on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy)
                             )
+                            # YENİ: Borsada İşlem seçeneği geri eklendi
                             trade_cols[3].radio(
                                 "Borsada İşlem", ["Aktif", "Pasif"],
                                 index=0 if strategy.get('is_trading_enabled', False) else 1,
                                 key=f"trade_{strategy_id}",
+                                on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy),
+                                horizontal=True
+                            )
+                            # Telegram Bildirim Seçimi
+                            trade_cols[4].radio(
+                                "Telegram Bildirim", ["Evet", "Hayır"],
+                                index=0 if params.get('telegram_enabled', False) else 1,
+                                key=f"telegram_{strategy_id}",
                                 on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy),
                                 horizontal=True
                             )

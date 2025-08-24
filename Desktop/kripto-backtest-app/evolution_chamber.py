@@ -132,7 +132,9 @@ def run_evolution_cycle():
     for i in range(new_strategy_count):
         new_id = f"strategy_{int(time.time())}"
 
-        if random.random() < MUTATION_CHANCE:
+        # --- BAŞLANGIÇ: GÜVENLİK KONTROLÜ ---
+        # Eğer çaprazlama için yeterli ebeveyn (en az 2) yoksa veya şans eseri mutasyon seçildiyse, mutasyon yap.
+        if len(parent_pool) < 2 or random.random() < MUTATION_CHANCE:
             # Mutasyon
             parent = random.choice(parent_pool)
             new_params = mutate(parent['config']['strategy_params'])
@@ -142,6 +144,7 @@ def run_evolution_cycle():
             parent1, parent2 = random.sample(parent_pool, 2)
             new_params = crossover(parent1['config']['strategy_params'], parent2['config']['strategy_params'])
             new_name = f"Çaprazlama-{parent1['config']['name'][:5]}/{parent2['config']['name'][:5]}-{i + 1}"
+        # --- BİTİŞ: GÜVENLİK KONTROLÜ ---
 
         # Yeni strateji objesini oluştur
         new_strategy = {

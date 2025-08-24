@@ -1260,57 +1260,83 @@ if page == "🔬 Laboratuvar":
                     axis=1
                 )
 
-                for index, row in open_positions_df.iterrows():
-                    with st.container(border=True):
-                        # Ana layout: Sol (bilgi), Orta (detaylar), Sağ (buton)
-                        col1, col2, col3 = st.columns([2, 3, 1])
+                # --- BAŞLANGIÇ: 2xN IZGARA GÖRÜNÜMÜ İÇİN DEĞİŞİKLİK ---
+                # Tüm pozisyonları bir listeye çevir
+                positions_list = open_positions_df.to_dict('records')
 
-                        # --- SOL SÜTUN (Değişiklik yok) ---
-                        with col1:
-                            emoji = "🟢" if row['Pozisyon'] == 'Long' else "🔴"
-                            pnl_color = "green" if row['PnL (%)'] >= 0 else "red"
-                            st.markdown(f"<h5>{emoji} {row['Sembol']}</h5>", unsafe_allow_html=True)
-                            st.markdown(f"**Strateji:** {row['Strateji Adı']}")
+                # Her satırda 2 pozisyon olacak şekilde döngü kur
+                for i in range(0, len(positions_list), 2):
+                    # Her döngüde 2 sütunluk yeni bir satır oluştur
+                    col1, col2 = st.columns(2)
+
+                    # --- Birinci Pozisyon Kartı (SOL SÜTUN) ---
+                    with col1:
+                        row1 = positions_list[i]
+                        with st.container(border=True):
+                            # ... Kart içeriği ...
+                            emoji = "🟢" if row1['Pozisyon'] == 'Long' else "🔴"
+                            pnl_color = "green" if row1['PnL (%)'] >= 0 else "red"
+                            st.markdown(f"<h5>{emoji} {row1['Sembol']}</h5>", unsafe_allow_html=True)
+                            st.markdown(f"**Strateji:** {row1['Strateji Adı']}")
                             st.markdown(
-                                f"**Kâr/Zarar:** <span style='color:{pnl_color}; font-weight: bold;'>{row['PnL (%)']:.2f}%</span>",
+                                f"**Kâr/Zarar:** <span style='color:{pnl_color}; font-weight: bold;'>{row1['PnL (%)']:.2f}%</span>",
                                 unsafe_allow_html=True)
+                            st.markdown("---")
 
-                        # --- ORTA SÜTUN (TÜM DEĞİŞİKLİK BURADA) ---
-                        with col2:
-                            strategy_id = row['strategy_id']
-                            strategy_config = all_strategies.get(strategy_id)
+                            strategy_id = row1['strategy_id']
+                            strategy_config = all_strategies.get(strategy_id, {})
+                            strategy_params = strategy_config.get('strategy_params', {})
+                            interval = strategy_config.get('interval', '1h')
+                            current_signal = get_latest_signal(row1['Sembol'], interval, strategy_params)
 
-                            if strategy_config:
-                                strategy_params_for_signal = strategy_config.get('strategy_params', {})
-                                interval_for_signal = strategy_config.get('interval', '1h')
-                                current_signal = get_latest_signal(row['Sembol'], interval_for_signal,
-                                                                   strategy_params_for_signal)
-                            else:
-                                current_signal = "Strateji Yok"
+                            st.metric("Mevcut Pozisyon", row1['Pozisyon'])
+                            st.metric("Anlık Sinyal", current_signal)
+                            st.markdown(
+                                f"**Giriş:** `{row1['Giriş Fiyatı']:.4f}` | **Anlık:** `{row1['Anlık Fiyat']:.4f}`")
+                            st.markdown(f"**SL:** `{row1['Stop Loss']:.4f}` | **TP1:** `{row1['TP1']:.4f}`")
 
-                            # Orta bölümü en baştan ikiye ayır
-                            left_details_col, right_details_col = st.columns(2)
-
-                            # "Mevcut Pozisyon" ve ilgili fiyatları sol tarafa koy
-                            with left_details_col:
-                                st.metric("Mevcut Pozisyon", row['Pozisyon'])
-                                st.markdown(f"**Giriş:** `{row['Giriş Fiyatı']:.4f}`")
-                                st.markdown(f"**SL:** `{row['Stop Loss']:.4f}`")
-
-                            # "Anlık Sinyal" ve ilgili fiyatları sağ tarafa koy
-                            with right_details_col:
-                                st.metric("Anlık Sinyal", current_signal)
-                                st.markdown(f"**Anlık:** `{row['Anlık Fiyat']:.4f}`")
-                                st.markdown(f"**TP1:** `{row['TP1']:.4f}`")
-
-                        # --- SAĞ SÜTUN (Değişiklik yok) ---
-                        with col3:
-                            if st.button("KAPAT", key=f"close_{row['strategy_id']}_{row['Sembol']}",
-                                         help="Pozisyonu piyasa fiyatından hemen kapatır."):
-                                issue_manual_action(row['strategy_id'], row['Sembol'], 'CLOSE_POSITION')
-                                st.toast(f"{row['Sembol']} için pozisyon kapatma emri gönderildi!", icon="📨")
-                                time.sleep(1)
+                            if st.button("KAPAT", key=f"close_{row1['strategy_id']}_{row1['Sembol']}",
+                                         use_container_width=True):
+                                issue_manual_action(row1['strategy_id'], row1['Sembol'], 'CLOSE_POSITION')
+                                st.toast(f"{row1['Sembol']} için kapatma emri gönderildi!", icon="📨")
+                                time.sleep(1);
                                 st.rerun()
+
+                    # --- İkinci Pozisyon Kartı (SAĞ SÜTUN) ---
+                    # Eğer ikinci bir pozisyon varsa (pozisyon sayısı tek değilse)
+                    if i + 1 < len(positions_list):
+                        with col2:
+                            row2 = positions_list[i + 1]
+                            with st.container(border=True):
+                                # ... Kart içeriği ...
+                                emoji = "🟢" if row2['Pozisyon'] == 'Long' else "🔴"
+                                pnl_color = "green" if row2['PnL (%)'] >= 0 else "red"
+                                st.markdown(f"<h5>{emoji} {row2['Sembol']}</h5>", unsafe_allow_html=True)
+                                st.markdown(f"**Strateji:** {row2['Strateji Adı']}")
+                                st.markdown(
+                                    f"**Kâr/Zarar:** <span style='color:{pnl_color}; font-weight: bold;'>{row2['PnL (%)']:.2f}%</span>",
+                                    unsafe_allow_html=True)
+                                st.markdown("---")
+
+                                strategy_id = row2['strategy_id']
+                                strategy_config = all_strategies.get(strategy_id, {})
+                                strategy_params = strategy_config.get('strategy_params', {})
+                                interval = strategy_config.get('interval', '1h')
+                                current_signal = get_latest_signal(row2['Sembol'], interval, strategy_params)
+
+                                st.metric("Mevcut Pozisyon", row2['Pozisyon'])
+                                st.metric("Anlık Sinyal", current_signal)
+                                st.markdown(
+                                    f"**Giriş:** `{row2['Giriş Fiyatı']:.4f}` | **Anlık:** `{row2['Anlık Fiyat']:.4f}`")
+                                st.markdown(f"**SL:** `{row2['Stop Loss']:.4f}` | **TP1:** `{row2['TP1']:.4f}`")
+
+                                if st.button("KAPAT", key=f"close_{row2['strategy_id']}_{row2['Sembol']}",
+                                             use_container_width=True):
+                                    issue_manual_action(row2['strategy_id'], row2['Sembol'], 'CLOSE_POSITION')
+                                    st.toast(f"{row2['Sembol']} için kapatma emri gönderildi!", icon="📨")
+                                    time.sleep(1);
+                                    st.rerun()
+                # --- BİTİŞ: 2xN IZGARA GÖRÜNÜMÜ İÇİN DEĞİŞİKLİK ---
 
         # ... (app.py dosyasındaki diğer kodlar) ...
 

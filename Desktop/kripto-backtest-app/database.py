@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 import numpy as np
 import toml
+from database import get_all_strategies 
 
 
 DB_CONFIG = None
@@ -239,17 +240,21 @@ def get_and_clear_pending_actions(strategy_id):
 
 def get_live_closed_trades_metrics(strategy_id=None):
     """
-    Canlıda kapanan işlemlerin detaylı metriklerini hesaplar.
-    Eğer strategy_id verilirse, sadece o strateji için hesaplar.
+    Canlıda kapanan işlemlerin detaylı metriklerini, kademeli kâr alımını (TP1/TP2)
+    doğru bir şekilde hesaba katarak hesaplar.
     """
     default_metrics = {
         "Toplam İşlem": 0, "Başarı Oranı (%)": 0.0, "Toplam Getiri (%)": 0.0,
         "Ortalama Kazanç (%)": 0.0, "Ortalama Kayıp (%)": 0.0, "Profit Factor": 0.0
     }
 
+    # Strateji parametrelerini (tp1_size_pct gibi) alabilmek için tüm stratejileri çek
+    all_strategies = {s['id']: s for s in get_all_strategies()}
+
     with get_db_connection() as conn:
         base_query = "SELECT strategy_id, symbol, signal, price, timestamp FROM alarms WHERE "
-        conditions = "(signal LIKE '%%Yeni%%' OR signal LIKE '%%Kapatıldı%%' OR signal LIKE '%%Stop-Loss%%')"
+        # Sadece pozisyon açan ve kapatan sinyalleri al
+        conditions = "(signal LIKE '%%Yeni%%' OR signal LIKE '%%Kapatıldı%%' OR signal LIKE '%%Stop-Loss%%' OR signal LIKE '%%Karşıt Sinyal%%')"
 
         if strategy_id:
             query = base_query + "strategy_id = %s AND " + conditions + " ORDER BY timestamp ASC"
@@ -270,36 +275,71 @@ def get_live_closed_trades_metrics(strategy_id=None):
         key = (row['strategy_id'], row['symbol'])
         signal = row['signal']
         price = row['price']
+        strategy_id_current = row['strategy_id']
 
+        # Yeni bir pozisyon açılış sinyali
         if 'Yeni' in signal and key not in open_trades:
-            open_trades[key] = {'entry_price': price, 'position_type': 'Long' if 'LONG' in signal.upper() else 'Short'}
-        elif ('Kapatıldı' in signal or 'Stop-Loss' in signal) and key in open_trades:
-            entry_price = open_trades[key]['entry_price']
-            position_type = open_trades[key]['position_type']
-            pnl = ((price - entry_price) / entry_price) * 100 if position_type == 'Long' else ((
-                                                                                                           entry_price - price) / entry_price) * 100
-            trades.append({'pnl': pnl})
-            del open_trades[key]
+            strategy_config = all_strategies.get(strategy_id_current, {})
+            strategy_params = strategy_config.get('strategy_params', {})
+            open_trades[key] = {
+                'entry_price': price,
+                'position_type': 'Long' if 'LONG' in signal.upper() else 'Short',
+                'position_size': 100.0,  # Pozisyonu %100 olarak başlat
+                'tp1_size_pct': strategy_params.get('tp1_size_pct', 50.0),
+                'tp2_size_pct': strategy_params.get('tp2_size_pct', 50.0)
+            }
+
+        # Pozisyon kapatma sinyali
+        elif ('Kapatıldı' in signal or 'Stop-Loss' in signal or 'Karşıt Sinyal' in signal) and key in open_trades:
+            trade_info = open_trades[key]
+            entry_price = trade_info['entry_price']
+            position_type = trade_info['position_type']
+
+            pnl = ((price - entry_price) / entry_price) * 100 if position_type == 'Long' else ((entry_price - price) / entry_price) * 100
+
+            size_closed = 0
+            if 'Take-Profit 1' in signal:
+                size_closed = trade_info['tp1_size_pct']
+            elif 'Take-Profit 2' in signal:
+                size_closed = trade_info['position_size'] # Kalan pozisyonun tamamı
+            else: # Stop-Loss, Karşıt Sinyal veya Manuel kapatma
+                size_closed = trade_info['position_size'] # Kalan pozisyonun tamamı
+
+            # Her bir kapalı parçayı, kendi büyüklüğüyle ağırlıklandırarak kaydet
+            trades.append({'pnl': pnl, 'size': size_closed})
+
+            # Kalan pozisyon büyüklüğünü güncelle
+            trade_info['position_size'] -= size_closed
+
+            # Eğer pozisyon tamamen kapandıysa open_trades'ten sil
+            if trade_info['position_size'] <= 0.1:
+                del open_trades[key]
 
     if not trades:
         return default_metrics
 
+    # --- Metrik Hesaplama (Ağırlıklı Ortalama) ---
+    total_pnl = sum(t['pnl'] * (t['size'] / 100.0) for t in trades)
+
+    # Profit Factor ve diğer metrikler için her bir işlemi ayrı saymak daha doğru
+    # Bu yüzden backtest'teki gibi her parçayı ayrı bir işlem gibi ele alalım
     pnl_list = [t['pnl'] for t in trades]
-    total_trades = len(pnl_list)
+    total_trades_count = len(pnl_list)
     winning_trades = [p for p in pnl_list if p > 0]
     losing_trades = [p for p in pnl_list if p <= 0]
 
-    win_rate = (len(winning_trades) / total_trades) * 100 if total_trades > 0 else 0
-    total_pnl = sum(pnl_list)
+    win_rate = (len(winning_trades) / total_trades_count) * 100 if total_trades_count > 0 else 0
     avg_win = sum(winning_trades) / len(winning_trades) if winning_trades else 0
     avg_loss = abs(sum(losing_trades) / len(losing_trades)) if losing_trades else 0
-    profit_factor = sum(winning_trades) / abs(sum(losing_trades)) if losing_trades and sum(
-        losing_trades) != 0 else np.inf
+
+    gross_profit = sum(winning_trades)
+    gross_loss = abs(sum(losing_trades))
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else np.inf
 
     return {
-        "Toplam İşlem": total_trades,
+        "Toplam İşlem": total_trades_count,
         "Başarı Oranı (%)": round(win_rate, 2),
-        "Toplam Getiri (%)": round(total_pnl, 2),
+        "Toplam Getiri (%)": round(total_pnl, 2), # Ağırlıklı toplam getiri
         "Ortalama Kazanç (%)": round(avg_win, 2),
         "Ortalama Kayıp (%)": round(avg_loss, 2),
         "Profit Factor": round(profit_factor, 2)

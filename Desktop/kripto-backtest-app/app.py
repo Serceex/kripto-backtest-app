@@ -1209,60 +1209,85 @@ if page == "🔬 Laboratuvar":
                         else:
                             st.warning(f"Bu döngü atlandı. Sebep: {result.get('reason', 'Bilinmiyor')}")
 
+        # app.py dosyasındaki "with tab4:" ile başlayan mevcut bloğu silip bunu yapıştırın
 
         with tab4:
-                    st.subheader("📊 Anlık Açık Pozisyonlar")
-                    open_positions_df = get_all_open_positions()
+            st.subheader("📊 Anlık Açık Pozisyonlar")
+            open_positions_df = get_all_open_positions()
 
-                    if open_positions_df.empty:
-                        st.info("Mevcutta açık pozisyon bulunmuyor.")
-                    else:
-                        symbols_for_prices = open_positions_df['Sembol'].unique().tolist()
-                        live_prices = get_current_prices(symbols_for_prices)
+            if open_positions_df.empty:
+                st.info("Mevcutta açık pozisyon bulunmuyor.")
+            else:
+                all_strategies = {s['id']: s for s in get_all_strategies()}
 
-                        open_positions_df['Anlık Fiyat'] = open_positions_df['Sembol'].map(live_prices).fillna(0)
-                        open_positions_df['PnL (%)'] = open_positions_df.apply(
-                            lambda row: ((row['Anlık Fiyat'] - row['Giriş Fiyatı']) / row['Giriş Fiyatı']) * 100 if row[
-                                                                                                                        'Pozisyon'] == 'Long' else (
-                                ((row['Giriş Fiyatı'] - row['Anlık Fiyat']) / row['Giriş Fiyatı']) * 100 if row[
-                                                                                                                'Giriş Fiyatı'] > 0 else 0),
-                            axis=1
-                        )
+                symbols_for_prices = open_positions_df['Sembol'].unique().tolist()
+                live_prices = get_current_prices(symbols_for_prices)
 
-                        for index, row in open_positions_df.iterrows():
-                            with st.container(border=True):
-                                col1, col2, col3 = st.columns([2, 3, 1])
-                                emoji = "🟢" if row['Pozisyon'] == 'Long' else "🔴"
-                                pnl_color = "green" if row['PnL (%)'] >= 0 else "red"
+                open_positions_df['Anlık Fiyat'] = open_positions_df['Sembol'].map(live_prices).fillna(0)
+                open_positions_df['PnL (%)'] = open_positions_df.apply(
+                    lambda row: ((row['Anlık Fiyat'] - row['Giriş Fiyatı']) / row['Giriş Fiyatı']) * 100 if row[
+                                                                                                                'Pozisyon'] == 'Long' else (
+                        ((row['Giriş Fiyatı'] - row['Anlık Fiyat']) / row['Giriş Fiyatı']) * 100 if row[
+                                                                                                        'Giriş Fiyatı'] > 0 else 0),
+                    axis=1
+                )
 
-                                with col1:
-                                    st.markdown(f"<h5>{emoji} {row['Sembol']}</h5>", unsafe_allow_html=True)
-                                    st.markdown(f"**Strateji:** {row['Strateji Adı']}")
-                                    st.markdown(
-                                        f"**Kâr/Zarar:** <span style='color:{pnl_color}; font-weight: bold;'>{row['PnL (%)']:.2f}%</span>",
-                                        unsafe_allow_html=True)
+                for index, row in open_positions_df.iterrows():
+                    with st.container(border=True):
+                        col1, col2, col3 = st.columns([2, 3, 1])
+                        emoji = "🟢" if row['Pozisyon'] == 'Long' else "🔴"
+                        pnl_color = "green" if row['PnL (%)'] >= 0 else "red"
 
-                                with col2:
-                                    # Giriş ve Anlık Fiyatları yan yana göster
-                                    price_col1, price_col2 = st.columns(2)
-                                    price_col1.metric("Giriş Fiyatı", f"{row['Giriş Fiyatı']:.4f}")
-                                    price_col2.metric("Anlık Fiyat", f"{row['Anlık Fiyat']:.4f}")
+                        with col1:
+                            st.markdown(f"<h5>{emoji} {row['Sembol']}</h5>", unsafe_allow_html=True)
+                            st.markdown(f"**Strateji:** {row['Strateji Adı']}")
+                            st.markdown(
+                                f"**Kâr/Zarar:** <span style='color:{pnl_color}; font-weight: bold;'>{row['PnL (%)']:.2f}%</span>",
+                                unsafe_allow_html=True)
 
-                                    # SL ve TP Seviyelerini göster
-                                    st.markdown(
-                                        f"**SL:** `{row['Stop Loss']:.4f}` | "
-                                        f"**TP1:** `{row['TP1']:.4f}` | "
-                                        f"**TP2:** `{row['TP2']:.4f}`",
-                                        help="Stop-Loss | Take-Profit 1 | Take-Profit 2"
-                                    )
+                        with col2:
+                            strategy_id = row['strategy_id']
+                            strategy_config = all_strategies.get(strategy_id)
 
-                                with col3:
-                                    if st.button("KAPAT", key=f"close_{row['strategy_id']}_{row['Sembol']}",
-                                                 help="Pozisyonu piyasa fiyatından hemen kapatır."):
-                                        issue_manual_action(row['strategy_id'], row['Sembol'], 'CLOSE_POSITION')
-                                        st.toast(f"{row['Sembol']} için pozisyon kapatma emri gönderildi!", icon="📨")
-                                        time.sleep(1)
-                                        st.rerun()
+                            if strategy_config:
+                                strategy_params_for_signal = strategy_config.get('strategy_params', {})
+                                interval_for_signal = strategy_config.get('interval', '1h')
+                                current_signal = get_latest_signal(row['Sembol'], interval_for_signal,
+                                                                   strategy_params_for_signal)
+                            else:
+                                current_signal = "Strateji Yok"
+
+                            # --- BAŞLANGIÇ: GÖRSEL DEĞİŞİKLİK BURADA ---
+                            # İki sütun oluşturuyoruz
+                            signal_col1, signal_col2 = st.columns(2)
+
+                            # İlk metriği (Mevcut Pozisyon) soldaki sütuna yerleştiriyoruz
+                            with signal_col1:
+                                st.metric("Mevcut Pozisyon", row['Pozisyon'])
+
+                            # İkinci metriği (Anlık Sinyal) sağdaki sütuna yerleştiriyoruz
+                            with signal_col2:
+                                st.metric("Anlık Sinyal", current_signal)
+                            # --- BİTİŞ: GÖRSEL DEĞİŞİKLİK ---
+
+                            st.markdown(
+                                f"**Giriş:** `{row['Giriş Fiyatı']:.4f}` | **Anlık:** `{row['Anlık Fiyat']:.4f}`",
+                                help="Giriş Fiyatı | Anlık Fiyat"
+                            )
+                            st.markdown(
+                                f"**SL:** `{row['Stop Loss']:.4f}` | "
+                                f"**TP1:** `{row['TP1']:.4f}` | "
+                                f"**TP2:** `{row['TP2']:.4f}`",
+                                help="Stop-Loss | Take-Profit 1 | Take-Profit 2"
+                            )
+
+                        with col3:
+                            if st.button("KAPAT", key=f"close_{row['strategy_id']}_{row['Sembol']}",
+                                         help="Pozisyonu piyasa fiyatından hemen kapatır."):
+                                issue_manual_action(row['strategy_id'], row['Sembol'], 'CLOSE_POSITION')
+                                st.toast(f"{row['Sembol']} için pozisyon kapatma emri gönderildi!", icon="📨")
+                                time.sleep(1)
+                                st.rerun()
 
         # ... (app.py dosyasındaki diğer kodlar) ...
 

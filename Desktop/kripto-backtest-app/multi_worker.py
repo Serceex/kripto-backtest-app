@@ -269,7 +269,7 @@ class StrategyRunner:
         # Veritabanındaki pozisyonu temizle
         update_position(self.id, symbol, None, 0, 0, 0, 0, False, False)
 
-    def _on_message(self, ws, message):
+    def _on_message(self, ws, message, symbol):
         """WebSocket'ten gelen mesajları işler."""
         try:
             json_message = json.loads(message)

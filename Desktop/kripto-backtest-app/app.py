@@ -1107,25 +1107,26 @@ if page == "🔬 Laboratuvar":
                             params = strategy.get('strategy_params', {})
 
 
-                            def update_trade_params():
-                                # session_state'den en güncel değerleri al
-                                new_leverage = st.session_state[f"lev_{strategy_id}"]
-                                new_trade_amount = st.session_state[f"amount_{strategy_id}"]
-                                new_trade_status = st.session_state[f"trade_{strategy_id}"]
-                                # YENİ: Telegram durumunu da al
-                                new_telegram_status = st.session_state[f"telegram_{strategy_id}"]
+                            # Fonksiyon artık hangi stratejiyi güncelleyeceğini parametre olarak alıyor
+                            def update_trade_params(strategy_to_update):
+                                strategy_id_to_update = strategy_to_update['id']
 
-                                updated_params = strategy.get('strategy_params', {}).copy()
+                                new_leverage = st.session_state[f"lev_{strategy_id_to_update}"]
+                                new_trade_amount = st.session_state[f"amount_{strategy_id_to_update}"]
+                                new_trade_status = st.session_state[f"trade_{strategy_id_to_update}"]
+                                new_telegram_status = st.session_state[f"telegram_{strategy_id_to_update}"]
+
+                                updated_params = strategy_to_update.get('strategy_params', {}).copy()
                                 updated_params['leverage'] = new_leverage
                                 updated_params['trade_amount_usdt'] = new_trade_amount
-                                # YENİ: Telegram durumunu parametrelere kaydet
                                 updated_params['telegram_enabled'] = True if new_telegram_status == "Evet" else False
 
-                                strategy['strategy_params'] = updated_params
-                                strategy['is_trading_enabled'] = True if new_trade_status == "Aktif" else False
+                                strategy_to_update['strategy_params'] = updated_params
+                                strategy_to_update[
+                                    'is_trading_enabled'] = True if new_trade_status == "Aktif" else False
 
-                                add_or_update_strategy(strategy)
-                                st.toast(f"'{strategy_name}' güncellendi!", icon="👍")
+                                add_or_update_strategy(strategy_to_update)
+                                st.toast(f"'{strategy_to_update['name']}' güncellendi!", icon="👍")
 
 
                             # Sütunları 4'e çıkarıyoruz
@@ -1134,27 +1135,26 @@ if page == "🔬 Laboratuvar":
                             trade_cols[0].slider(
                                 "Kaldıraç", 1, 50, params.get('leverage', 5),
                                 key=f"lev_{strategy_id}",
-                                on_change=update_trade_params
+                                # kwargs ile doğru stratejiyi fonksiyona iletiyoruz
+                                on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy)
                             )
                             trade_cols[1].number_input(
                                 "Tutar ($)", min_value=5.0, value=params.get('trade_amount_usdt', 10.0),
                                 key=f"amount_{strategy_id}",
-                                on_change=update_trade_params
+                                on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy)
                             )
                             trade_cols[2].radio(
                                 "Borsada İşlem", ["Aktif", "Pasif"],
                                 index=0 if strategy.get('is_trading_enabled', False) else 1,
                                 key=f"trade_{strategy_id}",
-                                on_change=update_trade_params,
+                                on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy),
                                 horizontal=True
                             )
-                            # --- YENİ BÖLÜM: TELEGRAM BİLDİRİM KONTROLÜ ---
                             trade_cols[3].radio(
                                 "Telegram Bildirim", ["Evet", "Hayır"],
-                                # Varsayılan olarak Evet (True) seçili olsun
                                 index=0 if params.get('telegram_enabled', True) else 1,
                                 key=f"telegram_{strategy_id}",
-                                on_change=update_trade_params,
+                                on_change=update_trade_params, kwargs=dict(strategy_to_update=strategy),
                                 horizontal=True
                             )
 

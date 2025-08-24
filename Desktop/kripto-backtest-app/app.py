@@ -1551,7 +1551,13 @@ if page == "🔬 Laboratuvar":
             if st.button("🚀 Ajan Eğitimini Başlat", type="primary"):
                 with st.spinner(
                         f"Lütfen bekleyin... RL ajanı **{rl_symbol}** verileri üzerinde **{rl_timesteps}** adım boyunca eğitiliyor..."):
-                    train_rl_agent(symbol=rl_symbol, interval=rl_interval, total_timesteps=rl_timesteps)
+                    # Güncellenmiş fonksiyon çağrısı
+                    train_rl_agent(
+                        symbol=rl_symbol,
+                        interval=rl_interval,
+                        total_timesteps=rl_timesteps,
+                        strategy_params=strategy_params
+                    )
                 st.success("Eğitim başarıyla tamamlandı! Eğitilmiş model veritabanına kaydedildi.")
                 st.balloons()
                 st.rerun()

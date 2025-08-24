@@ -18,9 +18,11 @@ class TradingEnv(gym.Env):
     """
     metadata = {'render_modes': ['human']}
 
-    def __init__(self, df, initial_balance=10000, commission=0.001):
+    def __init__(self, df, initial_balance=10000, commission=0.001, strategy_params=None):
         super(TradingEnv, self).__init__()
 
+        # strategy_params'ı sınıf seviyesinde sakla
+        self.strategy_params = strategy_params if strategy_params is not None else {}
         self.df = self._prepare_data(df)
         self.initial_balance = initial_balance
         self.commission = commission
@@ -43,20 +45,49 @@ class TradingEnv(gym.Env):
         df_copy = df.copy()
 
         # 1. Temel Göstergeleri Hesapla
-        strategy_params = {
-            'sma': 50, 'ema': 20, 'bb_period': 20, 'bb_std': 2.0,
-            'rsi_period': 14, 'macd_fast': 12, 'macd_slow': 26,
-            'macd_signal': 9, 'adx_period': 14
+        # DÜZELTME: Sabitlenmiş parametreler yerine dışarıdan gelenleri kullan
+        # Eğer parametre gelmediyse varsayılan değerleri kullan
+        strategy_params_for_indicators = {
+            'sma': self.strategy_params.get('sma', 50),
+            'ema': self.strategy_params.get('ema', 20),
+            'bb_period': self.strategy_params.get('bb_period', 20),
+            'bb_std': self.strategy_params.get('bb_std', 2.0),
+            'rsi_period': self.strategy_params.get('rsi_period', 14),
+            'macd_fast': self.strategy_params.get('macd_fast', 12),
+            'macd_slow': self.strategy_params.get('macd_slow', 26),
+            'macd_signal': self.strategy_params.get('macd_signal', 9),
+            'adx_period': self.strategy_params.get('adx_period', 14),
+            'stop_loss_pct': self.strategy_params.get('stop_loss_pct', 0),
+            'atr_multiplier': self.strategy_params.get('atr_multiplier', 2.0),
+            'cooldown_bars': self.strategy_params.get('cooldown_bars', 3),
+            'signal_mode': self.strategy_params.get('signal_mode', 'and'),
+            'signal_direction': self.strategy_params.get('signal_direction', 'Both'),
+            'use_puzzle_bot': self.strategy_params.get('use_puzzle_bot', False),
+            'use_ml': self.strategy_params.get('use_ml', False),
+            'use_mta': self.strategy_params.get('use_mta', True),
+            'higher_timeframe': self.strategy_params.get('higher_timeframe', '4h'),
+            'trend_ema_period': self.strategy_params.get('trend_ema_period', 50),
+            'commission_pct': self.strategy_params.get('commission_pct', 0.1),
+            'tp1_pct': self.strategy_params.get('tp1_pct', 5.0),
+            'tp1_size_pct': self.strategy_params.get('tp1_size_pct', 50),
+            'tp2_pct': self.strategy_params.get('tp2_pct', 10.0),
+            'tp2_size_pct': self.strategy_params.get('tp2_size_pct', 50),
+            'move_sl_to_be': self.strategy_params.get('move_sl_to_be', True)
         }
-        df_with_indicators = generate_all_indicators(df_copy, **strategy_params)
+
+        df_with_indicators = generate_all_indicators(df_copy, **strategy_params_for_indicators)
 
         # 2. Ham Rejim ve Zaman Özelliklerini Ekle (NaN'ler bu aşamada oluşacak)
-        bbands = ta.bbands(df_with_indicators['Close'], length=20, std=2)
+        bbands = ta.bbands(df_with_indicators['Close'], length=self.strategy_params.get('bb_period', 20), std=self.strategy_params.get('bb_std', 2))
         bbw = (bbands['BBU_20_2.0'] - bbands['BBL_20_2.0']) / bbands['BBM_20_2.0']
         df_with_indicators['volatility_raw'] = bbw
 
-        adx = ta.adx(df_with_indicators['High'], df_with_indicators['Low'], df_with_indicators['Close'], length=14)
-        df_with_indicators['trend_strength_raw'] = adx[f'ADX_14']
+        adx = ta.adx(df_with_indicators['High'], df_with_indicators['Low'], df_with_indicators['Close'], length=self.strategy_params.get('adx_period', 14))
+        adx_col_name = f'ADX_{self.strategy_params.get("adx_period", 14)}'
+        if adx_col_name in adx.columns:
+            df_with_indicators['trend_strength_raw'] = adx[adx_col_name]
+        else:
+            df_with_indicators['trend_strength_raw'] = np.nan
 
         df_with_indicators['day_of_week'] = df_with_indicators.index.dayofweek
         df_with_indicators['hour_of_day'] = df_with_indicators.index.hour

@@ -3,7 +3,7 @@
 import pandas as pd
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
-import io  # YENİ: Modeli hafızada (in-memory) tutmak için
+import io
 
 # Kendi oluşturduğumuz modülleri import ediyoruz
 from trading_env import TradingEnv
@@ -12,7 +12,7 @@ from utils import get_binance_klines
 from database import save_rl_model
 
 
-def train_rl_agent(symbol="BTCUSDT", interval="1h", total_timesteps=20000):
+def train_rl_agent(symbol="BTCUSDT", interval="1h", total_timesteps=20000, strategy_params=None):
     """
     Belirtilen sembol ve zaman aralığı için bir RL ajanını eğitir ve
     eğitilmiş modeli doğrudan veritabanına kaydeder.
@@ -29,7 +29,9 @@ def train_rl_agent(symbol="BTCUSDT", interval="1h", total_timesteps=20000):
     print("Veri başarıyla indirildi. Ortam hazırlanıyor...")
 
     # 2. Adım: Ticaret Ortamını Hazırlama
-    env = DummyVecEnv([lambda: TradingEnv(df)])
+    # DÜZELTME: strategy_params parametresini TradingEnv'e aktar
+    env = DummyVecEnv([lambda: TradingEnv(df, strategy_params=strategy_params)])
+
 
     # 3. Adım: RL Modelini Oluşturma
     model = PPO("MlpPolicy", env, verbose=1, tensorboard_log="./rl_tensorboard_logs/")
@@ -61,6 +63,7 @@ def train_rl_agent(symbol="BTCUSDT", interval="1h", total_timesteps=20000):
 
     except Exception as e:
         print(f"❌ KRİTİK HATA: Model veritabanına kaydedilirken bir sorun oluştu: {e}")
+
 
 
 if __name__ == '__main__':

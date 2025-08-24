@@ -1239,6 +1239,8 @@ if page == "🔬 Laboratuvar":
 
         # app.py dosyasındaki "with tab4:" ile başlayan mevcut bloğu silip bunu yapıştırın
 
+        # app.py dosyasındaki "with tab4:" ile başlayan mevcut bloğu silip bunu yapıştırın
+
         with tab4:
             st.subheader("📊 Anlık Açık Pozisyonlar")
             open_positions_df = get_all_open_positions()
@@ -1260,42 +1262,41 @@ if page == "🔬 Laboratuvar":
                     axis=1
                 )
 
-                # --- BAŞLANGIÇ: 2xN IZGARA GÖRÜNÜMÜ İÇİN DEĞİŞİKLİK ---
-                # Tüm pozisyonları bir listeye çevir
+                # --- BAŞLANGIÇ: MİNİ KART TASARIMI ---
                 positions_list = open_positions_df.to_dict('records')
 
-                # Her satırda 2 pozisyon olacak şekilde döngü kur
                 for i in range(0, len(positions_list), 2):
-                    # Her döngüde 2 sütunluk yeni bir satır oluştur
                     col1, col2 = st.columns(2)
 
                     # --- Birinci Pozisyon Kartı (SOL SÜTUN) ---
                     with col1:
                         row1 = positions_list[i]
                         with st.container(border=True):
-                            # ... Kart içeriği ...
+                            # Üst Satır: Sembol ve Kâr/Zarar
+                            top_col1, top_col2 = st.columns([1, 1])
                             emoji = "🟢" if row1['Pozisyon'] == 'Long' else "🔴"
                             pnl_color = "green" if row1['PnL (%)'] >= 0 else "red"
-                            st.markdown(f"<h5>{emoji} {row1['Sembol']}</h5>", unsafe_allow_html=True)
-                            st.markdown(f"**Strateji:** {row1['Strateji Adı']}")
-                            st.markdown(
-                                f"**Kâr/Zarar:** <span style='color:{pnl_color}; font-weight: bold;'>{row1['PnL (%)']:.2f}%</span>",
+                            top_col1.markdown(f"**{emoji} {row1['Sembol']}**")
+                            top_col2.markdown(
+                                f"<p style='color:{pnl_color}; font-weight: bold; text-align: right; margin-bottom: 0;'>{row1['PnL (%)']:.2f}%</p>",
                                 unsafe_allow_html=True)
-                            st.markdown("---")
+                            st.caption(f"{row1['Strateji Adı']}")
 
+                            # Orta Satır: Pozisyon ve Anlık Sinyal
                             strategy_id = row1['strategy_id']
                             strategy_config = all_strategies.get(strategy_id, {})
-                            strategy_params = strategy_config.get('strategy_params', {})
-                            interval = strategy_config.get('interval', '1h')
-                            current_signal = get_latest_signal(row1['Sembol'], interval, strategy_params)
+                            current_signal = get_latest_signal(row1['Sembol'], strategy_config.get('interval', '1h'),
+                                                               strategy_config.get('strategy_params', {}))
 
-                            st.metric("Mevcut Pozisyon", row1['Pozisyon'])
-                            st.metric("Anlık Sinyal", current_signal)
-                            st.markdown(
-                                f"**Giriş:** `{row1['Giriş Fiyatı']:.4f}` | **Anlık:** `{row1['Anlık Fiyat']:.4f}`")
-                            st.markdown(f"**SL:** `{row1['Stop Loss']:.4f}` | **TP1:** `{row1['TP1']:.4f}`")
+                            mid_col1, mid_col2 = st.columns(2)
+                            mid_col1.markdown(f"**Pozisyon:** {row1['Pozisyon']}")
+                            mid_col2.markdown(f"**Sinyal:** {current_signal}")
 
-                            if st.button("KAPAT", key=f"close_{row1['strategy_id']}_{row1['Sembol']}",
+                            # Alt Satır: Fiyat Bilgileri
+                            st.caption(f"Giriş: `{row1['Giriş Fiyatı']:.4f}` | Anlık: `{row1['Anlık Fiyat']:.4f}`")
+                            st.caption(f"SL: `{row1['Stop Loss']:.4f}` | TP1: `{row1['TP1']:.4f}`")
+
+                            if st.button("Kapat", key=f"close_{row1['strategy_id']}_{row1['Sembol']}",
                                          use_container_width=True):
                                 issue_manual_action(row1['strategy_id'], row1['Sembol'], 'CLOSE_POSITION')
                                 st.toast(f"{row1['Sembol']} için kapatma emri gönderildi!", icon="📨")
@@ -1303,42 +1304,39 @@ if page == "🔬 Laboratuvar":
                                 st.rerun()
 
                     # --- İkinci Pozisyon Kartı (SAĞ SÜTUN) ---
-                    # Eğer ikinci bir pozisyon varsa (pozisyon sayısı tek değilse)
                     if i + 1 < len(positions_list):
                         with col2:
                             row2 = positions_list[i + 1]
                             with st.container(border=True):
-                                # ... Kart içeriği ...
+                                top_col1, top_col2 = st.columns([1, 1])
                                 emoji = "🟢" if row2['Pozisyon'] == 'Long' else "🔴"
                                 pnl_color = "green" if row2['PnL (%)'] >= 0 else "red"
-                                st.markdown(f"<h5>{emoji} {row2['Sembol']}</h5>", unsafe_allow_html=True)
-                                st.markdown(f"**Strateji:** {row2['Strateji Adı']}")
-                                st.markdown(
-                                    f"**Kâr/Zarar:** <span style='color:{pnl_color}; font-weight: bold;'>{row2['PnL (%)']:.2f}%</span>",
+                                top_col1.markdown(f"**{emoji} {row2['Sembol']}**")
+                                top_col2.markdown(
+                                    f"<p style='color:{pnl_color}; font-weight: bold; text-align: right; margin-bottom: 0;'>{row2['PnL (%)']:.2f}%</p>",
                                     unsafe_allow_html=True)
-                                st.markdown("---")
+                                st.caption(f"{row2['Strateji Adı']}")
 
                                 strategy_id = row2['strategy_id']
                                 strategy_config = all_strategies.get(strategy_id, {})
-                                strategy_params = strategy_config.get('strategy_params', {})
-                                interval = strategy_config.get('interval', '1h')
-                                current_signal = get_latest_signal(row2['Sembol'], interval, strategy_params)
+                                current_signal = get_latest_signal(row2['Sembol'],
+                                                                   strategy_config.get('interval', '1h'),
+                                                                   strategy_config.get('strategy_params', {}))
 
-                                st.metric("Mevcut Pozisyon", row2['Pozisyon'])
-                                st.metric("Anlık Sinyal", current_signal)
-                                st.markdown(
-                                    f"**Giriş:** `{row2['Giriş Fiyatı']:.4f}` | **Anlık:** `{row2['Anlık Fiyat']:.4f}`")
-                                st.markdown(f"**SL:** `{row2['Stop Loss']:.4f}` | **TP1:** `{row2['TP1']:.4f}`")
+                                mid_col1, mid_col2 = st.columns(2)
+                                mid_col1.markdown(f"**Pozisyon:** {row2['Pozisyon']}")
+                                mid_col2.markdown(f"**Sinyal:** {current_signal}")
 
-                                if st.button("KAPAT", key=f"close_{row2['strategy_id']}_{row2['Sembol']}",
+                                st.caption(f"Giriş: `{row2['Giriş Fiyatı']:.4f}` | Anlık: `{row2['Anlık Fiyat']:.4f}`")
+                                st.caption(f"SL: `{row2['Stop Loss']:.4f}` | TP1: `{row2['TP1']:.4f}`")
+
+                                if st.button("Kapat", key=f"close_{row2['strategy_id']}_{row2['Sembol']}",
                                              use_container_width=True):
                                     issue_manual_action(row2['strategy_id'], row2['Sembol'], 'CLOSE_POSITION')
                                     st.toast(f"{row2['Sembol']} için kapatma emri gönderildi!", icon="📨")
                                     time.sleep(1);
                                     st.rerun()
-                # --- BİTİŞ: 2xN IZGARA GÖRÜNÜMÜ İÇİN DEĞİŞİKLİK ---
-
-        # ... (app.py dosyasındaki diğer kodlar) ...
+                # --- BİTİŞ: MİNİ KART TASARIMI ---
 
         # Sekme 5: Alarm Geçmişi
         with tab5:

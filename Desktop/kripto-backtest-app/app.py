@@ -505,6 +505,28 @@ def update_price_live(symbol, interval, placeholder):
             break
 
 
+
+@st.cache_data(ttl=60) # Sinyali 1 dakika boyunca önbellekte tut
+def get_latest_signal(symbol, interval, strategy_params):
+    """Belirli bir sembol ve strateji için en güncel sinyali hesaplar."""
+    df = get_binance_klines(symbol=symbol, interval=interval, limit=200)
+    if df is None or df.empty:
+        return "Veri Yok"
+
+    df = generate_all_indicators(df, **strategy_params)
+
+    if strategy_params.get('use_mta', False):
+        df_higher = get_binance_klines(symbol=symbol, interval=strategy_params['higher_timeframe'], limit=1000)
+        if df_higher is not None and not df_higher.empty:
+            df = add_higher_timeframe_trend(df, df_higher, strategy_params['trend_ema_period'])
+            df = filter_signals_with_trend(df)
+
+    df = generate_signals(df, **strategy_params)
+    return df['Signal'].iloc[-1]
+
+
+
+
 def run_portfolio_backtest(symbols, interval, strategy_params):
     """
     Kademeli Kâr Alma ve Stop'u Başa Çekme özelliklerini içeren,

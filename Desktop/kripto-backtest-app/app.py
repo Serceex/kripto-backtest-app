@@ -515,13 +515,17 @@ def get_latest_signal(symbol, interval, strategy_params):
 
     df = generate_all_indicators(df, **strategy_params)
 
+    # --- BAŞLANGIÇ: DÜZELTME (Sıralama Değiştirildi) ---
+    # ÖNCE sinyalleri üret
+    df = generate_signals(df, **strategy_params)
+
+    # SONRA üretilmiş sinyalleri trende göre filtrele
     if strategy_params.get('use_mta', False):
         df_higher = get_binance_klines(symbol=symbol, interval=strategy_params['higher_timeframe'], limit=1000)
         if df_higher is not None and not df_higher.empty:
             df = add_higher_timeframe_trend(df, df_higher, strategy_params['trend_ema_period'])
             df = filter_signals_with_trend(df)
-
-    df = generate_signals(df, **strategy_params)
+    # --- BİTİŞ: DÜZELTME ---
     return df['Signal'].iloc[-1]
 
 

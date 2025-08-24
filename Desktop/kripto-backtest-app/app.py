@@ -92,69 +92,43 @@ def apply_full_strategy_params(strategy, is_editing=False):
         st.toast(f"'{strategy_name}' stratejisinin tüm parametreleri yüklendi!", icon="✅")
 
 
-# app.py içindeki run_rl_backtest fonksiyonunun güncellenmiş ve hatası giderilmiş hali
 
-def run_rl_backtest(model_path, backtest_df_raw):
-    """Eğitilmiş bir RL modelini yükler, backtest verisi üzerinde çalıştırır ve
-    hem işlem listesini hem de ajanın kararlarını içeren tam DataFrame'i döndürür."""
-    if not os.path.exists(model_path):
-        st.error(f"Model dosyası bulunamadı: {model_path}")
+
+def run_rl_backtest(model_id, backtest_df_raw):
+    """Eğitilmiş bir RL modelini ID'sine göre veritabanından yükler ve backtest yapar."""
+    model_buffer = get_rl_model_by_id(model_id)
+    if not model_buffer:
+        st.error(f"Veritabanında Model ID'si {model_id} olan bir model bulunamadı.")
         return pd.DataFrame(), pd.DataFrame()
 
-    model = PPO.load(model_path)
+    model = PPO.load(model_buffer)
     env = TradingEnv(backtest_df_raw.copy())
     obs, _ = env.reset()
 
     df_with_actions = env.df.copy()
     df_with_actions['RL_Signal'] = 'Bekle'
-    df_with_actions.attrs['symbol'] = model_path.split('_')[2]
+    model_info = next((m for m in st.session_state.rl_models_list if m['id'] == model_id), None)
+    df_with_actions.attrs['symbol'] = model_info['name'].split('_')[1] if model_info else "UNKNOWN"
 
     trades = []
-
+    # ... (Geri kalan backtest mantığı önceki adımdaki gibi aynı)
     while True:
         action, _states = model.predict(obs, deterministic=True)
         obs, reward, done, truncated, info = env.step(action)
-
         current_step_index = env.df.index[env.current_step]
-        if action == 1:
-            df_with_actions.loc[current_step_index, 'RL_Signal'] = 'Al'
-        elif action == 2:
-            df_with_actions.loc[current_step_index, 'RL_Signal'] = 'Sat'
-
-        # --- DÜZELTİLMİŞ İŞLEM KAYIT MANTIĞI ---
-        # 1. Yeni bir pozisyona girilip girilmediğini kontrol et
-        is_opening_new_position = False
-        if env.position == 1:  # Ajan Long pozisyonda olmak istiyor
-            if not trades:  # Eğer hiç işlem yoksa, bu yeni bir pozisyondur.
-                is_opening_new_position = True
-            # Eğer son işlem kapanmışsa (yani 'Çıkış Zamanı' doluysa), bu yeni bir pozisyondur.
-            elif 'Çıkış Zamanı' in trades[-1]:
-                is_opening_new_position = True
-
-        # 2. Pozisyonu kapatma durumunu kontrol et
-        is_closing_position = False
-        # Eğer ajan pozisyonda değilse ve işlem listesi boş değilse ve son işlem hala açıksa
-        if env.position == 0 and trades and 'Çıkış Zamanı' not in trades[-1]:
-            is_closing_position = True
-
-        # 3. Duruma göre işlem listesini güncelle
-        if is_opening_new_position:
-            trades.append({'Pozisyon': 'Long', 'Giriş Zamanı': current_step_index, 'Giriş Fiyatı': env.entry_price})
-        elif is_closing_position:
+        if action == 1: df_with_actions.loc[current_step_index, 'RL_Signal'] = 'Al'
+        elif action == 2: df_with_actions.loc[current_step_index, 'RL_Signal'] = 'Sat'
+        is_opening = env.position == 1 and (not trades or 'Çıkış Zamanı' in trades[-1])
+        is_closing = env.position == 0 and trades and 'Çıkış Zamanı' not in trades[-1]
+        if is_opening: trades.append({'Pozisyon': 'Long', 'Giriş Zamanı': current_step_index, 'Giriş Fiyatı': env.entry_price})
+        elif is_closing:
             trade = trades[-1]
             trade['Çıkış Zamanı'] = current_step_index
             trade['Çıkış Fiyatı'] = env.df['Close'].loc[current_step_index]
             pnl = ((trade['Çıkış Fiyatı'] - trade['Giriş Fiyatı']) / trade['Giriş Fiyatı']) * 100
             trade['Getiri (%)'] = round(pnl, 2)
-        # --- DÜZELTME SONU ---
-
-        if done:
-            break
-
-    # Backtest sonunda hala açık kalan ve tamamlanmamış işlem varsa listeden kaldır
-    if trades and 'Çıkış Zamanı' not in trades[-1]:
-        trades.pop(-1)
-
+        if done: break
+    if trades and 'Çıkış Zamanı' not in trades[-1]: trades.pop(-1)
     return pd.DataFrame(trades), df_with_actions
 
 
@@ -1035,19 +1009,33 @@ if page == "🔬 Laboratuvar":
                              color_discrete_sequence=px.colors.sequential.RdBu)
                 st.plotly_chart(fig, use_container_width=True)
 
+        with tab2:  # Strateji Yönetimi
+            # --- YENİ: Eğitilmiş RL Modellerini Veritabanından Çek ---
+            st.session_state.rl_models_list = get_all_rl_models_info()
+            # Model seçenekleri için bir sözlük oluştur (None anahtarı "Hiçbiri" anlamına gelir)
+            model_options = {model['id']: model['name'] for model in st.session_state.rl_models_list}
+            model_options[None] = "Hiçbiri (Standart Sinyal)"
 
-        with tab2:
-            # --- YENİ: Eğitilmiş RL Modellerini Bul ---
-            saved_models = ["Hiçbiri (Standart Sinyal)"] + [f for f in os.listdir('.') if f.startswith('rl_model_') and f.endswith('.zip')]
-
+            # Eğer düzenleme modu aktifse, "Değişiklikleri Kaydet" panelini göster
             if st.session_state.get('editing_strategy_id'):
                 with st.expander(f"✍️ '{st.session_state.editing_strategy_name}' Stratejisini Güncelle", expanded=True):
-                    st.info("Kenar çubuğunda yaptığınız değişiklikleri kaydedin veya bu strateji için bir RL Ajanı atayın.")
+                    st.info(
+                        "Kenar çubuğunda yaptığınız değişiklikleri kaydedin veya bu strateji için bir RL Ajanı atayın.")
 
-                    # --- YENİ: RL Modeli Atama Selectbox'ı (Düzenleme Modu) ---
-                    selected_rl_model = st.selectbox(
+                    # --- GÜNCELLENDİ: RL Modeli Atama ---
+                    # Mevcut stratejinin verisini çekerek seçili olan modeli bul
+                    strategy_data = next(
+                        (s for s in get_all_strategies() if s['id'] == st.session_state.editing_strategy_id), {})
+                    current_model_id = strategy_data.get('rl_model_id')
+
+                    # Selectbox'ı oluştur
+                    selected_model_id = st.selectbox(
                         "Sinyal Üretici Olarak Kullanılacak RL Ajanı",
-                        options=saved_models,
+                        options=list(model_options.keys()),  # Opsiyonlar ID'ler olacak
+                        format_func=lambda x: model_options[x],  # Gösterilecek metin isimler olacak
+                        index=list(model_options.keys()).index(
+                            current_model_id) if current_model_id in model_options.keys() else list(
+                            model_options.keys()).index(None),  # Mevcut ID'yi seç
                         key=f"rl_model_edit_{st.session_state.editing_strategy_id}",
                         help="Bir RL ajanı seçerseniz, bu strateji artık kenar çubuğundaki RSI, MACD gibi ayarlara göre değil, doğrudan yapay zekanın kararlarına göre sinyal üretecektir."
                     )
@@ -1055,39 +1043,36 @@ if page == "🔬 Laboratuvar":
                     save_col, cancel_col = st.columns(2)
                     with save_col:
                         if st.button("💾 Değişiklikleri Kaydet", type="primary", use_container_width=True):
-                            # Strateji parametrelerine RL model yolunu ekle
-                            strategy_params['rl_model_path'] = None if selected_rl_model == "Hiçbiri (Standart Sinyal)" else selected_rl_model
-
                             strategy_to_update = {
                                 "id": st.session_state.editing_strategy_id,
                                 "name": st.session_state.editing_strategy_name,
                                 "status": "running",
                                 "symbols": symbols,
                                 "interval": interval,
-                                "strategy_params": strategy_params
+                                "strategy_params": strategy_params,
+                                "rl_model_id": selected_model_id
                             }
                             add_or_update_strategy(strategy_to_update)
                             st.toast(f"'{st.session_state.editing_strategy_name}' başarıyla güncellendi!", icon="💾")
                             st.session_state.editing_strategy_id = None
                             st.session_state.editing_strategy_name = None
-                            st.rerun() # Arayüzü yenile
+                            st.rerun()
 
-                    # ... (İptal butonu aynı kalacak) ...
                     with cancel_col:
                         if st.button("❌ İptal Et", use_container_width=True):
                             st.toast("Değişiklikler iptal edildi.", icon="↩️")
                             st.session_state.editing_strategy_id = None
                             st.session_state.editing_strategy_name = None
                             st.rerun()
-
             else:
+                # Yeni strateji ekleme paneli
                 with st.expander("➕ Yeni Canlı İzleme Stratejisi Ekle", expanded=False):
                     new_strategy_name = st.text_input("Strateji Adı", placeholder="Örn: BTC Trend Takip Stratejisi")
 
-                    # --- YENİ: RL Modeli Atama Selectbox'ı (Yeni Strateji Modu) ---
-                    selected_rl_model_new = st.selectbox(
+                    selected_model_id_new = st.selectbox(
                         "Sinyal Üretici Olarak Kullanılacak RL Ajanı",
-                        options=saved_models,
+                        options=list(model_options.keys()),
+                        format_func=lambda x: model_options[x],
                         key="rl_model_new"
                     )
 
@@ -1101,46 +1086,40 @@ if page == "🔬 Laboratuvar":
                         elif not symbols:
                             st.error("Lütfen en az bir sembol seçin.")
                         else:
-                            # Strateji parametrelerine RL model yolunu ekle
-                            current_strategy_params = strategy_params.copy()
-                            current_strategy_params['rl_model_path'] = None if selected_rl_model_new == "Hiçbiri (Standart Sinyal)" else selected_rl_model_new
-
-                            # ... (Geri kalan yeni strateji ekleme mantığı aynı)
                             new_strategy = {
                                 "id": f"strategy_{int(time.time())}",
                                 "name": new_strategy_name,
-                                "status": "running", "symbols": symbols, "interval": interval,
-                                "strategy_params": current_strategy_params
+                                "status": "running",
+                                "symbols": symbols,
+                                "interval": interval,
+                                "strategy_params": strategy_params,
+                                "rl_model_id": selected_model_id_new
                             }
                             add_or_update_strategy(new_strategy)
                             st.success(f"'{new_strategy_name}' stratejisi başarıyla eklendi!")
                             st.rerun()
 
-            # ... (Çalışan stratejileri listeleme kısmı aynı kalacak, sadece bir ekleme yapacağız) ...
             st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
             running_strategies = get_all_strategies()
             if not running_strategies:
                 st.info("Şu anda çalışan hiçbir canlı strateji yok.")
             else:
                 for strategy in running_strategies:
-                    # ... (expander başlığı ve metrikler aynı)
                     strategy_id = strategy['id']
                     strategy_name = strategy.get('name', 'İsimsiz Strateji')
                     strategy_status = strategy.get('status', 'running')
                     status_emoji = "▶️" if strategy_status == 'running' else "⏸️"
+                    is_rl_agent = "🤖" if strategy.get('rl_model_id') else ""
 
-                    # --- YENİ: Strateji adının yanına RL Ajanı kullanılıyorsa bir ikon ekle ---
-                    params_display = strategy.get('strategy_params', {})
-                    is_rl_agent = "🤖" if params_display.get('rl_model_path') else ""
-
-                    with st.expander(f"{status_emoji} **{strategy_name}** {is_rl_agent} (`{strategy.get('interval')}`, `{len(strategy.get('symbols', []))}` sembol)"):
-
+                    with st.expander(
+                            f"{status_emoji} **{strategy_name}** {is_rl_agent} (`{strategy.get('interval')}`, `{len(strategy.get('symbols', []))}` sembol)"):
                         live_metrics = get_live_closed_trades_metrics(strategy_id=strategy_id)
-
                         perf_col1, perf_col2, perf_col3 = st.columns(3)
-                        perf_col1.metric("Profit Factor", f"{live_metrics['Profit Factor']:.2f}")
-                        perf_col2.metric("Başarı Oranı", f"{live_metrics['Başarı Oranı (%)']:.2f}%")
-                        perf_col3.metric("Toplam İşlem", f"{live_metrics['Toplam İşlem']}")
+                        perf_col1.metric("Profit Factor", f"{live_metrics.get('Profit Factor', 0):.2f}")
+                        perf_col2.metric("Başarı Oranı", f"{live_metrics.get('Başarı Oranı (%)', 0):.2f}%")
+                        perf_col3.metric("Toplam İşlem", f"{live_metrics.get('Toplam İşlem', 0)}")
+
+                        # ... (expander'ın geri kalan içeriği, kontrol butonları vb.)
 
                         st.caption(f"ID: `{strategy_id}`")
                         st.markdown("---")
@@ -1233,8 +1212,6 @@ if page == "🔬 Laboratuvar":
                                       use_container_width=True, help="Bu stratejinin ayarlarını kenar çubuğuna yükler.",
                                       on_click=apply_full_strategy_params, args=(strategy, False))
 
-        # Sekme 3: Strateji Koçu
-        # app.py dosyasındaki "with tab3:" ile başlayan mevcut bloğu silip bunu yapıştırın
 
         with tab3:
             st.header("🤖 Strateji Koçu")
@@ -1560,7 +1537,6 @@ if page == "🔬 Laboratuvar":
                 """)
 
             st.subheader("1. Ajanı Eğit")
-            # ... (Eğitim bölümü aynı kalacak) ...
             col1, col2, col3 = st.columns(3)
             with col1:
                 rl_symbol = st.selectbox("Eğitim için Sembol", options=st.session_state.get('symbols_key', ["BTCUSDT"]))
@@ -1569,47 +1545,58 @@ if page == "🔬 Laboratuvar":
             with col3:
                 rl_timesteps = st.number_input("Eğitim Adım Sayısı", min_value=1000, max_value=100000, value=25000,
                                                step=1000)
+
             if st.button("🚀 Ajan Eğitimini Başlat", type="primary"):
                 with st.spinner(
                         f"Lütfen bekleyin... RL ajanı **{rl_symbol}** verileri üzerinde **{rl_timesteps}** adım boyunca eğitiliyor..."):
                     train_rl_agent(symbol=rl_symbol, interval=rl_interval, total_timesteps=rl_timesteps)
-                st.success("Eğitim başarıyla tamamlandı! Eğitilmiş model kaydedildi.")
+                st.success("Eğitim başarıyla tamamlandı! Eğitilmiş model veritabanına kaydedildi.")
                 st.balloons()
+                st.rerun()
 
             st.markdown("---")
 
             st.subheader("2. Eğitilmiş Ajanı Test Et (Backtest)")
-            saved_models = [f for f in os.listdir('.') if f.startswith('rl_model_') and f.endswith('.zip')]
-            if not saved_models:
-                st.warning("Henüz eğitilmiş bir model bulunmuyor. Lütfen önce bir ajan eğitin.")
+
+            st.session_state.rl_models_list = get_all_rl_models_info()
+            if not st.session_state.rl_models_list:
+                st.warning("Henüz veritabanında kayıtlı bir model bulunmuyor. Lütfen önce bir ajan eğitin.")
             else:
-                selected_model = st.selectbox("Test edilecek eğitilmiş modeli seçin", options=saved_models)
+                model_options_test = {
+                    model['id']: f"{model['name']} (Eğitim: {model['created_at'].strftime('%Y-%m-%d %H:%M')})" for model
+                    in st.session_state.rl_models_list}
+                selected_model_id_test = st.selectbox(
+                    "Test edilecek eğitilmiş modeli seçin",
+                    options=model_options_test.keys(),
+                    format_func=lambda x: model_options_test[x]
+                )
 
                 if st.button("📈 RL Ajanı ile Backtest Yap"):
-                    model_symbol = selected_model.split('_')[2]
-                    model_interval = selected_model.split('_')[3].replace('.zip', '')
+                    model_info = next((m for m in st.session_state.rl_models_list if m['id'] == selected_model_id_test),
+                                      None)
+                    if model_info:
+                        model_symbol = model_info['name'].split('_')[1]
+                        model_interval = model_info['name'].split('_')[2]
 
-                    with st.spinner(
-                            f"Backtest verisi ({model_symbol}/{model_interval}) indiriliyor ve model yükleniyor..."):
-                        backtest_df_raw = get_binance_klines(symbol=model_symbol, interval=model_interval, limit=1000)
+                        with st.spinner(
+                                f"Backtest verisi ({model_symbol}/{model_interval}) indiriliyor ve model yükleniyor..."):
+                            backtest_df_raw = get_binance_klines(symbol=model_symbol, interval=model_interval,
+                                                                 limit=1000)
 
-                    if backtest_df_raw.empty:
-                        st.error("Backtest için veri indirilemedi.")
-                    else:
-                        with st.spinner("Model, geçmiş veriler üzerinde işlem yapıyor..."):
-                            # --- YENİ: run_rl_backtest artık 2 değer döndürüyor ---
-                            # 1. trades_df: Sadece yapılan işlemleri içeren DataFrame
-                            # 2. backtest_df_with_actions: Ajanın her adımdaki kararını içeren tam DataFrame
-                            trades_df, backtest_df_with_actions = run_rl_backtest(selected_model, backtest_df_raw)
+                        if not backtest_df_raw.empty:
+                            with st.spinner("Model, geçmiş veriler üzerinde işlem yapıyor..."):
+                                trades_df, backtest_df_with_actions = run_rl_backtest(selected_model_id_test,
+                                                                                      backtest_df_raw)
 
-                        st.success("RL Ajanı Backtesti tamamlandı!")
+                            st.success("RL Ajanı Backtesti tamamlandı!")
+                            st.session_state.rl_trades_df = trades_df
+                            st.session_state.rl_backtest_df = backtest_df_with_actions
+                            st.rerun()
+                        else:
+                            st.error("Backtest için veri indirilemedi.")
 
-                        # Sonuçları session_state'e kaydet
-                        st.session_state.rl_trades_df = trades_df
-                        st.session_state.rl_backtest_df = backtest_df_with_actions
-
-            # --- YENİ: Sonuçları göstermek için ayrı bir bölüm ---
-            if 'rl_trades_df' in st.session_state:
+            # Sonuçları göstermek için ayrı bir bölüm
+            if 'rl_trades_df' in st.session_state and st.session_state.rl_trades_df is not None:
                 st.markdown("---")
                 st.subheader("📊 RL Ajanı Backtest Sonuçları")
 
@@ -1619,9 +1606,7 @@ if page == "🔬 Laboratuvar":
                 if trades_df.empty:
                     st.info("Ajan bu periyotta hiç işlem yapmadı.")
                 else:
-                    # Performans metriklerini analiz et (utils.py'deki fonksiyonu kullanarak)
                     performance_metrics, equity_curve, drawdown_series = analyze_backtest_results(trades_df)
-
                     col1, col2 = st.columns(2)
                     with col1:
                         st.metric("Toplam Kâr/Zarar (%)", f"{performance_metrics.get('Toplam Getiri (%)', 0):.2f}%")
@@ -1631,23 +1616,20 @@ if page == "🔬 Laboratuvar":
                         st.metric("Maksimum Düşüş (Drawdown)",
                                   f"{performance_metrics.get('Maksimum Düşüş (Drawdown) (%)', 0):.2f}%")
 
-                    # Ajanın kararlarının olduğu grafiği çizdir
                     st.subheader("🤖 Ajan Karar Grafiği")
                     st.info(
                         "Grafik üzerindeki Mavi (Yukarı) ve Pembe (Aşağı) üçgenler, RL Ajanı'nın Al/Sat kararlarını göstermektedir.")
 
-                    chart_options = {"show_sma": True, "show_ema": True, "show_bbands": False}
+                    chart_options = {"show_sma": True, "show_ema": True}
                     fig = plot_chart(backtest_df, backtest_df.attrs.get('symbol', ''), {}, chart_options,
                                      rl_signal_col='RL_Signal')
                     st.plotly_chart(fig, use_container_width=True)
 
-                    # Sermaye eğrisi grafiğini çizdir
                     st.subheader("📈 Sermaye Eğrisi ve Düşüş Grafiği")
                     if equity_curve is not None:
                         performance_fig = plot_performance_summary(equity_curve, drawdown_series)
                         st.plotly_chart(performance_fig, use_container_width=True)
 
-                    # İşlem listesini göster
                     st.subheader("📋 İşlem Listesi")
                     st.dataframe(trades_df, use_container_width=True)
 

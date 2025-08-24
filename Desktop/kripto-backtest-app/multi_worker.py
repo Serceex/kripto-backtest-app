@@ -78,29 +78,34 @@ class StrategyRunner:
         if isinstance(raw_params, str):
             try:
                 self.params = json.loads(raw_params)
-                logging.info(f"BİLGİ ({self.name}): Strateji parametreleri metin olarak geldi ve JSON'a çevrildi.")
             except json.JSONDecodeError:
-                logging.error(
-                    f"HATA ({self.name}): Strateji parametreleri çözümlenemedi: {raw_params}. Boş olarak kabul ediliyor.")
                 self.params = {}
         else:
             self.params = raw_params
+
         self.portfolio_data = {}
         self.ws_threads = {}
         self._stop_event = threading.Event()
         self.position_locks = {symbol: threading.Lock() for symbol in self.symbols}
 
-        # --- YENİ: RL Modeli Yükleme ---
+        # --- YENİ: RL Modelini Veritabanından Yükleme ---
         self.rl_model = None
-        self.rl_model_path = self.params.get('rl_model_path')
-        if self.rl_model_path and os.path.exists(self.rl_model_path):
+        # Stratejiye bağlı modelin ID'sini al
+        rl_model_id = self.config.get('rl_model_id')
+        if rl_model_id:
             try:
-                logging.info(f"🤖 RL AJANI YÜKLENİYOR ({self.name}): '{self.rl_model_path}'")
-                self.rl_model = PPO.load(self.rl_model_path)
-                logging.info(f"✅ RL Ajanı başarıyla yüklendi: '{self.name}'")
+                logging.info(f"🤖 RL AJANI VERİTABANINDAN YÜKLENİYOR ({self.name}): Model ID = {rl_model_id}")
+                # Modeli veritabanından byte olarak çek
+                model_buffer = get_rl_model_by_id(rl_model_id)
+                if model_buffer:
+                    # Gelen byte verisinden modeli yükle
+                    self.rl_model = PPO.load(model_buffer)
+                    logging.info(f"✅ RL Ajanı (ID: {rl_model_id}) başarıyla yüklendi: '{self.name}'")
+                else:
+                    logging.error(f"❌ HATA ({self.name}): Veritabanında RL Ajanı (ID: {rl_model_id}) bulunamadı.")
             except Exception as e:
-                logging.error(f"❌ KRİTİK HATA ({self.name}): RL Ajanı '{self.rl_model_path}' yüklenemedi: {e}")
-                self.rl_model = None  # Hata durumunda modeli None olarak ayarla
+                logging.error(f"❌ KRİTİK HATA ({self.name}): RL Ajanı (ID: {rl_model_id}) yüklenemedi: {e}")
+                self.rl_model = None
 
         self._load_positions()
 

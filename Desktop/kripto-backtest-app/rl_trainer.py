@@ -1,53 +1,67 @@
+# rl_trainer.py (Modelleri Veritabanına Kaydeden Nihai Hali)
+
 import pandas as pd
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
+import io  # YENİ: Modeli hafızada (in-memory) tutmak için
 
 # Kendi oluşturduğumuz modülleri import ediyoruz
 from trading_env import TradingEnv
 from utils import get_binance_klines
+# YENİ: Veritabanına model kaydetmek için fonksiyonumuzu import ediyoruz
+from database import save_rl_model
+
 
 def train_rl_agent(symbol="BTCUSDT", interval="1h", total_timesteps=20000):
     """
-    Belirtilen sembol ve zaman aralığı için bir RL ajanını eğitir ve kaydeder.
-
-    :param symbol: Ticaret yapılacak kripto para sembolü (örn: "BTCUSDT")
-    :param interval: Zaman aralığı (örn: "1h", "4h")
-    :param total_timesteps: Ajanın eğitim sırasında atacağı toplam adım sayısı
+    Belirtilen sembol ve zaman aralığı için bir RL ajanını eğitir ve
+    eğitilmiş modeli doğrudan veritabanına kaydeder.
     """
     print(f"--- {symbol} için RL Ajan Eğitimi Başlatılıyor ---")
 
     # 1. Adım: Eğitim verisini çekme
-    # Mevcut utils.py dosyamızdaki fonksiyonu kullanıyoruz
     print("Geçmiş piyasa verileri indiriliyor...")
     df = get_binance_klines(symbol=symbol, interval=interval, limit=1000)
-
     if df.empty:
         print(f"HATA: {symbol} için veri indirilemedi. Eğitim durduruldu.")
         return
 
     print("Veri başarıyla indirildi. Ortam hazırlanıyor...")
 
-    # 2. Adım: Ticaret Ortamını (Trading Environment) Hazırlama
-    # Önceki adımda oluşturduğumuz TradingEnv sınıfını kullanıyoruz
+    # 2. Adım: Ticaret Ortamını Hazırlama
     env = DummyVecEnv([lambda: TradingEnv(df)])
 
-    # 3. Adım: RL Modelini (Ajan) Oluşturma
-    # Stable-Baselines3 kütüphanesinden PPO modelini kullanıyoruz
-    # 'MlpPolicy', standart bir sinir ağı yapısı kullanacağını belirtir.
+    # 3. Adım: RL Modelini Oluşturma
     model = PPO("MlpPolicy", env, verbose=1, tensorboard_log="./rl_tensorboard_logs/")
     print("PPO modeli oluşturuldu. Eğitim süreci başlıyor...")
     print(f"Tahmini eğitim süresi: {total_timesteps} adım.")
 
     # 4. Adım: Modeli Eğitme
-    # Ajan, bu adımda ortam içinde deneme-yanılma yoluyla öğrenir
     model.learn(total_timesteps=total_timesteps)
     print("Eğitim tamamlandı!")
 
-    # 5. Adım: Eğitilmiş Modeli Kaydetme
-    # Eğitilen stratejiyi daha sonra kullanmak üzere bir dosyaya kaydediyoruz
-    model_save_path = f"./rl_model_{symbol}_{interval}.zip"
-    model.save(model_save_path)
-    print(f"Eğitilmiş model başarıyla '{model_save_path}' adresine kaydedildi.")
+    # 5. Adım: Eğitilmiş Modeli Veritabanına Kaydetme
+    print("Eğitilmiş model veritabanına kaydediliyor...")
+    try:
+        # Modeli bir .zip dosyasına değil, bir hafıza buffer'ına kaydet
+        model_buffer = io.BytesIO()
+        model.save(model_buffer)
+
+        # Buffer'ı sıfırla ki baştan okunabilsin
+        model_buffer.seek(0)
+
+        # Veritabanına kaydetmek için benzersiz bir isim ve açıklama oluştur
+        model_name = f"PPO_{symbol}_{interval}_{total_timesteps}steps"
+        model_description = f"{symbol} paritesi, {interval} zaman diliminde {total_timesteps} adım ile eğitilmiş PPO ajanı."
+
+        # Yeni veritabanı fonksiyonumuzu çağır
+        save_rl_model(model_name, model_description, model_buffer)
+
+        print(f"✅ Eğitilmiş model '{model_name}' ismiyle başarıyla veritabanına kaydedildi.")
+
+    except Exception as e:
+        print(f"❌ KRİTİK HATA: Model veritabanına kaydedilirken bir sorun oluştu: {e}")
+
 
 if __name__ == '__main__':
     # Bu script'i doğrudan çalıştırdığımızda bir test eğitimi başlat

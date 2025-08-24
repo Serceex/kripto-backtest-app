@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 import numpy as np
 import toml
+import io
 
 
 
@@ -87,10 +88,11 @@ def initialize_db():
             if conn is None: raise Exception("Veritabanı bağlantısı yok.")
             with conn.cursor() as cursor:
                 cursor.execute("""
-                CREATE TABLE IF NOT EXISTS strategies (
-                    id TEXT PRIMARY KEY, name TEXT, status TEXT, symbols JSONB, interval TEXT,
-                    strategy_params JSONB, orchestrator_status TEXT, is_trading_enabled BOOLEAN
-                )""")
+                                CREATE TABLE IF NOT EXISTS strategies (
+                                    id TEXT PRIMARY KEY, name TEXT, status TEXT, symbols JSONB, interval TEXT,
+                                    strategy_params JSONB, orchestrator_status TEXT, is_trading_enabled BOOLEAN,
+                                    rl_model_id INTEGER DEFAULT NULL
+                                )""")
                 cursor.execute("""
                 CREATE TABLE IF NOT EXISTS positions (
                     id SERIAL PRIMARY KEY, strategy_id TEXT, symbol TEXT, position TEXT, entry_price REAL,
@@ -107,25 +109,76 @@ def initialize_db():
                     id SERIAL PRIMARY KEY, strategy_id TEXT, symbol TEXT, action TEXT,
                     timestamp TIMESTAMPTZ, status TEXT
                 )""")
+                cursor.execute("""
+                                CREATE TABLE IF NOT EXISTS rl_models (
+                                    id SERIAL PRIMARY KEY,
+                                    name TEXT UNIQUE NOT NULL,
+                                    description TEXT,
+                                    model_data BYTEA NOT NULL,
+                                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                                )""")
             conn.commit()
         print("--- [DATABASE] PostgreSQL veritabanı ve tablolar başarıyla başlatıldı/doğrulandı. ---")
     except Exception as e:
         print(f"--- [KRİTİK HATA] Veritabanı başlatılamadı: {e} ---")
 
-# Diğer fonksiyonlar (add_or_update_strategy, vb.) önceki yanıttaki gibi kalabilir.
-# Bu dosyadaki temel değişiklik get_db_connection fonksiyonundadır.
-# ... (geri kalan fonksiyonlar) ...
+
+# --- YENİ FONKSİYONLAR: RL Modellerini Yönetmek İçin ---
+
+def save_rl_model(name, description, model_buffer):
+    """Eğitilmiş bir RL modelini veritabanına kaydeder."""
+    model_data_binary = psycopg2.Binary(model_buffer.getvalue())
+    sql = """
+        INSERT INTO rl_models (name, description, model_data)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (name) DO UPDATE SET
+            model_data = EXCLUDED.model_data,
+            description = EXCLUDED.description,
+            created_at = CURRENT_TIMESTAMP;
+    """
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, (name, description, model_data_binary))
+        conn.commit()
+    print(f"--- [DATABASE] RL Modeli '{name}' başarıyla kaydedildi/güncellendi. ---")
+
+def get_rl_model_by_id(model_id):
+    """Bir RL modelini ID'sine göre veritabanından çeker."""
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute("SELECT model_data FROM rl_models WHERE id = %s", (model_id,))
+            result = cursor.fetchone()
+            if result:
+                # BYTEA verisini bir hafıza buffer'ına yükle
+                return io.BytesIO(result['model_data'])
+    return None
+
+def get_all_rl_models_info():
+    """Tüm RL modellerinin bilgilerini (ID ve İsim) listeler."""
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+            cursor.execute("SELECT id, name, description, created_at FROM rl_models ORDER BY created_at DESC")
+            return [dict(row) for row in cursor.fetchall()]
+
 
 def add_or_update_strategy(strategy_config):
+    # rl_model_id'yi None olarak ayarla, eğer varsa integer'a çevir
+    rl_model_id = strategy_config.get('rl_model_id')
+    if rl_model_id is not None:
+        try:
+            rl_model_id = int(rl_model_id)
+        except (ValueError, TypeError):
+            rl_model_id = None
+
     params_json = json.dumps(strategy_config.get("strategy_params", {}))
     symbols_json = json.dumps(strategy_config.get("symbols", []))
     sql = """
-        INSERT INTO strategies (id, name, status, symbols, interval, strategy_params, orchestrator_status, is_trading_enabled)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO strategies (id, name, status, symbols, interval, strategy_params, orchestrator_status, is_trading_enabled, rl_model_id)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name, status = EXCLUDED.status, symbols = EXCLUDED.symbols, interval = EXCLUDED.interval,
             strategy_params = EXCLUDED.strategy_params, orchestrator_status = EXCLUDED.orchestrator_status,
-            is_trading_enabled = EXCLUDED.is_trading_enabled;
+            is_trading_enabled = EXCLUDED.is_trading_enabled, rl_model_id = EXCLUDED.rl_model_id;
     """
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
@@ -134,7 +187,8 @@ def add_or_update_strategy(strategy_config):
                 strategy_config.get('status', 'running'), symbols_json,
                 strategy_config.get('interval'), params_json,
                 strategy_config.get('orchestrator_status', 'active'),
-                strategy_config.get('is_trading_enabled', False)
+                strategy_config.get('is_trading_enabled', False),
+                rl_model_id
             ))
         conn.commit()
 

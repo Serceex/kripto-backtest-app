@@ -71,7 +71,18 @@ class StrategyRunner:
         self.name = strategy_config['name']
         self.symbols = strategy_config['symbols']
         self.interval = strategy_config['interval']
-        self.params = strategy_config['strategy_params']
+       
+        raw_params = strategy_config.get('strategy_params', {})
+        if isinstance(raw_params, str):
+            try:
+                self.params = json.loads(raw_params)
+                logging.info(f"BİLGİ ({self.name}): Strateji parametreleri metin olarak geldi ve JSON'a çevrildi.")
+            except json.JSONDecodeError:
+                logging.error(
+                    f"HATA ({self.name}): Strateji parametreleri çözümlenemedi: {raw_params}. Boş olarak kabul ediliyor.")
+                self.params = {}
+        else:
+            self.params = raw_params
         self.portfolio_data = {}
         self.ws_threads = {}
         self._stop_event = threading.Event()

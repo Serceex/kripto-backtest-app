@@ -279,7 +279,7 @@ class StrategyRunner:
                 is_closed = kline['x']
 
                 # Sadece ilgili stratejinin sembollerini dinle
-                if symbol not in self.symbols_to_track:
+                if symbol not in self.symbols:
                     return
 
                 high_price = float(kline['h'])

@@ -75,6 +75,53 @@ def place_futures_order(symbol: str, side: str, quantity: float):
         return None
 
     # Bu fonksiyon, API'ye sürekli aynı isteği atmamak için sonuçları hafızada tutar.
+
+# trade_executor.py (Yeni fonksiyonlar)
+
+def place_futures_stop_market_order(symbol: str, side: str, quantity: float, stop_price: float):
+    """
+    Binance'e stop-market emri gönderir.
+    """
+    client = get_binance_client()
+    if not client: return None
+
+    try:
+        order = client.futures_create_order(
+            symbol=symbol,
+            side=side,
+            type=Client.ORDER_TYPE_STOP_MARKET,
+            quantity=quantity,
+            stopPrice=stop_price,
+            timeInForce='GTC'
+        )
+        print(f"STOP-LOSS EMİR BAŞARILI: {symbol} | Taraf: {side} | Miktar: {quantity} | Stop Fiyat: {stop_price} | Emir ID: {order['orderId']}")
+        return order
+    except BinanceAPIException as e:
+        print(f"STOP-LOSS EMİR HATASI: {symbol} için {side} emri gönderilemedi: {e}")
+        return None
+
+def place_futures_take_profit_order(symbol: str, side: str, quantity: float, stop_price: float):
+    """
+    Binance'e take-profit-market emri gönderir.
+    """
+    client = get_binance_client()
+    if not client: return None
+
+    try:
+        order = client.futures_create_order(
+            symbol=symbol,
+            side=side,
+            type=Client.ORDER_TYPE_TAKE_PROFIT_MARKET,
+            quantity=quantity,
+            stopPrice=stop_price,
+            timeInForce='GTC'
+        )
+        print(f"TAKE-PROFIT EMİR BAŞARILI: {symbol} | Taraf: {side} | Miktar: {quantity} | Kar Fiyat: {stop_price} | Emir ID: {order['orderId']}")
+        return order
+    except BinanceAPIException as e:
+        print(f"TAKE-PROFIT EMİR HATASI: {symbol} için {side} emri gönderilemedi: {e}")
+        return None
+
 @st.cache_data(ttl=3600)  # Sembol bilgilerini 1 saat cache'le
 def get_symbol_info(symbol: str):
         """Binance'den bir sembol için lot büyüklüğü, hassasiyet gibi bilgileri çeker."""

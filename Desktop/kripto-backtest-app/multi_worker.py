@@ -530,7 +530,24 @@ class StrategyRunner:
                 return
             order_side = 'BUY' if new_pos == 'Long' else 'SELL'
             order_result = place_futures_order(symbol, order_side, quantity_to_trade)
-            if not order_result:
+            if order_result:
+                logging.info(
+                    f"BİLGİ ({self.name}): Ana {new_pos} pozisyonu başarıyla açıldı. Şartlı emirler gönderiliyor...")
+
+                # --- YENİ EKLENECEK KISIM: TP ve SL emirlerini gönder ---
+                tp_side = 'SELL' if new_pos == 'Long' else 'BUY'
+                sl_side = 'SELL' if new_pos == 'Long' else 'BUY'
+
+                if sl > 0:
+                    place_futures_stop_market_order(symbol, sl_side, quantity_to_trade, sl)
+
+                # Sadece tp1 veya tp2 emri varsa gönder
+                if tp1 > 0:
+                    place_futures_take_profit_order(symbol, tp_side, quantity_to_trade, tp1)
+
+                # Not: Eğer pozisyonu tek bir TP2 emriyle kapatmak isterseniz, bu mantığı düzenlemeniz gerekir.
+                # Mevcut kod, kademeli kapatma (TP1 sonrası TP2) mantığını destekler.
+            else:
                 logging.error(
                     f"HATA ({self.name}): {symbol} için {order_side} emri Binance'e gönderilemedi. Pozisyon veritabanında 'paper trade' olarak kalacak.")
         else:

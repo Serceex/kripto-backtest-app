@@ -1101,22 +1101,26 @@ if page == "🔬 Laboratuvar":
                         # --- KONTROL VE AYARLAR (YENİ KOMPAKT TASARIM) ---
                         main_controls_col, trade_settings_col = st.columns([1, 2])
 
-                        # --- Sağ Sütun: Canlı İşlem Ayarları ---
+                        # --- Sağ Sütun: Canlı İşlem Ayarları (GÜNCELLENDİ) ---
                         with trade_settings_col:
                             st.markdown("**Canlı İşlem Parametreleri**")
                             params = strategy.get('strategy_params', {})
 
 
-                            # Değişiklikleri anında kaydetmek için bir yardımcı fonksiyon
                             def update_trade_params():
                                 # session_state'den en güncel değerleri al
                                 new_leverage = st.session_state[f"lev_{strategy_id}"]
                                 new_trade_amount = st.session_state[f"amount_{strategy_id}"]
                                 new_trade_status = st.session_state[f"trade_{strategy_id}"]
+                                # YENİ: Telegram durumunu da al
+                                new_telegram_status = st.session_state[f"telegram_{strategy_id}"]
 
                                 updated_params = strategy.get('strategy_params', {}).copy()
                                 updated_params['leverage'] = new_leverage
                                 updated_params['trade_amount_usdt'] = new_trade_amount
+                                # YENİ: Telegram durumunu parametrelere kaydet
+                                updated_params['telegram_enabled'] = True if new_telegram_status == "Evet" else False
+
                                 strategy['strategy_params'] = updated_params
                                 strategy['is_trading_enabled'] = True if new_trade_status == "Aktif" else False
 
@@ -1124,24 +1128,32 @@ if page == "🔬 Laboratuvar":
                                 st.toast(f"'{strategy_name}' güncellendi!", icon="👍")
 
 
-                            trade_cols = st.columns(3)
-                            # Kaldıraç
+                            # Sütunları 4'e çıkarıyoruz
+                            trade_cols = st.columns(4)
+
                             trade_cols[0].slider(
                                 "Kaldıraç", 1, 50, params.get('leverage', 5),
                                 key=f"lev_{strategy_id}",
                                 on_change=update_trade_params
                             )
-                            # İşlem Tutarı
                             trade_cols[1].number_input(
                                 "Tutar ($)", min_value=5.0, value=params.get('trade_amount_usdt', 10.0),
                                 key=f"amount_{strategy_id}",
                                 on_change=update_trade_params
                             )
-                            # İşlem Durumu
                             trade_cols[2].radio(
                                 "Borsada İşlem", ["Aktif", "Pasif"],
                                 index=0 if strategy.get('is_trading_enabled', False) else 1,
                                 key=f"trade_{strategy_id}",
+                                on_change=update_trade_params,
+                                horizontal=True
+                            )
+                            # --- YENİ BÖLÜM: TELEGRAM BİLDİRİM KONTROLÜ ---
+                            trade_cols[3].radio(
+                                "Telegram Bildirim", ["Evet", "Hayır"],
+                                # Varsayılan olarak Evet (True) seçili olsun
+                                index=0 if params.get('telegram_enabled', True) else 1,
+                                key=f"telegram_{strategy_id}",
                                 on_change=update_trade_params,
                                 horizontal=True
                             )

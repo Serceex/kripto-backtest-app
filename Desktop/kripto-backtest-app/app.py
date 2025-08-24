@@ -92,6 +92,8 @@ def apply_full_strategy_params(strategy, is_editing=False):
         st.toast(f"'{strategy_name}' stratejisinin tüm parametreleri yüklendi!", icon="✅")
 
 
+# app.py içindeki run_rl_backtest fonksiyonunun güncellenmiş ve hatası giderilmiş hali
+
 def run_rl_backtest(model_path, backtest_df_raw):
     """Eğitilmiş bir RL modelini yükler, backtest verisi üzerinde çalıştırır ve
     hem işlem listesini hem de ajanın kararlarını içeren tam DataFrame'i döndürür."""
@@ -100,12 +102,9 @@ def run_rl_backtest(model_path, backtest_df_raw):
         return pd.DataFrame(), pd.DataFrame()
 
     model = PPO.load(model_path)
-    # TradingEnv'i backtest verisiyle başlat (bu, veriyi hazırlayacaktır)
     env = TradingEnv(backtest_df_raw.copy())
     obs, _ = env.reset()
 
-    # Ajanın kararlarını saklamak için yeni bir sütun oluştur
-    # env.df'in kopyası üzerinde çalışalım ki orijinal veri bozulmasın
     df_with_actions = env.df.copy()
     df_with_actions['RL_Signal'] = 'Bekle'
     df_with_actions.attrs['symbol'] = model_path.split('_')[2]
@@ -116,28 +115,44 @@ def run_rl_backtest(model_path, backtest_df_raw):
         action, _states = model.predict(obs, deterministic=True)
         obs, reward, done, truncated, info = env.step(action)
 
-        # Ajanın aksiyonunu DataFrame'e kaydet
         current_step_index = env.df.index[env.current_step]
         if action == 1:
             df_with_actions.loc[current_step_index, 'RL_Signal'] = 'Al'
         elif action == 2:
             df_with_actions.loc[current_step_index, 'RL_Signal'] = 'Sat'
 
-        # İşlem listesini oluştur (sadece pozisyon açılıp kapandığında)
-        if env.position == 1 and len(trades) == 0 or trades[-1]['Pozisyon'] != 'Long':  # Yeni Long pozisyon
+        # --- DÜZELTİLMİŞ İŞLEM KAYIT MANTIĞI ---
+        # 1. Yeni bir pozisyona girilip girilmediğini kontrol et
+        is_opening_new_position = False
+        if env.position == 1:  # Ajan Long pozisyonda olmak istiyor
+            if not trades:  # Eğer hiç işlem yoksa, bu yeni bir pozisyondur.
+                is_opening_new_position = True
+            # Eğer son işlem kapanmışsa (yani 'Çıkış Zamanı' doluysa), bu yeni bir pozisyondur.
+            elif 'Çıkış Zamanı' in trades[-1]:
+                is_opening_new_position = True
+
+        # 2. Pozisyonu kapatma durumunu kontrol et
+        is_closing_position = False
+        # Eğer ajan pozisyonda değilse ve işlem listesi boş değilse ve son işlem hala açıksa
+        if env.position == 0 and trades and 'Çıkış Zamanı' not in trades[-1]:
+            is_closing_position = True
+
+        # 3. Duruma göre işlem listesini güncelle
+        if is_opening_new_position:
             trades.append({'Pozisyon': 'Long', 'Giriş Zamanı': current_step_index, 'Giriş Fiyatı': env.entry_price})
-        elif env.position == 0 and len(trades) > 0 and 'Çıkış Zamanı' not in trades[-1]:  # Pozisyon kapandı
+        elif is_closing_position:
             trade = trades[-1]
             trade['Çıkış Zamanı'] = current_step_index
             trade['Çıkış Fiyatı'] = env.df['Close'].loc[current_step_index]
             pnl = ((trade['Çıkış Fiyatı'] - trade['Giriş Fiyatı']) / trade['Giriş Fiyatı']) * 100
             trade['Getiri (%)'] = round(pnl, 2)
+        # --- DÜZELTME SONU ---
 
         if done:
             break
 
-    # Açık kalan işlemleri kapat
-    if len(trades) > 0 and 'Çıkış Zamanı' not in trades[-1]:
+    # Backtest sonunda hala açık kalan ve tamamlanmamış işlem varsa listeden kaldır
+    if trades and 'Çıkış Zamanı' not in trades[-1]:
         trades.pop(-1)
 
     return pd.DataFrame(trades), df_with_actions

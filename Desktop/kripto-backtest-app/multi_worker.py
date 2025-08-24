@@ -593,6 +593,7 @@ class StrategyRunner:
 
         logging.info(f"!!! {message} !!!")
         log_alarm_db(self.id, symbol, f"{status_text} ({self.name})", price)
+
         if self.params.get("telegram_enabled", False):
             token = self.params.get("telegram_token")
             chat_id = self.params.get("telegram_chat_id")

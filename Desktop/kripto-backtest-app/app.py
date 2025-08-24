@@ -426,6 +426,15 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
         tp2_size_pct = st.slider("TP2 Pozisyon Kapatma (%)", 0, 100, st.session_state.tp2_size_key, help="...")
         rerun_if_changed(tp2_size_pct, 'tp2_size_key')
 
+
+try:
+    telegram_token = st.secrets["telegram"]["token"]
+    telegram_chat_id = st.secrets["telegram"]["chat_id"]
+except KeyError:
+    st.warning("Telegram token veya chat_id `.streamlit/secrets.toml` dosyasında ayarlanmamış.")
+    telegram_token = None
+    telegram_chat_id = None
+
 strategy_params = {
     'sma': sma_period, 'ema': ema_period, 'bb_period': bb_period, 'bb_std': bb_std,
     'rsi_buy': rsi_buy, 'rsi_sell': rsi_sell, 'rsi_period': rsi_period,
@@ -442,7 +451,10 @@ strategy_params = {
     'commission_pct': 0.1,
     'tp1_pct': tp1_pct, 'tp1_size_pct': tp1_size_pct,
     'tp2_pct': tp2_pct, 'tp2_size_pct': tp2_size_pct,
-    'move_sl_to_be': move_sl_to_be
+    'move_sl_to_be': move_sl_to_be,
+    'telegram_enabled': use_telegram,
+    'telegram_token': telegram_token,
+    'telegram_chat_id': telegram_chat_id
 
 }
 

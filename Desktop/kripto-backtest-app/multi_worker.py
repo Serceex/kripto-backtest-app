@@ -168,35 +168,31 @@ class StrategyRunner:
 
         with self.position_locks[symbol]:
             is_trading_enabled = self.config.get('is_trading_enabled', False)
+
+            # --- POZİSYON KAPATMA EMİRLERİ (SADECE CANLI İŞLEM AÇIKSA) ---
             if is_trading_enabled:
-                # Mevcut açık pozisyon miktarını al
                 total_quantity = get_open_position_amount(symbol)
                 if total_quantity > 0:
-                    # Kapatılacak miktarı hesapla
                     quantity_to_close = total_quantity * (size_pct_to_close / 100.0)
-
-                    # Binance için miktar hassasiyetini (precision) al
                     symbol_info = get_symbol_info(symbol)
                     if symbol_info:
                         quantity_precision = int(symbol_info['quantityPrecision'])
                         quantity_to_close = round(quantity_to_close, quantity_precision)
-
                     if quantity_to_close > 0:
                         close_side = 'SELL' if current_position == 'Long' else 'BUY'
                         place_futures_order(symbol, close_side, quantity_to_close)
 
+            # --- POZİSYONUN DAHLİ DURUMUNU GÜNCELLE (HER ZAMAN) ---
+            # Kar/Zarar (P&L) hesaplaması ve loglama
             pnl = ((close_price - entry_price) / entry_price * 100) if current_position == 'Long' else (
                     (entry_price - close_price) / entry_price * 100)
-
             log_reason = f"{reason} ({size_pct_to_close}%)"
             self.notify_and_log(symbol, log_reason, close_price, pnl)
 
-            # Eğer pozisyonun tamamı kapatılıyorsa, durumu sıfırla
+            # Hafızayı ve veritabanı durumunu güncelle
             if size_pct_to_close >= 100.0:
                 self._reset_position_state(symbol)
-
             else:
-                # Eğer kısmen kapatılıyorsa (örneğin TP1), sadece ilgili durumu DB'de güncelle
                 current_state = self.portfolio_data.get(symbol, {})
                 if "Take-Profit 1" in reason:
                     update_position(self.id, symbol, current_state.get('position'), current_state.get('entry_price'),

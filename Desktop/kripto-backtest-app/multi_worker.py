@@ -14,7 +14,7 @@ from datetime import datetime
 from stable_baselines3 import PPO
 import numpy as np
 from trade_executor import set_futures_leverage_and_margin, place_futures_order, get_open_position_amount, \
-    get_symbol_info
+    get_symbol_info, place_futures_stop_market_order, place_futures_take_profit_order
 
 from utils import get_binance_klines
 from indicators import generate_all_indicators

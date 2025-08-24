@@ -183,13 +183,30 @@ def backtest_signals(df):
 def add_higher_timeframe_trend(df_lower, df_higher, trend_ema_period=50):
     """
     Üst zaman dilimindeki trendi hesaplar ve alt zaman dilimi verisine ekler.
+    (KeyError'a karşı güçlendirilmiş versiyon)
     """
+    # Üst zaman dilimi verisine Trend_EMA ve Trend sütunlarını ekle
     df_higher['Trend_EMA'] = pd.Series.ewm(df_higher['Close'], span=trend_ema_period, adjust=False).mean()
     df_higher['Trend'] = np.where(df_higher['Close'] > df_higher['Trend_EMA'], 'Up', 'Down')
     df_trend = df_higher[['Trend']].copy()
 
+    # İki zaman dilimini birleştir
     df_merged = pd.merge_asof(df_lower.sort_index(), df_trend.sort_index(),
                               left_index=True, right_index=True, direction='backward')
+
+    # --- BAŞLANGIÇ: DÜZELTME ---
+    # Eğer birleştirme sonrası 'Trend' sütunu oluşmadıysa (veri yetersizliği nedeniyle),
+    # bu sütunu manuel olarak oluştur ve bilinen ilk değerle doldur.
+    if 'Trend' not in df_merged.columns:
+        # Geçici olarak boş bir Trend sütunu oluştur
+        df_merged['Trend'] = np.nan
+        # İlk geçerli trend değerini bul
+        first_valid_trend = df_trend['Trend'].iloc[0]
+        # Tüm boş değerleri bu ilk geçerli değerle doldur
+        df_merged['Trend'].fillna(first_valid_trend, inplace=True)
+    # --- BİTİŞ: DÜZELTME ---
+
+    # Boşlukları ileriye doğru doldurarak sürekliliği sağla
     df_merged['Trend'] = df_merged['Trend'].ffill()
 
     return df_merged

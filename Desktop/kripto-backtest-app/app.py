@@ -1005,42 +1005,75 @@ if page == "🔬 Laboratuvar":
                              color_discrete_sequence=px.colors.sequential.RdBu)
                 st.plotly_chart(fig, use_container_width=True)
 
-        # Sekme 2: Strateji Yönetimi
+
         with tab2:
-            with st.expander("➕ Yeni Canlı İzleme Stratejisi Ekle", expanded=False):
-                new_strategy_name = st.text_input("Strateji Adı", placeholder="Örn: BTC/ETH Trend Takip Stratejisi")
-                st.write("**Mevcut Kenar Çubuğu Ayarları:**")
-                st.write(f"- **Semboller:** `{', '.join(symbols) if symbols else 'Hiçbiri'}`")
-                st.write(f"- **Zaman Dilimi:** `{interval}`")
-                st.write(f"- **Sinyal Modu:** `{strategy_params['signal_mode']}`")
+            # Eğer düzenleme modu aktifse, "Yeni Strateji Ekle" bölümünü "Değişiklikleri Kaydet" paneline dönüştür
+            if st.session_state.get('editing_strategy_id'):
+                with st.expander(f"✍️ '{st.session_state.editing_strategy_name}' Stratejisini Güncelle", expanded=True):
+                    st.info("Kenar çubuğunda yaptığınız değişiklikleri kaydetmek için aşağıdaki butonu kullanın.")
 
-                if st.button("🚀 Yeni Stratejiyi Canlı İzlemeye Al", type="primary"):
-                    if not new_strategy_name:
-                        st.error("Lütfen stratejiye bir isim verin.")
-                    elif not symbols:
-                        st.error("Lütfen en az bir sembol seçin.")
-                    else:
-                        current_strategy_params = strategy_params.copy()
-                        if use_telegram:
-                            try:
-                                current_strategy_params["telegram_token"] = st.secrets["telegram"]["token"]
-                                current_strategy_params["telegram_chat_id"] = st.secrets["telegram"]["chat_id"]
-                                current_strategy_params["telegram_enabled"] = True
-                            except Exception as e:
-                                st.warning(f"Telegram bilgileri okunamadı (.streamlit/secrets.toml kontrol edin): {e}")
-                                current_strategy_params["telegram_enabled"] = False
+                    save_col, cancel_col = st.columns(2)
+
+                    # Değişiklikleri Kaydet Butonu
+                    with save_col:
+                        if st.button("💾 Değişiklikleri Kaydet", type="primary", use_container_width=True):
+                            strategy_to_update = {
+                                "id": st.session_state.editing_strategy_id,
+                                "name": st.session_state.editing_strategy_name,
+                                "status": "running",  # Düzenlenen stratejiyi her zaman 'running' olarak kaydet
+                                "symbols": symbols,
+                                "interval": interval,
+                                "strategy_params": strategy_params  # Kenar çubuğundan gelen en güncel parametreler
+                            }
+                            add_or_update_strategy(strategy_to_update)
+                            st.toast(f"'{st.session_state.editing_strategy_name}' başarıyla güncellendi!", icon="💾")
+                            # Düzenleme modundan çık
+                            st.session_state.editing_strategy_id = None
+                            st.session_state.editing_strategy_name = None
+
+                    # İptal Et Butonu
+                    with cancel_col:
+                        if st.button("❌ İptal Et", use_container_width=True):
+                            st.toast("Değişiklikler iptal edildi.", icon="↩️")
+                            # Düzenleme modundan çık
+                            st.session_state.editing_strategy_id = None
+                            st.session_state.editing_strategy_name = None
+            else:
+                # Düzenleme modu aktif değilse, normal "Yeni Strateji Ekle" panelini göster
+                with st.expander("➕ Yeni Canlı İzleme Stratejisi Ekle", expanded=False):
+                    new_strategy_name = st.text_input("Strateji Adı", placeholder="Örn: BTC/ETH Trend Takip Stratejisi")
+                    st.write("**Mevcut Kenar Çubuğu Ayarları:**")
+                    st.write(f"- **Semboller:** `{', '.join(symbols) if symbols else 'Hiçbiri'}`")
+                    st.write(f"- **Zaman Dilimi:** `{interval}`")
+
+                    if st.button("🚀 Yeni Stratejiyi Canlı İzlemeye Al", type="primary"):
+                        if not new_strategy_name:
+                            st.error("Lütfen stratejiye bir isim verin.")
+                        elif not symbols:
+                            st.error("Lütfen en az bir sembol seçin.")
                         else:
-                            current_strategy_params["telegram_enabled"] = False
+                            # (Yeni strateji ekleme mantığı aynı kalacak)
+                            current_strategy_params = strategy_params.copy()
+                            if use_telegram:
+                                try:
+                                    current_strategy_params["telegram_token"] = st.secrets["telegram"]["token"]
+                                    current_strategy_params["telegram_chat_id"] = st.secrets["telegram"]["chat_id"]
+                                    current_strategy_params["telegram_enabled"] = True
+                                except Exception as e:
+                                    st.warning(f"Telegram bilgileri okunamadı: {e}")
+                                    current_strategy_params["telegram_enabled"] = False
+                            else:
+                                current_strategy_params["telegram_enabled"] = False
 
-                        new_strategy = {
-                            "id": f"strategy_{int(time.time())}",
-                            "name": new_strategy_name,
-                            "status": "running", "symbols": symbols, "interval": interval,
-                            "strategy_params": current_strategy_params
-                        }
-                        add_or_update_strategy(new_strategy)
-                        st.success(f"'{new_strategy_name}' stratejisi başarıyla eklendi!")
-                        st.rerun()
+                            new_strategy = {
+                                "id": f"strategy_{int(time.time())}",
+                                "name": new_strategy_name,
+                                "status": "running", "symbols": symbols, "interval": interval,
+                                "strategy_params": current_strategy_params
+                            }
+                            add_or_update_strategy(new_strategy)
+                            st.success(f"'{new_strategy_name}' stratejisi başarıyla eklendi!")
+
 
             st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
             running_strategies = get_all_strategies()
@@ -1284,7 +1317,7 @@ if page == "🔬 Laboratuvar":
                                          use_container_width=True):
                                 issue_manual_action(row['strategy_id'], row['Sembol'], 'CLOSE_POSITION')
                                 st.toast(f"{row['Sembol']} için kapatma emri gönderildi!", icon="📨")
-                                
+
 
                     # --- İkinci ve Üçüncü Kartlar ---
                     if i + 1 < len(positions_list):

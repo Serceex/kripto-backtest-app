@@ -291,12 +291,18 @@ class StrategyRunner:
                 self.last_prices[symbol] = close_price
 
                 # --- Mevcut açık pozisyonlar için SL/TP kontrolü ---
-                open_position = self.portfolio_data.get(symbol, {})
+
+                open_positions_from_db = get_positions_for_strategy(self.id)
+                open_position = open_positions_from_db.get(symbol)
+
                 if open_position and open_position.get('position'):
+                    # DÜZELTME: Artık yerel hafızadan değil, veritabanından gelen veriyi kullanıyoruz.
                     pos_type = open_position['position']
                     sl_price = open_position.get('stop_loss_price')
                     tp1_price = open_position.get('tp1_price')
                     tp2_price = open_position.get('tp2_price')
+                    tp1_hit = open_position.get('tp1_hit', False)
+                    tp2_hit = open_position.get('tp2_hit', False)
 
                     # LONG Pozisyon için kontrol
                     if pos_type == 'Long':

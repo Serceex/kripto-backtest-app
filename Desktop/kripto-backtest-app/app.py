@@ -1237,6 +1237,8 @@ if page == "🔬 Laboratuvar":
 
         # app.py dosyasındaki "with tab4:" ile başlayan mevcut bloğu silip bunu yapıştırın
 
+        # app.py dosyasındaki "with tab4:" ile başlayan mevcut bloğu silip bunu yapıştırın
+
         with tab4:
             st.subheader("📊 Anlık Açık Pozisyonlar")
             open_positions_df = get_all_open_positions()
@@ -1260,17 +1262,20 @@ if page == "🔬 Laboratuvar":
 
                 for index, row in open_positions_df.iterrows():
                     with st.container(border=True):
+                        # Ana layout: Sol (bilgi), Orta (detaylar), Sağ (buton)
                         col1, col2, col3 = st.columns([2, 3, 1])
-                        emoji = "🟢" if row['Pozisyon'] == 'Long' else "🔴"
-                        pnl_color = "green" if row['PnL (%)'] >= 0 else "red"
 
+                        # --- SOL SÜTUN (Değişiklik yok) ---
                         with col1:
+                            emoji = "🟢" if row['Pozisyon'] == 'Long' else "🔴"
+                            pnl_color = "green" if row['PnL (%)'] >= 0 else "red"
                             st.markdown(f"<h5>{emoji} {row['Sembol']}</h5>", unsafe_allow_html=True)
                             st.markdown(f"**Strateji:** {row['Strateji Adı']}")
                             st.markdown(
                                 f"**Kâr/Zarar:** <span style='color:{pnl_color}; font-weight: bold;'>{row['PnL (%)']:.2f}%</span>",
                                 unsafe_allow_html=True)
 
+                        # --- ORTA SÜTUN (TÜM DEĞİŞİKLİK BURADA) ---
                         with col2:
                             strategy_id = row['strategy_id']
                             strategy_config = all_strategies.get(strategy_id)
@@ -1283,30 +1288,22 @@ if page == "🔬 Laboratuvar":
                             else:
                                 current_signal = "Strateji Yok"
 
-                            # --- BAŞLANGIÇ: GÖRSEL DEĞİŞİKLİK BURADA ---
-                            # İki sütun oluşturuyoruz
-                            signal_col1, signal_col2 = st.columns(2)
+                            # Orta bölümü en baştan ikiye ayır
+                            left_details_col, right_details_col = st.columns(2)
 
-                            # İlk metriği (Mevcut Pozisyon) soldaki sütuna yerleştiriyoruz
-                            with signal_col1:
+                            # "Mevcut Pozisyon" ve ilgili fiyatları sol tarafa koy
+                            with left_details_col:
                                 st.metric("Mevcut Pozisyon", row['Pozisyon'])
+                                st.markdown(f"**Giriş:** `{row['Giriş Fiyatı']:.4f}`")
+                                st.markdown(f"**SL:** `{row['Stop Loss']:.4f}`")
 
-                            # İkinci metriği (Anlık Sinyal) sağdaki sütuna yerleştiriyoruz
-                            with signal_col2:
+                            # "Anlık Sinyal" ve ilgili fiyatları sağ tarafa koy
+                            with right_details_col:
                                 st.metric("Anlık Sinyal", current_signal)
-                            # --- BİTİŞ: GÖRSEL DEĞİŞİKLİK ---
+                                st.markdown(f"**Anlık:** `{row['Anlık Fiyat']:.4f}`")
+                                st.markdown(f"**TP1:** `{row['TP1']:.4f}`")
 
-                            st.markdown(
-                                f"**Giriş:** `{row['Giriş Fiyatı']:.4f}` | **Anlık:** `{row['Anlık Fiyat']:.4f}`",
-                                help="Giriş Fiyatı | Anlık Fiyat"
-                            )
-                            st.markdown(
-                                f"**SL:** `{row['Stop Loss']:.4f}` | "
-                                f"**TP1:** `{row['TP1']:.4f}` | "
-                                f"**TP2:** `{row['TP2']:.4f}`",
-                                help="Stop-Loss | Take-Profit 1 | Take-Profit 2"
-                            )
-
+                        # --- SAĞ SÜTUN (Değişiklik yok) ---
                         with col3:
                             if st.button("KAPAT", key=f"close_{row['strategy_id']}_{row['Sembol']}",
                                          help="Pozisyonu piyasa fiyatından hemen kapatır."):

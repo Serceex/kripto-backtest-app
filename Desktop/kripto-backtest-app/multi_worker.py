@@ -215,15 +215,22 @@ class StrategyRunner:
                 logging.error(f"HATA ({self.name}): Manuel komutlar kontrol edilirken hata: {e}")
             time.sleep(5)
 
-    def _close_position_manually(self, symbol):
-        if not self.portfolio_data.get(symbol, {}).get('position'):
-            logging.info(f"BİLGİ ({self.name}): {symbol} için kapatılacak aktif pozisyon bulunamadı.")
-            return
-        try:
-            latest_price = get_binance_klines(symbol, self.interval, limit=1).iloc[-1]['Close']
-            self._close_position(symbol, latest_price, "Manuel Kapatma")
-        except Exception as e:
-            logging.error(f"HATA ({self.name}): Manuel kapatma için {symbol} anlık fiyatı alınamadı: {e}")
+
+        def _close_position_manually(self, symbol):
+            if not self.portfolio_data.get(symbol, {}).get('position'):
+                logging.info(f"BİLGİ ({self.name}): {symbol} için kapatılacak aktif pozisyon bulunamadı.")
+                return
+            try:
+                # Fiyat verisini alırken boş DataFrame kontrolü ekle
+                df_latest = get_binance_klines(symbol, self.interval, limit=1)
+                if df_latest.empty:
+                    logging.error(f"HATA ({self.name}): Manuel kapatma için {symbol} anlık fiyatı alınamadı: Boş veri.")
+                    return
+
+                latest_price = df_latest.iloc[-1]['Close']
+                self._close_position(symbol, latest_price, "Manuel Kapatma")
+            except Exception as e:
+                logging.error(f"HATA ({self.name}): Manuel kapatma için {symbol} anlık fiyatı alınamadı: {e}")
 
     def _run_websocket(self, symbol):
         stream_url = f"wss://stream.binance.com:9443/ws/{symbol.lower()}@kline_{self.interval}"

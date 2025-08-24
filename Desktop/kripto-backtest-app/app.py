@@ -1142,8 +1142,11 @@ if page == "🔬 Laboratuvar":
                                       on_click=apply_full_strategy_params, args=(strategy, False))
 
         # Sekme 3: Strateji Koçu
+        # app.py dosyasındaki "with tab3:" ile başlayan mevcut bloğu silip bunu yapıştırın
+
         with tab3:
             st.header("🤖 Strateji Koçu")
+            # ... (info metni aynı kalacak) ...
             st.info("""
             Bu panel, piyasanın genel durumunu (rejimini) anlık olarak analiz eder ve bu koşullara en uygun
             stratejileri otomatik olarak aktive eder. Uygun olmayan stratejiler ise yeni pozisyon açmamaları
@@ -1154,27 +1157,24 @@ if page == "🔬 Laboratuvar":
                 st.session_state.orchestrator_log = []
 
             if st.button("🔄 Orkestratör Döngüsünü Çalıştır", type="primary"):
-                with st.spinner("Piyasa rejimi analiz ediliyor ve stratejiler yeniden düzenleniyor..."):
+                with st.spinner("Piyasa rejimi analiz ediliyor..."):
                     result = run_orchestrator_cycle()
-                    log_entry = {
-                        "time": datetime.now().strftime('%H:%M:%S'),
-                        "result": result
-                    }
+                    log_entry = {"time": datetime.now().strftime('%H:%M:%S'), "result": result}
                     st.session_state.orchestrator_log.insert(0, log_entry)
                 st.rerun()
 
             st.subheader("📊 Anlık Piyasa Rejimi")
 
 
+            # ... (Piyasa rejimi kısmı aynı kalacak) ...
             @st.cache_data(ttl=300)
             def cached_get_market_regime():
                 return get_market_regime()
 
 
             market_regime = cached_get_market_regime()
-
             if not market_regime:
-                st.error("Piyasa rejimi verisi alınamadı. Lütfen bir süre sonra tekrar deneyin.")
+                st.error("Piyasa rejimi verisi alınamadı.")
             else:
                 cols = st.columns(3)
                 cols[0].metric("Piyasa Duygusu", market_regime.get('sentiment', 'Bilinmiyor'))
@@ -1182,12 +1182,10 @@ if page == "🔬 Laboratuvar":
                 cols[2].metric("Volatilite", market_regime.get('volatility', 'Bilinmiyor'))
 
             st.markdown("---")
-
             st.subheader("🎯 Strateji Görev Durumları")
 
             active_strategies = []
             inactive_strategies = []
-
             all_strategies = get_all_strategies()
             for strategy in all_strategies:
                 dna = get_strategy_dna(strategy['strategy_params'])
@@ -1196,7 +1194,7 @@ if page == "🔬 Laboratuvar":
                 if strategy.get('orchestrator_status', 'active') == 'active':
                     active_strategies.append(strategy_info)
                 else:
-                    inactive_strategies.append(strategy_info)
+                    inactive_strategies.append(strategy)  # Stratejinin kendisini listeye ekle
 
             col1, col2 = st.columns(2)
             with col1:
@@ -1204,40 +1202,30 @@ if page == "🔬 Laboratuvar":
                 if not active_strategies:
                     st.info("Mevcut rejime uygun aktif strateji bulunmuyor.")
                 else:
-                    for s in active_strategies:
-                        st.markdown(f"- {s}", unsafe_allow_html=True)
+                    for s_info in active_strategies:
+                        st.markdown(f"- {s_info}", unsafe_allow_html=True)
 
             with col2:
                 st.markdown("<h5>⏸️ Yedek Kulübesi</h5>", unsafe_allow_html=True)
                 if not inactive_strategies:
                     st.info("Yedekte bekleyen strateji bulunmuyor.")
                 else:
-                    for s in inactive_strategies:
-                        st.markdown(f"- {s}", unsafe_allow_html=True)
+                    for strategy in inactive_strategies:
+                        with st.container(border=True):
+                            info_col, btn_col = st.columns([3, 1])
+                            info_col.markdown(f"**{strategy['name']}**")
+                            info_col.caption(f"DNA: `{', '.join(get_strategy_dna(strategy['strategy_params']))}`")
+                            # --- YENİ BUTON ---
+                            if btn_col.button("Aktive Et", key=f"activate_coach_{strategy['id']}",
+                                              help="Orkestratör kararını geçersiz kıl ve stratejiyi aktive et."):
+                                strategy['orchestrator_status'] = 'active'
+                                add_or_update_strategy(strategy)
+                                st.toast(f"'{strategy['name']}' manuel olarak aktive edildi!", icon="✅")
+                                st.rerun()
+
 
             st.subheader("📜 Koç Günlüğü")
-            if not st.session_state.orchestrator_log:
-                st.info("Henüz bir orkestratör döngüsü çalıştırılmadı.")
-            else:
-                for log in st.session_state.orchestrator_log:
-                    with st.expander(
-                            f"Döngü Zamanı: {log['time']} - Durum: {log['result'].get('status', 'Bilinmiyor').capitalize()}"):
-                        result = log['result']
-                        if result['status'] == 'completed':
-                            st.json(result.get('market_regime', {}))
-                            st.markdown("**Aktive Edilen Stratejiler:**")
-                            for name in result.get('activated', []):
-                                st.markdown(f"- ✅ `{name}`")
 
-                            st.markdown("**Yedeğe Alınan Stratejiler:**")
-                            for name in result.get('deactivated', []):
-                                st.markdown(f"- ⏸️ `{name}`")
-                        else:
-                            st.warning(f"Bu döngü atlandı. Sebep: {result.get('reason', 'Bilinmiyor')}")
-
-        # app.py dosyasındaki "with tab4:" ile başlayan mevcut bloğu silip bunu yapıştırın
-
-        # app.py dosyasındaki "with tab4:" ile başlayan mevcut bloğu silip bunu yapıştırın
 
         with tab4:
             st.subheader("📊 Anlık Açık Pozisyonlar")
@@ -1385,7 +1373,6 @@ if page == "🔬 Laboratuvar":
                duraklatılan stratejileri inceleyip isterseniz kalıcı olarak silmektir.
                """)
 
-            # ... (Evrim döngüsü butonu ve logları aynı kalacak) ...
             if 'evolution_log' not in st.session_state:
                 st.session_state.evolution_log = []
 
@@ -1434,15 +1421,22 @@ if page == "🔬 Laboratuvar":
                 st.info("Düşük performans nedeniyle duraklatılmış bir strateji bulunmuyor.")
             else:
                 st.warning(
-                    "Aşağıdaki stratejiler, Evrim Döngüsü tarafından düşük performanslı olarak işaretlendi ve duraklatıldı. Bu stratejiler yeni pozisyon açmayacaktır.")
+                    "Aşağıdaki stratejiler, Evrim Döngüsü tarafından düşük performanslı olarak işaretlendi ve duraklatıldı.")
                 for strategy in paused_strategies:
                     with st.container(border=True):
-                        col1, col2 = st.columns([3, 1])
+                        # --- DEĞİŞİKLİK BURADA ---
+                        col1, col2, col3 = st.columns([3, 1, 1])
                         with col1:
                             st.markdown(f"**{strategy['name']}**")
-                            st.caption(f"ID: `{strategy['id']}` | Semboller: {len(strategy.get('symbols', []))} adet")
+                            st.caption(f"ID: `{strategy['id']}`")
                         with col2:
-                            if st.button("🗑️ Kalıcı Olarak Sil", key=f"delete_paused_{strategy['id']}", type="primary"):
+                            # --- YENİ BUTON ---
+                            if st.button("✅ Aktive Et", key=f"activate_evo_{strategy['id']}"):
+                                update_strategy_status(strategy['id'], 'running')
+                                st.toast(f"'{strategy['name']}' tekrar aktive edildi!", icon="✅")
+                                st.rerun()
+                        with col3:
+                            if st.button("🗑️ Sil", key=f"delete_paused_{strategy['id']}", type="primary"):
                                 remove_strategy(strategy['id'])
                                 st.toast(f"'{strategy['name']}' kalıcı olarak silindi!", icon="🗑️")
                                 st.rerun()

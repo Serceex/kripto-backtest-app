@@ -6,12 +6,12 @@ import time
 import copy
 from datetime import datetime
 
-# Projemizin veritabanı fonksiyonlarını dahil ediyoruz
 from database import (
     get_all_strategies,
     get_live_closed_trades_metrics,
     remove_strategy,
-    add_or_update_strategy
+    add_or_update_strategy,
+    update_strategy_status  # Bu satırı ekleyin
 )
 
 # --- Genetik Algoritma Parametreleri ---
@@ -122,7 +122,7 @@ def run_evolution_cycle():
         strategy_id = s_to_eliminate['config']['id']
         name = s_to_eliminate['config']['name']
         print(f"    - '{name}' (ID: {strategy_id}) düşük performans nedeniyle eleniyor.")
-        remove_strategy(strategy_id)
+        update_strategy_status(strategy_id, 'paused')
         eliminated_names.append(name)
 
     # 4. Yeni Nesil Oluşturma

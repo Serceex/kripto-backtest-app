@@ -1374,60 +1374,80 @@ if page == "🔬 Laboratuvar":
             else:
                 st.info("Veritabanında henüz kayıtlı bir alarm yok.")
 
+        # app.py dosyasındaki "with tab6:" ile başlayan mevcut bloğu silip bunu yapıştırın
 
         with tab6:
             st.header("🧬 Strateji Gen Havuzu ve Evrimsel Optimizasyon")
             st.info("""
                Bu panel, strateji ekosisteminizi yönetmenizi sağlar. Sistem, en iyi performans gösteren stratejileri
                seçip onları "çaprazlayarak" veya "mutasyona uğratarak" yeni nesiller yaratır. En kötü performans
-               gösterenler ise doğal seçilim yoluyla elenir. Sizin rolünüz, bu evrim sürecini yönetmektir.
+               gösterenler ise doğal seçilim yoluyla **duraklatılır**. Sizin rolünüz, bu evrim sürecini yönetmek ve 
+               duraklatılan stratejileri inceleyip isterseniz kalıcı olarak silmektir.
                """)
 
+            # ... (Evrim döngüsü butonu ve logları aynı kalacak) ...
             if 'evolution_log' not in st.session_state:
                 st.session_state.evolution_log = []
 
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                if st.button("🚀 Evrim Döngüsünü Başlat", type="primary",
-                             help="En kötü stratejileri eler ve en iyilerden yenilerini üretir."):
-                    with st.spinner(
-                            "Evrim döngüsü çalışıyor... Stratejiler analiz ediliyor, eleniyor ve yenileri yaratılıyor..."):
-                        result = run_evolution_cycle()
-                        log_entry = {
-                            "time": datetime.now().strftime('%H:%M:%S'),
-                            "result": result
-                        }
-                        st.session_state.evolution_log.insert(0, log_entry)  # En yeni logu başa ekle
-                    st.rerun()
+            if st.button("🚀 Evrim Döngüsünü Başlat", type="primary"):
+                with st.spinner("Evrim döngüsü çalışıyor..."):
+                    result = run_evolution_cycle()
+                    log_entry = {"time": datetime.now().strftime('%H:%M:%S'), "result": result}
+                    st.session_state.evolution_log.insert(0, log_entry)
+                st.rerun()
 
             st.subheader("📈 Canlı Strateji Performans Lider Tablosu")
 
             all_strategies = get_all_strategies()
             strategy_performance_data = []
+            paused_strategies = []
+
             for strategy in all_strategies:
+                if strategy.get('status') == 'paused':
+                    paused_strategies.append(strategy)
+                    continue  # Duraklatılanları lider tablosunda gösterme
+
                 metrics = get_live_closed_trades_metrics(strategy_id=strategy['id'])
                 performance_score = metrics.get('Profit Factor', 0)
-                if performance_score == float('inf'):
-                    performance_score = 1000
+                if performance_score == float('inf'): performance_score = 1000
 
                 strategy_performance_data.append({
                     "Strateji Adı": strategy['name'],
                     "Profit Factor": f"{performance_score:.2f}",
                     "Başarı Oranı (%)": f"{metrics.get('Başarı Oranı (%)', 0):.2f}",
                     "Toplam İşlem": metrics.get('Toplam İşlem', 0),
-                    "Durum": strategy.get('status', 'running').capitalize()
                 })
 
             if not strategy_performance_data:
-                st.warning(
-                    "Gösterilecek aktif strateji bulunamadı. Lütfen 'Canlı İzleme' sayfasından stratejiler ekleyin.")
+                st.info("Gösterilecek aktif strateji bulunamadı.")
             else:
-                # Verileri Profit Factor'e göre sırala
                 df_performance = pd.DataFrame(strategy_performance_data)
                 df_performance['Profit Factor'] = pd.to_numeric(df_performance['Profit Factor'])
                 df_performance = df_performance.sort_values(by="Profit Factor", ascending=False).reset_index(drop=True)
                 st.dataframe(df_performance, use_container_width=True)
 
+            st.markdown("---")
+
+            # --- YENİ BÖLÜM: Duraklatılan Stratejiler ---
+            st.subheader("⏸️ Duraklatılan Stratejiler (İnceleme Bekleyenler)")
+            if not paused_strategies:
+                st.info("Düşük performans nedeniyle duraklatılmış bir strateji bulunmuyor.")
+            else:
+                st.warning(
+                    "Aşağıdaki stratejiler, Evrim Döngüsü tarafından düşük performanslı olarak işaretlendi ve duraklatıldı. Bu stratejiler yeni pozisyon açmayacaktır.")
+                for strategy in paused_strategies:
+                    with st.container(border=True):
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.markdown(f"**{strategy['name']}**")
+                            st.caption(f"ID: `{strategy['id']}` | Semboller: {len(strategy.get('symbols', []))} adet")
+                        with col2:
+                            if st.button("🗑️ Kalıcı Olarak Sil", key=f"delete_paused_{strategy['id']}", type="primary"):
+                                remove_strategy(strategy['id'])
+                                st.toast(f"'{strategy['name']}' kalıcı olarak silindi!", icon="🗑️")
+                                st.rerun()
+
+            # ... (Evrim döngüsü günlüğü aynı kalacak) ...
             st.subheader("📜 Evrim Döngüsü Günlüğü")
             if not st.session_state.evolution_log:
                 st.info("Henüz bir evrim döngüsü çalıştırılmadı.")
@@ -1437,10 +1457,9 @@ if page == "🔬 Laboratuvar":
                             f"Döngü Zamanı: {log['time']} - Durum: {log['result'].get('status', 'Bilinmiyor').capitalize()}"):
                         result = log['result']
                         if result['status'] == 'completed':
-                            st.markdown("**Elenen Stratejiler:**")
+                            st.markdown("**Duraklatılan Stratejiler:**")
                             for name in result.get('eliminated', []):
-                                st.markdown(f"- ❌ `{name}`")
-
+                                st.markdown(f"- ⏸️ `{name}`")
                             st.markdown("**Oluşturulan Yeni Stratejiler:**")
                             for name in result.get('created', []):
                                 st.markdown(f"- ✨ `{name}`")

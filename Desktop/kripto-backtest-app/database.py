@@ -7,6 +7,7 @@ import json
 import os
 from datetime import datetime
 import numpy as np
+import toml
 
 print("--- [DEBUG] database.py dosyası import ediliyor...")
 
@@ -14,16 +15,34 @@ DB_CONFIG = None
 
 def get_db_secrets():
     global DB_CONFIG
-    if DB_CONFIG is None:
-        print("--- [DEBUG] Streamlit secrets okunmaya çalışılıyor...")
-        try:
-            import streamlit as st
-            DB_CONFIG = st.secrets["postgres"]
-            print("--- [DEBUG] Streamlit secrets başarıyla okundu.")
-        except Exception as e:
-            print(f"--- [HATA] Streamlit secrets okunamadı: {e}. Worker ortamı varsayılıyor.")
-            DB_CONFIG = {}
-    return DB_CONFIG
+    if DB_CONFIG is not None:
+        return DB_CONFIG
+
+    # 1. Streamlit secrets'ı dene (Streamlit ortamı için)
+    try:
+        import streamlit as st
+        DB_CONFIG = st.secrets["postgres"]
+        print("--- [DEBUG] Streamlit secrets başarıyla okundu.")
+        return DB_CONFIG
+    except Exception:
+        print("--- [BİLGİ] Streamlit secrets ortamı değil. .streamlit/secrets.toml dosyası okunacak.")
+
+    # 2. .streamlit/secrets.toml dosyasını doğrudan oku (Worker ortamı için)
+    try:
+        # secrets.toml dosyasının tam yolunu bul
+        # Bu script'in (database.py) bulunduğu dizini al
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Bir üst dizine çıkıp .streamlit/secrets.toml yolunu oluştur
+        secrets_path = os.path.join(script_dir, '.streamlit', 'secrets.toml')
+
+        secrets = toml.load(secrets_path)
+        DB_CONFIG = secrets["postgres"]
+        print("--- [DEBUG] .streamlit/secrets.toml dosyası başarıyla okundu.")
+        return DB_CONFIG
+    except Exception as e:
+        print(f"--- [KRİTİK HATA] secrets.toml dosyası okunamadı veya 'postgres' bölümü bulunamadı: {e}")
+        DB_CONFIG = {} # Hata durumunda boş döndür
+        return DB_CONFIG
 
 def get_db_connection():
     config = get_db_secrets()

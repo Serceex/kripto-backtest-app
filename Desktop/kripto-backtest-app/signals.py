@@ -185,6 +185,12 @@ def add_higher_timeframe_trend(df_lower, df_higher, trend_ema_period=50):
     Üst zaman dilimindeki trendi hesaplar ve alt zaman dilimi verisine ekler.
     (KeyError'a karşı güçlendirilmiş versiyon)
     """
+    # --- BAŞLANGIÇ: GÜVENLİK ÖNLEMİ ---
+    # Eğer df_lower'da zaten bir 'Trend' sütunu varsa, birleştirmeden önce onu kaldır.
+    # Bu, döngüsel çalışmalarda oluşabilecek MergeError'ı engeller.
+    if 'Trend' in df_lower.columns:
+        df_lower = df_lower.drop(columns=['Trend'])
+    # --- BİTİŞ: GÜVENLİK ÖNLEMİ ---
     # Üst zaman dilimi verisine Trend_EMA ve Trend sütunlarını ekle
     df_higher['Trend_EMA'] = pd.Series.ewm(df_higher['Close'], span=trend_ema_period, adjust=False).mean()
     df_higher['Trend'] = np.where(df_higher['Close'] > df_higher['Trend_EMA'], 'Up', 'Down')

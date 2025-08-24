@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 import numpy as np
 import toml
-from database import get_all_strategies 
+
 
 
 DB_CONFIG = None
@@ -243,6 +243,7 @@ def get_live_closed_trades_metrics(strategy_id=None):
     Canlıda kapanan işlemlerin detaylı metriklerini, kademeli kâr alımını (TP1/TP2)
     doğru bir şekilde hesaba katarak hesaplar.
     """
+    from database import get_all_strategies
     default_metrics = {
         "Toplam İşlem": 0, "Başarı Oranı (%)": 0.0, "Toplam Getiri (%)": 0.0,
         "Ortalama Kazanç (%)": 0.0, "Ortalama Kayıp (%)": 0.0, "Profit Factor": 0.0

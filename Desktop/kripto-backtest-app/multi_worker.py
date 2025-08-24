@@ -215,8 +215,12 @@ class StrategyRunner:
                 logging.error(f"HATA ({self.name}): Manuel komutlar kontrol edilirken hata: {e}")
             time.sleep(5)
 
+        # multi_worker.py dosyasındaki StrategyRunner sınıfının içine ekleyin
 
     def _close_position_manually(self, symbol):
+            """
+            Manuel kapatma emrini işler.
+            """
             if not self.portfolio_data.get(symbol, {}).get('position'):
                 logging.info(f"BİLGİ ({self.name}): {symbol} için kapatılacak aktif pozisyon bulunamadı.")
                 return

@@ -73,7 +73,8 @@ class StrategyRunner:
         self.name = strategy_config['name']
         self.symbols = strategy_config['symbols']
         self.interval = strategy_config['interval']
-
+        self.last_prices = {}
+        self.symbols_to_track = strategy_config['symbols']
         raw_params = strategy_config.get('strategy_params', {})
         if isinstance(raw_params, str):
             try:

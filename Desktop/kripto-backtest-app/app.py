@@ -293,6 +293,90 @@ with st.sidebar.expander("🔧 Diğer Parametreler", expanded=False):
     else:
         forward_window, target_thresh = None, None
 
+
+
+# --- Sembol ve Zaman Dilimi Seçimi ---
+symbols_selection = st.multiselect(
+    "📈 Portföyde test edilecek semboller",
+    [
+        "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "SOLUSDT", "ADAUSDT", "DOGEUSDT",
+        "MATICUSDT", "DOTUSDT", "LTCUSDT", "TRXUSDT", "SHIBUSDT", "AVAXUSDT", "UNIUSDT",
+        "LINKUSDT", "ALGOUSDT", "ATOMUSDT", "BCHUSDT", "XLMUSDT", "VETUSDT", "FILUSDT",
+        "ICPUSDT", "THETAUSDT", "EOSUSDT", "AAVEUSDT", "MKRUSDT", "KSMUSDT", "XTZUSDT",
+        "NEARUSDT", "CAKEUSDT", "FTMUSDT", "GRTUSDT", "SNXUSDT", "RUNEUSDT", "CHZUSDT",
+        "ZILUSDT", "DASHUSDT", "SANDUSDT", "KAVAUSDT", "COMPUSDT", "LUNAUSDT", "ENJUSDT",
+        "BATUSDT", "NANOUSDT", "1INCHUSDT", "ZRXUSDT", "CELRUSDT", "HNTUSDT", "FTTUSDT", "GALAUSDT"
+    ],
+    default=st.session_state.symbols_key
+)
+rerun_if_changed(symbols_selection, 'symbols_key')
+symbols = st.session_state.symbols_key
+
+timeframe_options = ["15m", "1h", "4h"]
+timeframe_index = timeframe_options.index(st.session_state.interval_key)
+interval_selection = st.selectbox("⏳ Zaman Dilimi Seçin", options=timeframe_options, index=timeframe_index)
+rerun_if_changed(interval_selection, 'interval_key')
+interval = st.session_state.interval_key
+
+results_section = st.container()
+optimize_section = st.container()
+
+with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("**Sinyal & İşlem Ayarları**")
+        signal_mode_options = ["Long Only", "Short Only", "Long & Short"]
+        signal_mode_index = signal_mode_options.index(st.session_state.signal_mode_key)
+        signal_mode = st.selectbox("Sinyal Modu", signal_mode_options, index=signal_mode_index)
+        rerun_if_changed(signal_mode, 'signal_mode_key')
+
+        signal_logic_options = ["AND (Teyitli)", "OR (Hızlı)"]
+        signal_logic_index = signal_logic_options.index(st.session_state.signal_logic_key)
+        signal_logic = st.selectbox("Sinyal Mantığı", signal_logic_options, index=signal_logic_index, help="...")
+        rerun_if_changed(signal_logic, 'signal_logic_key')
+
+        cooldown_bars = st.slider("İşlem Arası Bekleme (bar)", 0, 10, st.session_state.cooldown_bars_key)
+        rerun_if_changed(cooldown_bars, 'cooldown_bars_key')
+
+        commission_pct = st.slider("İşlem Başına Komisyon (%)", 0.0, 0.5, st.session_state.commission_pct_key,
+                                   step=0.01, help="...")
+        rerun_if_changed(commission_pct, 'commission_pct_key')
+
+    with col2:
+        st.markdown("**Zarar Durdur (Stop-Loss)**")
+        sl_type_options = ["Yüzde (%)", "ATR"]
+        sl_type_index = sl_type_options.index(st.session_state.sl_type_key)
+        sl_type = st.radio("Stop-Loss Türü", sl_type_options, index=sl_type_index, horizontal=True)
+        rerun_if_changed(sl_type, 'sl_type_key')
+
+        if sl_type == "Yüzde (%)":
+            stop_loss_pct = st.slider("Stop Loss (%)", 0.0, 10.0, st.session_state.stop_loss_pct_key, step=0.1)
+            rerun_if_changed(stop_loss_pct, 'stop_loss_pct_key')
+            atr_multiplier = 0
+        else:
+            atr_multiplier = st.slider("ATR Çarpanı", 1.0, 5.0, st.session_state.atr_multiplier_key, step=0.1,
+                                       help="...")
+            rerun_if_changed(atr_multiplier, 'atr_multiplier_key')
+            stop_loss_pct = 0
+
+    with col3:
+        st.markdown("**Kademeli Kâr Al (Take-Profit)**")
+        move_sl_to_be = st.checkbox("TP1 sonrası Stop'u Girişe Çek", value=st.session_state.move_sl_to_be, help="...")
+        rerun_if_changed(move_sl_to_be, 'move_sl_to_be')
+
+        tp1_pct = st.slider("TP1 Kâr (%)", 0.0, 20.0, st.session_state.tp1_pct_key, step=0.1)
+        rerun_if_changed(tp1_pct, 'tp1_pct_key')
+
+        tp1_size_pct = st.slider("TP1 Pozisyon Kapatma (%)", 0, 100, st.session_state.tp1_size_key, help="...")
+        rerun_if_changed(tp1_size_pct, 'tp1_size_key')
+
+        tp2_pct = st.slider("TP2 Kâr (%)", 0.0, 50.0, st.session_state.tp2_pct_key, step=0.1)
+        rerun_if_changed(tp2_pct, 'tp2_pct_key')
+
+        tp2_size_pct = st.slider("TP2 Pozisyon Kapatma (%)", 0, 100, st.session_state.tp2_size_key, help="...")
+        rerun_if_changed(tp2_size_pct, 'tp2_size_key')
+
+
 # ==============================================================================
 # --- SİNYAL KRİTERLERİ VE DETAY AYARLARI ---
 # ==============================================================================
@@ -392,86 +476,6 @@ if use_vwap:
 else:
     vwap_cross_logic = "Fiyat > VWAP ise AL"
 
-# --- Sembol ve Zaman Dilimi Seçimi ---
-symbols_selection = st.multiselect(
-    "📈 Portföyde test edilecek semboller",
-    [
-        "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "SOLUSDT", "ADAUSDT", "DOGEUSDT",
-        "MATICUSDT", "DOTUSDT", "LTCUSDT", "TRXUSDT", "SHIBUSDT", "AVAXUSDT", "UNIUSDT",
-        "LINKUSDT", "ALGOUSDT", "ATOMUSDT", "BCHUSDT", "XLMUSDT", "VETUSDT", "FILUSDT",
-        "ICPUSDT", "THETAUSDT", "EOSUSDT", "AAVEUSDT", "MKRUSDT", "KSMUSDT", "XTZUSDT",
-        "NEARUSDT", "CAKEUSDT", "FTMUSDT", "GRTUSDT", "SNXUSDT", "RUNEUSDT", "CHZUSDT",
-        "ZILUSDT", "DASHUSDT", "SANDUSDT", "KAVAUSDT", "COMPUSDT", "LUNAUSDT", "ENJUSDT",
-        "BATUSDT", "NANOUSDT", "1INCHUSDT", "ZRXUSDT", "CELRUSDT", "HNTUSDT", "FTTUSDT", "GALAUSDT"
-    ],
-    default=st.session_state.symbols_key
-)
-rerun_if_changed(symbols_selection, 'symbols_key')
-symbols = st.session_state.symbols_key
-
-timeframe_options = ["15m", "1h", "4h"]
-timeframe_index = timeframe_options.index(st.session_state.interval_key)
-interval_selection = st.selectbox("⏳ Zaman Dilimi Seçin", options=timeframe_options, index=timeframe_index)
-rerun_if_changed(interval_selection, 'interval_key')
-interval = st.session_state.interval_key
-
-results_section = st.container()
-optimize_section = st.container()
-
-with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("**Sinyal & İşlem Ayarları**")
-        signal_mode_options = ["Long Only", "Short Only", "Long & Short"]
-        signal_mode_index = signal_mode_options.index(st.session_state.signal_mode_key)
-        signal_mode = st.selectbox("Sinyal Modu", signal_mode_options, index=signal_mode_index)
-        rerun_if_changed(signal_mode, 'signal_mode_key')
-
-        signal_logic_options = ["AND (Teyitli)", "OR (Hızlı)"]
-        signal_logic_index = signal_logic_options.index(st.session_state.signal_logic_key)
-        signal_logic = st.selectbox("Sinyal Mantığı", signal_logic_options, index=signal_logic_index, help="...")
-        rerun_if_changed(signal_logic, 'signal_logic_key')
-
-        cooldown_bars = st.slider("İşlem Arası Bekleme (bar)", 0, 10, st.session_state.cooldown_bars_key)
-        rerun_if_changed(cooldown_bars, 'cooldown_bars_key')
-
-        commission_pct = st.slider("İşlem Başına Komisyon (%)", 0.0, 0.5, st.session_state.commission_pct_key,
-                                   step=0.01, help="...")
-        rerun_if_changed(commission_pct, 'commission_pct_key')
-
-    with col2:
-        st.markdown("**Zarar Durdur (Stop-Loss)**")
-        sl_type_options = ["Yüzde (%)", "ATR"]
-        sl_type_index = sl_type_options.index(st.session_state.sl_type_key)
-        sl_type = st.radio("Stop-Loss Türü", sl_type_options, index=sl_type_index, horizontal=True)
-        rerun_if_changed(sl_type, 'sl_type_key')
-
-        if sl_type == "Yüzde (%)":
-            stop_loss_pct = st.slider("Stop Loss (%)", 0.0, 10.0, st.session_state.stop_loss_pct_key, step=0.1)
-            rerun_if_changed(stop_loss_pct, 'stop_loss_pct_key')
-            atr_multiplier = 0
-        else:
-            atr_multiplier = st.slider("ATR Çarpanı", 1.0, 5.0, st.session_state.atr_multiplier_key, step=0.1,
-                                       help="...")
-            rerun_if_changed(atr_multiplier, 'atr_multiplier_key')
-            stop_loss_pct = 0
-
-    with col3:
-        st.markdown("**Kademeli Kâr Al (Take-Profit)**")
-        move_sl_to_be = st.checkbox("TP1 sonrası Stop'u Girişe Çek", value=st.session_state.move_sl_to_be, help="...")
-        rerun_if_changed(move_sl_to_be, 'move_sl_to_be')
-
-        tp1_pct = st.slider("TP1 Kâr (%)", 0.0, 20.0, st.session_state.tp1_pct_key, step=0.1)
-        rerun_if_changed(tp1_pct, 'tp1_pct_key')
-
-        tp1_size_pct = st.slider("TP1 Pozisyon Kapatma (%)", 0, 100, st.session_state.tp1_size_key, help="...")
-        rerun_if_changed(tp1_size_pct, 'tp1_size_key')
-
-        tp2_pct = st.slider("TP2 Kâr (%)", 0.0, 50.0, st.session_state.tp2_pct_key, step=0.1)
-        rerun_if_changed(tp2_pct, 'tp2_pct_key')
-
-        tp2_size_pct = st.slider("TP2 Pozisyon Kapatma (%)", 0, 100, st.session_state.tp2_size_key, help="...")
-        rerun_if_changed(tp2_size_pct, 'tp2_size_key')
 
 
 try:

@@ -321,6 +321,124 @@ interval = st.session_state.interval_key
 results_section = st.container()
 optimize_section = st.container()
 
+
+# Sinyal Kriterleri için ana açılır menü
+with st.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=False):
+    st.write(
+        "Stratejinizde kullanılacak temel al/sat sinyallerini buradan seçin. Seçtiğiniz her göstergenin detaylı ayarlarını aşağıdan yapabilirsiniz.")
+
+    st.subheader("Trend ve Momentum")
+    col1, col2 = st.columns(2)
+    with col1:
+        use_rsi_selection = st.checkbox("RSI", value=st.session_state.use_rsi)
+        rerun_if_changed(use_rsi_selection, 'use_rsi')
+        use_rsi = st.session_state.use_rsi
+
+        use_macd_selection = st.checkbox("MACD", value=st.session_state.use_macd)
+        rerun_if_changed(use_macd_selection, 'use_macd')
+        use_macd = st.session_state.use_macd
+    with col2:
+        use_adx_selection = st.checkbox("ADX Filtresi", value=st.session_state.use_adx,
+                                        help="Trendin gücünü ölçer. Diğer sinyalleri teyit etmek için kullanılır.")
+        rerun_if_changed(use_adx_selection, 'use_adx')
+        use_adx = st.session_state.use_adx
+
+    st.subheader("Aşırı Alım/Satım ve Hacim")
+    col3, col4 = st.columns(2)
+    with col3:
+        use_bb_selection = st.checkbox("Bollinger Bantları", value=st.session_state.use_bb)
+        rerun_if_changed(use_bb_selection, 'use_bb')
+        use_bb = st.session_state.use_bb
+
+        use_stoch_selection = st.checkbox("Stochastic", value=st.session_state.use_stoch)
+        rerun_if_changed(use_stoch_selection, 'use_stoch')
+        use_stoch = st.session_state.use_stoch
+    with col4:
+        use_vwap_selection = st.checkbox("VWAP Kesişimi", value=st.session_state.use_vwap,
+                                         help="Fiyatın Hacim Ağırlıklı Ortalama Fiyatı (VWAP) kesişimlerini sinyal olarak kullanır.")
+        rerun_if_changed(use_vwap_selection, 'use_vwap')
+        use_vwap = st.session_state.use_vwap
+
+    # --- Sinyal Detay Ayarları ---
+    st.markdown("---")
+    st.subheader("Sinyal Detay Ayarları")
+
+    detay_col1, detay_col2 = st.columns(2)
+
+    with detay_col1:
+        if use_rsi:
+            with st.container(border=True):
+                st.markdown("**RSI Ayarları**")
+                rsi_period_selection = st.number_input("RSI Periyodu", 2, 100, st.session_state.rsi_period,
+                                                       key="main_rsi_period")
+                rerun_if_changed(rsi_period_selection, 'rsi_period')
+                rsi_period = st.session_state.rsi_period
+
+                rsi_buy_selection = st.slider("RSI Alış Eşiği", 0, 50, st.session_state.rsi_buy_key, 1,
+                                              key="main_rsi_buy")
+                rerun_if_changed(rsi_buy_selection, 'rsi_buy_key')
+                rsi_buy = st.session_state.rsi_buy_key
+
+                rsi_sell_selection = st.slider("RSI Satış Eşiği", 50, 100, st.session_state.rsi_sell_key, 1,
+                                               key="main_rsi_sell")
+                rerun_if_changed(rsi_sell_selection, 'rsi_sell_key')
+                rsi_sell = st.session_state.rsi_sell_key
+        else:
+            rsi_buy, rsi_sell, rsi_period = 30, 70, 14
+
+        if use_adx:
+            with st.container(border=True):
+                st.markdown("**ADX Ayarları**")
+                adx_threshold_selection = st.slider("ADX Trend Teyit Eşiği", 10, 50, st.session_state.adx_threshold_key,
+                                                    help="Sadece ADX bu değerin üzerindeyken diğer sinyalleri işleme al.",
+                                                    key="main_adx")
+                rerun_if_changed(adx_threshold_selection, 'adx_threshold_key')
+                adx_threshold = st.session_state.adx_threshold_key
+        else:
+            adx_threshold = 25
+
+        if use_vwap:
+            with st.container(border=True):
+                st.markdown("**VWAP Ayarları**")
+                vwap_cross_logic = st.radio("VWAP Sinyal Mantığı",
+                                            ["Fiyat > VWAP ise AL", "Fiyat < VWAP ise SAT"], index=0,
+                                            help="Fiyatın VWAP'a göre konumunu sinyal olarak belirler.",
+                                            key="main_vwap")
+        else:
+            vwap_cross_logic = "Fiyat > VWAP ise AL"
+
+    with detay_col2:
+        if use_macd:
+            with st.container(border=True):
+                st.markdown("**MACD Ayarları**")
+                macd_fast_selection = st.slider("MACD Hızlı Periyot", 5, 20, st.session_state.macd_fast,
+                                                key="main_macd_fast")
+                rerun_if_changed(macd_fast_selection, 'macd_fast')
+                macd_fast = st.session_state.macd_fast
+
+                macd_slow_selection = st.slider("MACD Yavaş Periyot", 10, 40, st.session_state.macd_slow,
+                                                key="main_macd_slow")
+                rerun_if_changed(macd_slow_selection, 'macd_slow')
+                macd_slow = st.session_state.macd_slow
+
+                macd_signal_selection = st.slider("MACD Sinyal Periyodu", 5, 15, st.session_state.macd_signal,
+                                                  key="main_macd_signal")
+                rerun_if_changed(macd_signal_selection, 'macd_signal')
+                macd_signal = st.session_state.macd_signal
+        else:
+            macd_fast, macd_slow, macd_signal = 12, 26, 9
+
+        if use_stoch:
+            with st.container(border=True):
+                st.markdown("**Stochastic Ayarları**")
+                stoch_k_period = st.slider("Stochastic K Periyodu", 5, 50, 14, key="main_stoch_k")
+                stoch_d_period = st.slider("Stochastic D Periyodu (Yavaşlatma)", 1, 10, 3, key="main_stoch_d")
+                stoch_buy_level = st.slider("Stoch Alış Seviyesi", 0, 50, 20, key="main_stoch_buy")
+                stoch_sell_level = st.slider("Stoch Satış Seviyesi", 50, 100, 80, key="main_stoch_sell")
+        else:
+            stoch_k_period, stoch_d_period, stoch_buy_level, stoch_sell_level = 14, 3, 20, 80
+
+
 with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -375,108 +493,6 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
 
         tp2_size_pct = st.slider("TP2 Pozisyon Kapatma (%)", 0, 100, st.session_state.tp2_size_key, help="...")
         rerun_if_changed(tp2_size_pct, 'tp2_size_key')
-
-
-# ==============================================================================
-# --- SİNYAL KRİTERLERİ VE DETAY AYARLARI ---
-# ==============================================================================
-# Ana sinyal seçimi için bir expander oluşturuyoruz.
-with st.sidebar.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=True):
-    st.subheader("Trend ve Momentum")
-    col1, col2 = st.columns(2)
-    with col1:
-        use_rsi_selection = st.checkbox("RSI", value=st.session_state.use_rsi)
-        rerun_if_changed(use_rsi_selection, 'use_rsi')
-        use_rsi = st.session_state.use_rsi
-
-        use_macd_selection = st.checkbox("MACD", value=st.session_state.use_macd)
-        rerun_if_changed(use_macd_selection, 'use_macd')
-        use_macd = st.session_state.use_macd
-    with col2:
-        use_adx_selection = st.checkbox("ADX Filtresi", value=st.session_state.use_adx, help="Trendin gücünü ölçer. Diğer sinyalleri teyit etmek için kullanılır.")
-        rerun_if_changed(use_adx_selection, 'use_adx')
-        use_adx = st.session_state.use_adx
-
-    st.subheader("Aşırı Alım/Satım ve Hacim")
-    col3, col4 = st.columns(2)
-    with col3:
-        use_bb_selection = st.checkbox("Bollinger Bantları", value=st.session_state.use_bb)
-        rerun_if_changed(use_bb_selection, 'use_bb')
-        use_bb = st.session_state.use_bb
-
-        use_stoch_selection = st.checkbox("Stochastic", value=st.session_state.use_stoch)
-        rerun_if_changed(use_stoch_selection, 'use_stoch')
-        use_stoch = st.session_state.use_stoch
-    with col4:
-        use_vwap_selection = st.checkbox("VWAP Kesişimi", value=st.session_state.use_vwap, help="Fiyatın Hacim Ağırlıklı Ortalama Fiyatı (VWAP) kesişimlerini sinyal olarak kullanır.")
-        rerun_if_changed(use_vwap_selection, 'use_vwap')
-        use_vwap = st.session_state.use_vwap
-
-# --- Sinyal Detay Ayarları ---
-# Sadece yukarıda seçilen göstergelerin ayarları, kendi expander'ları içinde görünecek.
-st.sidebar.markdown("---")
-st.sidebar.subheader("Sinyal Detay Ayarları")
-
-if use_rsi:
-    with st.sidebar.expander("RSI Ayarları", expanded=False):
-        rsi_period_selection = st.number_input("RSI Periyodu", 2, 100, st.session_state.rsi_period)
-        rerun_if_changed(rsi_period_selection, 'rsi_period')
-        rsi_period = st.session_state.rsi_period
-
-        rsi_buy_selection = st.slider("RSI Alış Eşiği", 0, 50, st.session_state.rsi_buy_key, 1)
-        rerun_if_changed(rsi_buy_selection, 'rsi_buy_key')
-        rsi_buy = st.session_state.rsi_buy_key
-
-        rsi_sell_selection = st.slider("RSI Satış Eşiği", 50, 100, st.session_state.rsi_sell_key, 1)
-        rerun_if_changed(rsi_sell_selection, 'rsi_sell_key')
-        rsi_sell = st.session_state.rsi_sell_key
-else:
-    rsi_buy, rsi_sell, rsi_period = 30, 70, 14
-
-if use_macd:
-    with st.sidebar.expander("MACD Ayarları", expanded=False):
-        macd_fast_selection = st.slider("MACD Hızlı Periyot", 5, 20, st.session_state.macd_fast)
-        rerun_if_changed(macd_fast_selection, 'macd_fast')
-        macd_fast = st.session_state.macd_fast
-
-        macd_slow_selection = st.slider("MACD Yavaş Periyot", 10, 40, st.session_state.macd_slow)
-        rerun_if_changed(macd_slow_selection, 'macd_slow')
-        macd_slow = st.session_state.macd_slow
-
-        macd_signal_selection = st.slider("MACD Sinyal Periyodu", 5, 15, st.session_state.macd_signal)
-        rerun_if_changed(macd_signal_selection, 'macd_signal')
-        macd_signal = st.session_state.macd_signal
-else:
-    macd_fast, macd_slow, macd_signal = 12, 26, 9
-
-if use_adx:
-     with st.sidebar.expander("ADX Ayarları", expanded=False):
-        adx_threshold_selection = st.slider("ADX Trend Teyit Eşiği", 10, 50, st.session_state.adx_threshold_key, help="Sadece ADX bu değerin üzerindeyken diğer sinyalleri işleme al.")
-        rerun_if_changed(adx_threshold_selection, 'adx_threshold_key')
-        adx_threshold = st.session_state.adx_threshold_key
-else:
-    adx_threshold = 25
-
-if use_stoch:
-    with st.sidebar.expander("Stochastic Ayarları", expanded=False):
-        stoch_k_period = st.slider("Stochastic K Periyodu", 5, 50, 14)
-        stoch_d_period = st.slider("Stochastic D Periyodu (Yavaşlatma)", 1, 10, 3)
-        stoch_buy_level = st.slider("Stoch Alış Seviyesi", 0, 50, 20)
-        stoch_sell_level = st.slider("Stoch Satış Seviyesi", 50, 100, 80)
-else:
-    # use_stoch False ise varsayılan değerleri atayalım ki strategy_params içinde bulunsunlar
-    stoch_k_period, stoch_d_period, stoch_buy_level, stoch_sell_level = 14, 3, 20, 80
-
-
-if use_vwap:
-    with st.sidebar.expander("VWAP Ayarları", expanded=False):
-        vwap_cross_logic = st.radio("VWAP Sinyal Mantığı",
-                                    ["Fiyat > VWAP ise AL", "Fiyat < VWAP ise SAT"], index=0,
-                                    help="Fiyatın VWAP'a göre konumunu sinyal olarak belirler.")
-else:
-    vwap_cross_logic = "Fiyat > VWAP ise AL"
-
-
 
 try:
     telegram_token = st.secrets["telegram"]["token"]

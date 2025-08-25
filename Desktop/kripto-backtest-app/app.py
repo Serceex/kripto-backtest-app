@@ -180,7 +180,7 @@ config = st.session_state.config
 st.sidebar.header("🔎 Sayfa Seçimi")
 page = st.sidebar.radio(
     "Sayfa",
-    ["📊 Simülasyon", "🧪 Deney Odası", "🔬 Laboratuvar"]
+    ["🧪 Deney Odası", "🔬 Laboratuvar"]
 )
 
 if "live_tracking" not in st.session_state:
@@ -1754,157 +1754,12 @@ if page == "🔬 Laboratuvar":
                     st.subheader("📋 İşlem Listesi")
                     st.dataframe(trades_df, use_container_width=True)
 
-elif page == "🧪 Deney Odası":
-    st.header("⚙️ Strateji Parametre Optimizasyonu")
-    st.info("""
-    Bu bölümde, stratejinizin en iyi performans gösteren parametrelerini bulmak için binlerce kombinasyonu test edebilirsiniz.
-    Lütfen optimize etmek istediğiniz hedefi ve parametrelerin test edileceği aralıkları seçin.
-    """)
 
-    st.subheader("1. Optimizasyon Hedefini Seçin")
-    optimization_target = st.selectbox(
-        "Hangi Metriğe Göre Optimize Edilsin?",
-        options=["Sharpe Oranı (Yıllık)", "Sortino Oranı (Yıllık)", "Calmar Oranı", "Maksimum Düşüş (Drawdown) (%)",
-                 "Toplam Getiri (%)"],
-        index=0,
-        help="Optimizasyon, seçtiğiniz bu metriği maksimize (veya Drawdown için minimize) etmeye çalışacaktır."
-    )
-
-    st.subheader("2. Parametre Test Aralıklarını Belirleyin")
-
-    param_col1, param_col2 = st.columns(2)
-
-    with param_col1:
-        st.write("Sinyal Parametreleri")
-        rsi_buy_range = st.slider("RSI Alış Eşiği Aralığı", 0, 50, (25, 35))
-        rsi_sell_range = st.slider("RSI Satış Eşiği Aralığı", 50, 100, (65, 75))
-        adx_thresh_range = st.slider("ADX Eşiği Aralığı", 10, 50, (20, 30))
-
-    with param_col2:
-        st.write("Risk Yönetimi Parametreleri")
-        atr_multiplier_range = st.slider("ATR Çarpanı Aralığı", 1.0, 5.0, (1.5, 2.5))
-        tp_pct_range = st.slider("Take Profit (%) Aralığı", 1.0, 20.0, (4.0, 8.0))
-
-    st.subheader("3. Optimizasyonu Başlatın")
-
-    total_combinations = (
-            len(range(rsi_buy_range[0], rsi_buy_range[1] + 1, 5)) *
-            len(range(rsi_sell_range[0], rsi_sell_range[1] + 1, 5)) *
-            len(range(adx_thresh_range[0], adx_thresh_range[1] + 1, 5)) *
-            len([round(x * 0.5, 1) for x in
-                 range(int(atr_multiplier_range[0] * 2), int(atr_multiplier_range[1] * 2) + 1)]) *
-            len([round(x * 1.0, 1) for x in range(int(tp_pct_range[0]), int(tp_pct_range[1]) + 1)])
-    )
-    st.write(f"Tahmini Test Kombinasyon Sayısı: **{total_combinations}**")
-
-    max_tests = st.slider("Maksimum Test Sayısı", 5, 1000, 200,
-                          help="Eğer toplam kombinasyon çok fazlaysa, testler bu sayıdaki rastgele örneklem üzerinden yapılır.")
-
-    if st.button("🚀 Optimizasyonu Başlat", type="primary"):
-
-        param_grid = {
-            'rsi_buy': range(rsi_buy_range[0], rsi_buy_range[1] + 1, 5),
-            'rsi_sell': range(rsi_sell_range[0], rsi_sell_range[1] + 1, 5),
-            'adx_threshold': range(adx_thresh_range[0], adx_thresh_range[1] + 1, 5),
-            'atr_multiplier': [round(x * 0.5, 1) for x in
-                               range(int(atr_multiplier_range[0] * 2), int(atr_multiplier_range[1] * 2) + 1)],
-            'take_profit_pct': [round(x * 1.0, 1) for x in range(int(tp_pct_range[0]), int(tp_pct_range[1]) + 1)]
-        }
-
-        keys, values = zip(*param_grid.items())
-        all_combinations = [dict(zip(keys, v)) for v in itertools.product(*values)]
-
-        if len(all_combinations) > max_tests:
-            st.warning(f"{len(all_combinations)} kombinasyon bulundu. Rastgele {max_tests} tanesi test ediliyor...")
-            test_combinations = random.sample(all_combinations, max_tests)
-        else:
-            test_combinations = all_combinations
-
-        results_list = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-
-        for i, params_to_test in enumerate(test_combinations):
-            current_params = strategy_params.copy()
-            current_params.update(params_to_test)
-
-            current_params['stop_loss_pct'] = 0
-
-            all_trades = []
-            for symbol in symbols:
-                df = get_binance_klines(symbol=symbol, interval=interval, limit=1000)
-                if df is None or df.empty: continue
-
-                df = generate_all_indicators(df, **current_params)
-                df = generate_signals(df, **current_params)
-
-                if current_params['use_mta']:
-                    df_higher = get_binance_klines(symbol, current_params['higher_timeframe'], 1000)
-                    if df_higher is not None and not df_higher.empty:
-                        df = add_higher_timeframe_trend(df, df_higher, current_params['trend_ema_period'])
-                        df = filter_signals_with_trend(df)
-
-                trades_df = backtest_signals(df)
-                if not trades_df.empty:
-                    all_trades.append(trades_df)
-
-            if all_trades:
-                final_trades = pd.concat(all_trades, ignore_index=True).dropna(subset=['Çıkış Zamanı'])
-                if not final_trades.empty:
-                    metrics, _, _ = analyze_backtest_results(final_trades)
-                    result_row = params_to_test.copy()
-                    for key, val in metrics.items():
-                        try:
-                            result_row[key] = float(str(val).replace('%', ''))
-                        except (ValueError, TypeError):
-                            result_row[key] = val
-                    results_list.append(result_row)
-
-            progress_bar.progress((i + 1) / len(test_combinations))
-            status_text.text(
-                f"Test {i + 1}/{len(test_combinations)} tamamlandı. En iyi {optimization_target}: {st.session_state.get('best_score', 'N/A')}")
-
-        if results_list:
-            results_df = pd.DataFrame(results_list)
-
-            is_ascending = True if optimization_target == "Maksimum Düşüş (Drawdown) (%)" else False
-            sorted_results = results_df.sort_values(by=optimization_target, ascending=is_ascending).head(10)
-
-            st.session_state.best_score = f"{sorted_results.iloc[0][optimization_target]:.2f}"
-            st.session_state.optimization_results = sorted_results
-
-        status_text.success("✅ Optimizasyon tamamlandı! En iyi 10 sonuç aşağıda listelenmiştir.")
-
-    if 'optimization_results' in st.session_state and not st.session_state.optimization_results.empty:
-        st.subheader("🏆 En İyi Parametre Kombinasyonları")
-        results_df = st.session_state.optimization_results
-
-        display_cols = [
-            'rsi_buy', 'rsi_sell', 'adx_threshold', 'atr_multiplier', 'take_profit_pct',
-            optimization_target, 'Toplam İşlem', 'Kazançlı İşlem Oranı (%)'
-        ]
-        display_cols_exist = [col for col in display_cols if col in results_df.columns]
-        st.dataframe(results_df[display_cols_exist])
-
-        st.subheader("4. Sonuçları Kenar Çubuğuna Aktar")
-
-        selected_index = st.selectbox(
-            "Uygulamak istediğiniz sonucun index'ini seçin:",
-            results_df.index,
-            help="Yukarıdaki tablodan en beğendiğiniz sonucun index numarasını seçin."
-        )
-
-        st.button(
-            "✅ Seçili Parametreleri Uygula",
-            on_click=apply_selected_params,
-            args=(results_df.loc[selected_index],)
-        )
-
-elif page == "📊 Simülasyon":
-    st.header("📈 Portföy Backtest ve Detaylı Analiz")
+if page == "🧪 Deney Odası":
+    st.header("📈 Portföy Analiz ve Optimizasyon Merkezi")
 
     # Sekmeli yapıyı oluştur
-    tab1, tab2 = st.tabs(["📊 Backtest Sonuçları", "📈 Detaylı Grafik Analizi"])
+    tab1, tab2, tab3 = st.tabs(["📊 Backtest Sonuçları", "📈 Grafik Analizi", " Strateji Optimizasyonu)"])
 
     # Sekme 1: Backtest Sonuçları
     with tab1:
@@ -1980,4 +1835,61 @@ elif page == "📊 Simülasyon":
                 fib_levels = calculate_fibonacci_levels(df_chart) if show_fibonacci else {}
                 fig = plot_chart(df_chart, selected_symbol, fib_levels, chart_options)
                 st.plotly_chart(fig, use_container_width=True)
+
+    with tab3:
+        st.info("""
+        Bu bölümde, stratejinizin en iyi performans gösteren parametrelerini bulmak için binlerce kombinasyonu test edebilirsiniz.
+        Lütfen optimize etmek istediğiniz hedefi ve parametrelerin test edileceği aralıkları seçin.
+        """)
+
+        st.subheader("1. Optimizasyon Hedefini Seçin")
+        optimization_target = st.selectbox(
+            "Hangi Metriğe Göre Optimize Edilsin?",
+            options=["Sharpe Oranı (Yıllık)", "Sortino Oranı (Yıllık)", "Calmar Oranı", "Maksimum Düşüş (Drawdown) (%)",
+                     "Toplam Getiri (%)"],
+            index=0,
+            help="Optimizasyon, seçtiğiniz bu metriği maksimize (veya Drawdown için minimize) etmeye çalışacaktır."
+        )
+
+        st.subheader("2. Parametre Test Aralıklarını Belirleyin")
+        param_col1, param_col2 = st.columns(2)
+        with param_col1:
+            st.write("Sinyal Parametreleri")
+            rsi_buy_range = st.slider("RSI Alış Eşiği Aralığı", 0, 50, (25, 35))
+            rsi_sell_range = st.slider("RSI Satış Eşiği Aralığı", 50, 100, (65, 75))
+            adx_thresh_range = st.slider("ADX Eşiği Aralığı", 10, 50, (20, 30))
+        with param_col2:
+            st.write("Risk Yönetimi Parametreleri")
+            atr_multiplier_range = st.slider("ATR Çarpanı Aralığı", 1.0, 5.0, (1.5, 2.5))
+            tp_pct_range = st.slider("Take Profit (%) Aralığı", 1.0, 20.0, (4.0, 8.0))
+
+        st.subheader("3. Optimizasyonu Başlatın")
+        if st.button("🚀 Optimizasyonu Başlat", type="primary"):
+            run_portfolio_optimization(symbols, interval, strategy_params)
+
+        if 'optimization_results' in st.session_state and not st.session_state.optimization_results.empty:
+            st.subheader("🏆 En İyi Parametre Kombinasyonları")
+
+            results_df = st.session_state.optimization_results
+
+            display_cols = [
+                'rsi_buy', 'rsi_sell', 'adx_threshold', 'atr_multiplier', 'take_profit_pct',
+                optimization_target, 'Toplam İşlem', 'Kazançlı İşlem Oranı (%)'
+            ]
+            display_cols_exist = [col for col in display_cols if col in results_df.columns]
+            st.dataframe(results_df[display_cols_exist])
+
+            st.subheader("4. Sonuçları Kenar Çubuğuna Aktar")
+
+            selected_index = st.selectbox(
+                "Uygulamak istediğiniz sonucun index'ini seçin:",
+                results_df.index,
+                help="Yukarıdaki tablodan en beğendiğiniz sonucun index numarasını seçin."
+            )
+
+            st.button(
+                "✅ Seçili Parametreleri Uygula",
+                on_click=apply_selected_params,
+                args=(results_df.loc[selected_index],)
+            )
 

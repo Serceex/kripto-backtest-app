@@ -87,6 +87,16 @@ def generate_signals(df,
     if kwargs.get('use_adx', False):
         buy_conditions.append(df['ADX'] > kwargs.get('adx_threshold', 25))
 
+    if kwargs.get('use_stoch', False):
+        buy_conditions.append(df['Stoch_k'] < kwargs.get('stoch_buy_level', 20))
+        sell_conditions.append(df['Stoch_k'] > kwargs.get('stoch_sell_level', 80))
+
+    if kwargs.get('use_vwap', False):
+        # Örnek: Fiyat VWAP'ın üzerine çıktığında AL
+        buy_conditions.append(df['Close'] > df['VWAP'])
+        # Örnek: Fiyat VWAP'ın altına indiğinde SAT
+        sell_conditions.append(df['Close'] < df['VWAP'])
+
     # Short (Sat) sinyali şartları
     if kwargs.get('use_rsi', False):
         sell_conditions.append(df['RSI'] > kwargs.get('rsi_sell', 70))

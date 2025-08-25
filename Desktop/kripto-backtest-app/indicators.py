@@ -25,6 +25,8 @@ def generate_all_indicators(
         macd_slow,
         macd_signal,
         adx_period,
+        stoch_k_period=14,
+        stoch_d_period=3,
         **kwargs
 ):
     """
@@ -82,5 +84,19 @@ def generate_all_indicators(
         df_copy['VWAP'] = pd.NA
 
     df_copy['ATR'] = ta.atr(df_copy['High'], df_copy['Low'], df_copy['Close'], length=14)
+
+    # YENİ: Stokastik Hesaplaması
+    stoch = ta.stoch(df_copy['High'], df_copy['Low'], df_copy['Close'], k=stoch_k_period, d=stoch_d_period)
+    if stoch is not None and not stoch.empty:
+        stoch_k_col = next((col for col in stoch.columns if col.startswith('STOCHk_')), None)
+        stoch_d_col = next((col for col in stoch.columns if col.startswith('STOCHd_')), None)
+        if stoch_k_col: df_copy['Stoch_k'] = stoch[stoch_k_col]
+        if stoch_d_col: df_copy['Stoch_d'] = stoch[stoch_d_col]
+
+    # YENİ: VWAP Hesaplaması (zaten vardı, ama burada olduğundan emin olun)
+    try:
+        df_copy['VWAP'] = ta.vwap(df_copy['High'], df_copy['Low'], df_copy['Close'], df_copy['Volume'])
+    except Exception:
+        df_copy['VWAP'] = pd.NA
 
     return df_copy

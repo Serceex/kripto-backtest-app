@@ -180,7 +180,7 @@ config = st.session_state.config
 st.sidebar.header("🔎 Sayfa Seçimi")
 page = st.sidebar.radio(
     "Sayfa",
-    ["🧪 Deney Odası", "🔬 Laboratuvar"]
+    ["🧪 Deney Odası", "🔬 Kontrol Merkezi"]
 )
 
 if "live_tracking" not in st.session_state:
@@ -1001,7 +1001,7 @@ def run_portfolio_optimization(symbols, interval, strategy_params):
         status_text.success("✅ Optimizasyon tamamlandı!")
 
 
-if page == "🔬 Laboratuvar":
+if page == "🔬 Kontrol Merkezi":
     try:
         correct_password = st.secrets["app"]["password"]
     except (KeyError, FileNotFoundError):
@@ -1009,7 +1009,7 @@ if page == "🔬 Laboratuvar":
         st.stop()
 
     if not st.session_state.get('authenticated', False):
-        st.info("Yönetim paneline erişmek için lütfen şifreyi girin.")
+        st.info("**Yönetim paneline erişmek için lütfen şifreyi giriniz.**")
         password_input = st.text_input("Şifre", type="password", key="password_input")
         if st.button("Giriş Yap"):
             if password_input == correct_password:
@@ -1020,7 +1020,7 @@ if page == "🔬 Laboratuvar":
     else:
         main_col1, main_col2 = st.columns([5, 1])
         with main_col1:
-            st.header("📡 Canlı Strateji Yönetim Paneli")
+            st.header("🔬 Kontrol Merkezi")
         with main_col2:
             if st.button("🔒 Çıkış Yap"):
                 st.session_state.authenticated = False

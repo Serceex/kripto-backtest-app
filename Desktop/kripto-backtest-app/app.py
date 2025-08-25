@@ -201,7 +201,8 @@ DEFAULTS = {
     'signal_mode_key': "Long & Short", 'signal_logic_key': "OR (Hızlı)",
     'cooldown_bars_key': 3, 'commission_pct_key': 0.1, 'sl_type_key': "ATR",
     'stop_loss_pct_key': 2.0, 'atr_multiplier_key': 2.0, 'move_sl_to_be': True,
-    'tp1_pct_key': 5.0, 'tp1_size_key': 50, 'tp2_pct_key': 10.0, 'tp2_size_key': 50
+    'tp1_pct_key': 5.0, 'tp1_size_key': 50, 'tp2_pct_key': 10.0, 'tp2_size_key': 50,
+     'use_stoch': False, 'use_vwap': False
 }
 for key, value in DEFAULTS.items():
     if key not in st.session_state:

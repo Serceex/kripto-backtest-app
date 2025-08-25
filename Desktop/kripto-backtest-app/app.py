@@ -209,11 +209,6 @@ for key, value in DEFAULTS.items():
         st.session_state[key] = value
 
 
-# ==============================================================================
-# --- BİTİŞ: SESSION STATE TANIMLAMALARI ---
-# ==============================================================================
-
-
 def rerun_if_changed(widget_value, session_state_key):
     """Widget değeri değiştiyse session_state'i günceller ve rerun yapar."""
     if widget_value != st.session_state[session_state_key]:
@@ -1759,7 +1754,7 @@ if page == "🧪 Deney Odası":
     st.header("📈 Portföy Analiz ve Optimizasyon Merkezi")
 
     # Sekmeli yapıyı oluştur
-    tab1, tab2, tab3 = st.tabs(["📊 Backtest Sonuçları", "📈 Grafik Analizi", " Strateji Optimizasyonu)"])
+    tab1, tab2, tab3 = st.tabs(["📊 Backtest Sonuçları", "📈 Grafik Analizi", " ⚙ Strateji Optimizasyonu"])
 
     # Sekme 1: Backtest Sonuçları
     with tab1:

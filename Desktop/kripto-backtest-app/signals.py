@@ -65,7 +65,8 @@ def generate_signals(df,
     # --- BÖLÜM 2: STANDART GÖSTERGE MANTIĞI ---
 
     # Eksik kolonları doldurarak hataların önüne geç
-    required_cols = ['RSI', 'MACD', 'MACD_signal', 'bb_lband', 'bb_hband', 'ADX']
+    required_cols = ['RSI', 'MACD', 'MACD_signal', 'bb_lband', 'bb_hband', 'ADX',
+                     'Stoch_k', 'VWAP', 'SMA_fast', 'SMA_slow']
     for col in required_cols:
         if col not in df.columns:
             df[col] = np.nan
@@ -77,6 +78,10 @@ def generate_signals(df,
     buy_conditions = []
     sell_conditions = []
 
+    # --- YENİ: Kesişimleri tespit etmek için bir önceki barın verisini kullan ---
+    df['SMA_fast_prev'] = df['SMA_fast'].shift(1)
+    df['SMA_slow_prev'] = df['SMA_slow'].shift(1)
+
     # Long (Al) sinyali şartları
     if kwargs.get('use_rsi', False):
         buy_conditions.append(df['RSI'] < kwargs.get('rsi_buy', 30))
@@ -86,16 +91,16 @@ def generate_signals(df,
         buy_conditions.append(df['Close'] < df['bb_lband'])
     if kwargs.get('use_adx', False):
         buy_conditions.append(df['ADX'] > kwargs.get('adx_threshold', 25))
-
     if kwargs.get('use_stoch', False):
         buy_conditions.append(df['Stoch_k'] < kwargs.get('stoch_buy_level', 20))
-        sell_conditions.append(df['Stoch_k'] > kwargs.get('stoch_sell_level', 80))
-
     if kwargs.get('use_vwap', False):
-        # Örnek: Fiyat VWAP'ın üzerine çıktığında AL
         buy_conditions.append(df['Close'] > df['VWAP'])
-        # Örnek: Fiyat VWAP'ın altına indiğinde SAT
-        sell_conditions.append(df['Close'] < df['VWAP'])
+    if kwargs.get('use_ma_cross', False):
+        # Altın Kesişim (Golden Cross): Hızlı MA, yavaş MA'yı yukarı keser
+        buy_conditions.append(
+            (df['SMA_fast'] > df['SMA_slow']) & (df['SMA_fast_prev'] <= df['SMA_slow_prev'])
+        )
+
 
     # Short (Sat) sinyali şartları
     if kwargs.get('use_rsi', False):
@@ -106,6 +111,16 @@ def generate_signals(df,
         sell_conditions.append(df['Close'] > df['bb_hband'])
     if kwargs.get('use_adx', False):
         sell_conditions.append(df['ADX'] > kwargs.get('adx_threshold', 25))
+    if kwargs.get('use_stoch', False):
+        sell_conditions.append(df['Stoch_k'] > kwargs.get('stoch_sell_level', 80))
+    if kwargs.get('use_vwap', False):
+        sell_conditions.append(df['Close'] < df['VWAP'])
+    if kwargs.get('use_ma_cross', False):
+        # Ölüm Kesişimi (Death Cross): Hızlı MA, yavaş MA'yı aşağı keser
+        sell_conditions.append(
+            (df['SMA_fast'] < df['SMA_slow']) & (df['SMA_fast_prev'] >= df['SMA_slow_prev'])
+        )
+
 
     # Koşulları birleştirme fonksiyonu
     def combine_conditions(conditions):

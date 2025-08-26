@@ -202,7 +202,8 @@ DEFAULTS = {
     'cooldown_bars_key': 3, 'commission_pct_key': 0.1, 'sl_type_key': "ATR",
     'stop_loss_pct_key': 2.0, 'atr_multiplier_key': 2.0, 'move_sl_to_be': True,
     'tp1_pct_key': 5.0, 'tp1_size_key': 50, 'tp2_pct_key': 10.0, 'tp2_size_key': 50,
-     'use_stoch': False, 'use_vwap': False
+ 'use_stoch': False, 'use_vwap': False, 'stoch_k_period': 14, 'stoch_d_period': 3,
+    'stoch_buy_level': 20, 'stoch_sell_level': 80, 'use_ma_cross': False, 'ma_fast_period': 20, 'ma_slow_period': 50
 }
 for key, value in DEFAULTS.items():
     if key not in st.session_state:
@@ -332,6 +333,13 @@ with st.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=False):
         use_macd_selection = st.checkbox("MACD", value=st.session_state.use_macd)
         rerun_if_changed(use_macd_selection, 'use_macd')
         use_macd = st.session_state.use_macd
+
+        use_ma_cross_selection = st.checkbox("Hareketli Ortalama Kesişimi (MA Cross)",
+                                             value=st.session_state.use_ma_cross)
+        rerun_if_changed(use_ma_cross_selection, 'use_ma_cross')
+        use_ma_cross = st.session_state.use_ma_cross
+
+
     with col2:
         use_adx_selection = st.checkbox("ADX Filtresi", value=st.session_state.use_adx,
                                         help="Trendin gücünü ölçer. Diğer sinyalleri teyit etmek için kullanılır.")
@@ -433,6 +441,24 @@ with st.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=False):
         else:
             stoch_k_period, stoch_d_period, stoch_buy_level, stoch_sell_level = 14, 3, 20, 80
 
+        if use_ma_cross:
+            with st.container(border=True):
+                st.markdown("**MA Kesişimi Ayarları**")
+                ma_fast_period_selection = st.slider("Hızlı MA Periyodu", 5, 100, st.session_state.ma_fast_period,
+                                                     key="main_ma_fast")
+                rerun_if_changed(ma_fast_period_selection, 'ma_fast_period')
+                ma_fast_period = st.session_state.ma_fast_period
+
+                ma_slow_period_selection = st.slider("Yavaş MA Periyodu", 10, 200, st.session_state.ma_slow_period,
+                                                     key="main_ma_slow")
+                rerun_if_changed(ma_slow_period_selection, 'ma_slow_period')
+                ma_slow_period = st.session_state.ma_slow_period
+
+                if ma_fast_period >= ma_slow_period:
+                    st.warning("Hızlı MA periyodu, yavaş MA periyodundan küçük olmalıdır.")
+        else:
+            ma_fast_period, ma_slow_period = 20, 50
+
 
 with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
     col1, col2, col3 = st.columns(3)
@@ -517,12 +543,15 @@ strategy_params = {
     'telegram_enabled': use_telegram,
     'telegram_token': telegram_token,
     'telegram_chat_id': telegram_chat_id,
-     'use_stoch': use_stoch,
+    'use_stoch': use_stoch,
     'stoch_k_period': stoch_k_period if use_stoch else 14,
     'stoch_d_period': stoch_d_period if use_stoch else 3,
     'stoch_buy_level': stoch_buy_level if use_stoch else 20,
     'stoch_sell_level': stoch_sell_level if use_stoch else 80,
-    'use_vwap': use_vwap
+    'use_vwap': use_vwap,
+    'use_ma_cross': use_ma_cross,
+    'ma_fast_period': ma_fast_period,
+    'ma_slow_period': ma_slow_period
 
 }
 

@@ -1591,6 +1591,7 @@ if page == "🔬 Kontrol Merkezi":
                 strategy_performance_data.append({
                     "Strateji Adı": strategy['name'],
                     "Profit Factor": f"{performance_score:.2f}",
+                    "Toplam Getiri (%)": f"{metrics.get('Toplam Getiri (%)', 0):.2f}",
                     "Başarı Oranı (%)": f"{metrics.get('Başarı Oranı (%)', 0):.2f}",
                     "Toplam İşlem": metrics.get('Toplam İşlem', 0),
                 })
@@ -1600,8 +1601,12 @@ if page == "🔬 Kontrol Merkezi":
             else:
                 df_performance = pd.DataFrame(strategy_performance_data)
                 df_performance['Profit Factor'] = pd.to_numeric(df_performance['Profit Factor'])
+                display_columns = ["Strateji Adı", "Profit Factor", "Toplam Getiri (%)", "Başarı Oranı (%)",
+                                   "Toplam İşlem"]
+                existing_columns = [col for col in display_columns if col in df_performance.columns]
+
                 df_performance = df_performance.sort_values(by="Profit Factor", ascending=False).reset_index(drop=True)
-                st.dataframe(df_performance, use_container_width=True)
+                st.dataframe(df_performance[existing_columns], use_container_width=True)
 
             st.markdown("---")
 

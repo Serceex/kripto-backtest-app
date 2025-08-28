@@ -1225,10 +1225,11 @@ if page == "🔬 Kontrol Merkezi":
                     with st.expander(
                             f"{status_emoji} **{strategy_name}** {is_rl_agent} (`{strategy.get('interval')}`, `{len(strategy.get('symbols', []))}` sembol)"):
                         live_metrics = get_live_closed_trades_metrics(strategy_id=strategy_id)
-                        perf_col1, perf_col2, perf_col3 = st.columns(3)
+                        perf_col1, perf_col2, perf_col3, perf_col4 = st.columns(4)
                         perf_col1.metric("Profit Factor", f"{live_metrics.get('Profit Factor', 0):.2f}")
-                        perf_col2.metric("Başarı Oranı", f"{live_metrics.get('Başarı Oranı (%)', 0):.2f}%")
-                        perf_col3.metric("Toplam İşlem", f"{live_metrics.get('Toplam İşlem', 0)}")
+                        perf_col2.metric("Toplam Getiri (%)", f"{live_metrics.get('Toplam Getiri (%)', 0):.2f}%")
+                        perf_col3.metric("Başarı Oranı", f"{live_metrics.get('Başarı Oranı (%)', 0):.2f}%")
+                        perf_col4.metric("Toplam İşlem", f"{live_metrics.get('Toplam İşlem', 0)}")
 
                         # ... (expander'ın geri kalan içeriği, kontrol butonları vb.)
 

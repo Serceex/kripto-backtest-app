@@ -22,4 +22,8 @@ def get_alarm_history(limit=50):
     except Exception as e:
         print(f"ALARM DB HATA: Veritabanından okunurken bir sorun oluştu: {e}")
         # Hata durumunda boş bir DataFrame döndürerek arayüzün çökmesini engelle
-        return pd.DataFrame(columns=["Zaman", "Sembol", "Sinyal", "Fiyat"])
+        return pd.DataFrame(columns=["Zaman", "Sembol", "Sinyal", "Fiyat"]
+
+
+
+                    

@@ -5,19 +5,12 @@ from binance.client import Client
 import pandas as pd
 import numpy as np
 import requests
+from binance_client import shared_client
 
-# API bilgilerini streamlit secrets'tan al
-# Bu bilgilerin burada olması, bu dosyanın sadece Streamlit context'inde
-# çalışacağı anlamına gelir. Worker gibi ortamlarda bu bilgileri
-# parametre olarak almak daha esnek bir yapı sunar.
-try:
-    api_key = st.secrets["binance"]["api_key"]
-    api_secret = st.secrets["binance"]["api_secret"]
-    client = Client(api_key, api_secret)
-except Exception:
-    # secrets.toml dosyası bulunamadığında veya hatalı olduğunda
-    # client'ı None olarak ayarlayarak uygulamanın çökmesini engelle
-    client = None
+
+
+@st.cache_data(ttl=600) # Sonuçları 10 dakika (600 saniye) boyunca önbellekte tut
+def get_binance_klines(symbol="BTCUSDT", interval="1h", limit=1000):
 
 
 @st.cache_data(ttl=600) # Sonuçları 10 dakika (600 saniye) boyunca önbellekte tut

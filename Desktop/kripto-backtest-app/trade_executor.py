@@ -3,17 +3,13 @@
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 import streamlit as st  # secrets.toml'a erişim için gerekli
+from binance_client import shared_client
 
 
 def get_binance_client():
     """API anahtarlarını kullanarak Binance istemcisini oluşturur."""
-    try:
-        api_key = st.secrets["binance"]["api_key"]
-        api_secret = st.secrets["binance"]["api_secret"]
-        return Client(api_key, api_secret)
-    except Exception as e:
-        print(f"HATA: Binance API anahtarları okunamadı: {e}")
-        return None
+    # Artık yeni bir istemci oluşturmak yerine paylaşılanı döndürür
+    return shared_client
 
 
 def set_futures_leverage_and_margin(symbol: str, leverage: int, margin_type: str = 'ISOLATED'):

@@ -158,7 +158,7 @@ class StrategyRunner:
 
     def _close_position(self, symbol: str, close_price: float, reason: str, size_pct_to_close: float = 100.0):
         """
-        Pozisyonun belirtilen yüzdesini kapatır.
+        Pozisyonun belirtilen yüzdesini kapatır ve durumu doğru bir şekilde günceller.
         size_pct_to_close: 1.0 ile 100.0 arasında bir değer.
         """
         symbol_data = self.portfolio_data.get(symbol, {})
@@ -194,13 +194,32 @@ class StrategyRunner:
             if size_pct_to_close >= 100.0:
                 self._reset_position_state(symbol)
             else:
-                current_state = self.portfolio_data.get(symbol, {})
+                # --- DÜZELTİLMİŞ GÜNCELLEME MANTIĞI ---
+                # Stale (eski) veri kullanmamak için pozisyonun en güncel halini veritabanından çek
+                current_state_from_db = get_positions_for_strategy(self.id).get(symbol, {})
+                if not current_state_from_db:  # Güvenlik kontrolü
+                    current_state_from_db = self.portfolio_data.get(symbol, {})
+
+                new_tp1_hit = current_state_from_db.get('tp1_hit', False)
+                new_tp2_hit = current_state_from_db.get('tp2_hit', False)
+
                 if "Take-Profit 1" in reason:
-                    update_position(self.id, symbol, current_state.get('position'), current_state.get('entry_price'),
-                                    sl_price=current_state.get('stop_loss_price'),
-                                    tp1_price=current_state.get('tp1_price'),
-                                    tp2_price=current_state.get('tp2_price'), tp1_hit=True,
-                                    tp2_hit=current_state.get('tp2_hit'))
+                    new_tp1_hit = True
+                elif "Take-Profit 2" in reason:
+                    new_tp2_hit = True
+
+                # Veritabanını yeni bayraklarla güncelle
+                update_position(self.id, symbol, current_state_from_db.get('position'), current_state_from_db.get('entry_price'),
+                                sl_price=current_state_from_db.get('stop_loss_price'),
+                                tp1_price=current_state_from_db.get('tp1_price'),
+                                tp2_price=current_state_from_db.get('tp2_price'),
+                                tp1_hit=new_tp1_hit,
+                                tp2_hit=new_tp2_hit)
+
+                # Yerel hafızayı da senkronize et (isteğe bağlı ama iyi bir pratik)
+                if symbol in self.portfolio_data:
+                    self.portfolio_data[symbol]['tp1_hit'] = new_tp1_hit
+                    self.portfolio_data[symbol]['tp2_hit'] = new_tp2_hit
 
     def _check_manual_actions(self):
         while not self._stop_event.is_set():

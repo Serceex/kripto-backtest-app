@@ -9,7 +9,7 @@ from datetime import datetime
 import numpy as np
 import toml
 import io
-
+from config_loader import DB_CONFIG
 
 
 DB_CONFIG = None
@@ -46,35 +46,36 @@ def get_db_secrets():
         return DB_CONFIG
 
 def get_db_connection():
-    config = get_db_secrets()
-    if not config:
-        print("--- [HATA] Veritabanı yapılandırması bulunamadı. Bağlantı kurulamıyor.")
+    """
+    Merkezi yapılandırmayı kullanarak veritabanı bağlantısı kurar.
+    """
+    if not DB_CONFIG:
+        print("--- [KRİTİK HATA] Veritabanı yapılandırması yüklenemedi. Bağlantı kurulamıyor.")
         return None
 
     try:
         conn = psycopg2.connect(
-            dbname=config["database"],
-            user=config["user"],
-            password=config["password"],
-            host=config["host"],
-            port=config.get("port", "5432"),
-            connect_timeout=5  # 5 saniye zaman aşımı ekledik!
+            dbname=DB_CONFIG["database"],
+            user=DB_CONFIG["user"],
+            password=DB_CONFIG["password"],
+            host=DB_CONFIG["host"],
+            port=DB_CONFIG.get("port", "5432"),
+            connect_timeout=5
         )
         return conn
     except psycopg2.OperationalError as e:
         print("--- [KRİTİK BAĞLANTI HATASI] ---")
         print(f"PostgreSQL veritabanına bağlanılamadı. Hata: {e}")
-        print("Lütfen .streamlit/secrets.toml dosyasındaki bilgilerin (host, port, user, password) doğruluğunu ve veritabanı sunucusunun çalıştığını kontrol edin.")
-        print("Ayrıca bir güvenlik duvarının (firewall) bağlantıyı engellemediğinden emin olun.")
-        # Streamlit ortamında ise kullanıcıya göster
         try:
             import streamlit as st
             st.error(f"VERİTABANI BAĞLANTI HATASI: {e}")
             st.info("Lütfen .streamlit/secrets.toml dosyanızdaki PostgreSQL bağlantı bilgilerinizi kontrol edin.")
             st.stop()
         except ImportError:
-            # Worker'da ise programdan çık
             exit()
+        return None
+    except KeyError as e:
+        print(f"--- [KRİTİK HATA] secrets.toml dosyasında eksik anahtar: {e}. Lütfen 'postgres' bölümünü kontrol edin.")
         return None
 
 

@@ -36,6 +36,32 @@ from trading_env import TradingEnv
 from rl_trainer import train_rl_agent
 
 
+# app.py dosyasının üst kısımlarına ekleyin
+
+@st.cache_data(ttl=60)  # Sonuçları 60 saniye boyunca önbellekte tut
+def get_all_strategy_metrics():
+    """
+    Tüm stratejilerin canlı metriklerini tek seferde hesaplar ve önbelleğe alır.
+    Bu, her strateji için veritabanına tekrar tekrar sorgu atılmasını önler.
+    """
+    from database import get_all_strategies, get_live_closed_trades_metrics
+
+    strategies = get_all_strategies()
+    all_metrics = {}
+    default_metrics = {
+        "Profit Factor": 0, "Toplam Getiri (%)": 0,
+        "Başarı Oranı (%)": 0, "Toplam İşlem": 0
+    }
+
+    for strategy in strategies:
+        metrics = get_live_closed_trades_metrics(strategy_id=strategy['id'])
+        all_metrics[strategy['id']] = metrics
+
+    return all_metrics, default_metrics
+
+
+
+
 def apply_full_strategy_params(strategy, is_editing=False):
     """
     Seçilen bir stratejinin tüm parametrelerini session_state'e uygular.
@@ -1211,7 +1237,9 @@ if page == "🔬 Kontrol Merkezi":
                             st.rerun()
 
             st.subheader("🏃‍♂️ Çalışan Canlı Stratejiler")
+            all_metrics_data, default_metrics = get_all_strategy_metrics()
             running_strategies = get_all_strategies()
+
             if not running_strategies:
                 st.info("Şu anda çalışan hiçbir canlı strateji yok.")
             else:
@@ -1224,14 +1252,15 @@ if page == "🔬 Kontrol Merkezi":
 
                     with st.expander(
                             f"{status_emoji} **{strategy_name}** {is_rl_agent} (`{strategy.get('interval')}`, `{len(strategy.get('symbols', []))}` sembol)"):
-                        live_metrics = get_live_closed_trades_metrics(strategy_id=strategy_id)
+
+                        live_metrics = all_metrics_data.get(strategy_id, default_metrics)
+
                         perf_col1, perf_col2, perf_col3, perf_col4 = st.columns(4)
                         perf_col1.metric("Profit Factor", f"{live_metrics.get('Profit Factor', 0):.2f}")
                         perf_col2.metric("Toplam Getiri (%)", f"{live_metrics.get('Toplam Getiri (%)', 0):.2f}%")
                         perf_col3.metric("Başarı Oranı", f"{live_metrics.get('Başarı Oranı (%)', 0):.2f}%")
                         perf_col4.metric("Toplam İşlem", f"{live_metrics.get('Toplam İşlem', 0)}")
 
-                        # ... (expander'ın geri kalan içeriği, kontrol butonları vb.)
 
                         st.caption(f"ID: `{strategy_id}`")
                         st.markdown("---")
@@ -1575,7 +1604,9 @@ if page == "🔬 Kontrol Merkezi":
 
             st.subheader("📈 Canlı Strateji Performans Lider Tablosu")
 
+            all_metrics_data, default_metrics = get_all_strategy_metrics()
             all_strategies = get_all_strategies()
+
             strategy_performance_data = []
             paused_strategies = []
 
@@ -1584,7 +1615,7 @@ if page == "🔬 Kontrol Merkezi":
                     paused_strategies.append(strategy)
                     continue  # Duraklatılanları lider tablosunda gösterme
 
-                metrics = get_live_closed_trades_metrics(strategy_id=strategy['id'])
+                metrics = all_metrics_data.get(strategy['id'], default_metrics)
                 performance_score = metrics.get('Profit Factor', 0)
                 if performance_score == float('inf'): performance_score = 1000
 

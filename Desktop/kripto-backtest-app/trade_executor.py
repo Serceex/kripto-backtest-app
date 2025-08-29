@@ -1,16 +1,19 @@
-# trade_executor.py
+# trade_executor.py (Orijinal Hali)
 
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
-import streamlit as st  # secrets.toml'a erişim için gerekli
-from binance_client import shared_client
-
+import streamlit as st
 
 def get_binance_client():
     """API anahtarlarını kullanarak Binance istemcisini oluşturur."""
-    # Artık yeni bir istemci oluşturmak yerine paylaşılanı döndürür
-    return shared_client
-
+    try:
+        api_key = st.secrets["binance"]["api_key"]
+        api_secret = st.secrets["binance"]["api_secret"]
+        return Client(api_key, api_secret)
+    except Exception as e:
+        print(f"HATA: Binance API anahtarları okunamadı: {e}")
+        return None
+# ... (dosyanın geri kalan fonksiyonları aynı kalacak) ...
 
 def set_futures_leverage_and_margin(symbol: str, leverage: int, margin_type: str = 'ISOLATED'):
     """Bir parite için kaldıraç ve marjin tipini ayarlar."""
@@ -69,10 +72,6 @@ def place_futures_order(symbol: str, side: str, quantity: float):
     except BinanceAPIException as e:
         print(f"EMİR HATASI: {symbol} için {side} emri gönderilemedi: {e}")
         return None
-
-    # Bu fonksiyon, API'ye sürekli aynı isteği atmamak için sonuçları hafızada tutar.
-
-# trade_executor.py (Yeni fonksiyonlar)
 
 def place_futures_stop_market_order(symbol: str, side: str, quantity: float, stop_price: float):
     """

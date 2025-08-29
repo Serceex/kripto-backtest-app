@@ -1,27 +1,23 @@
-# utils.py (Yeniden Düzenlenmiş, Modüler ve Hataları Giderilmiş Hali)
+# utils.py (Orijinal Hali)
 
 import streamlit as st
+from binance.client import Client
 import pandas as pd
 import numpy as np
 import requests
 
-# Önceki adımdaki `binance_client.py` dosyasından paylaşılan istemciyi içe aktarıyoruz
 try:
-    from binance_client import shared_client
-    client = shared_client
-except ImportError:
-    st.error("Kritik Hata: `binance_client.py` dosyası bulunamadı. Lütfen önceki adımdaki dosyayı oluşturduğunuzdan emin olun.")
-    client = None
-except Exception as e:
-    st.error(f"Binance istemcisi yüklenirken bir hata oluştu: {e}")
+    api_key = st.secrets["binance"]["api_key"]
+    api_secret = st.secrets["binance"]["api_secret"]
+    client = Client(api_key, api_secret)
+except Exception:
     client = None
 
 
-@st.cache_data(ttl=600) # Sonuçları 10 dakika (600 saniye) boyunca önbellekte tut
+@st.cache_data(ttl=600)
 def get_binance_klines(symbol="BTCUSDT", interval="1h", limit=1000):
     """Binance API üzerinden OHLCV verisi çeker."""
     if client is None:
-        # Worker script'lerinin çökmemesi için st.error try-except bloğuna alındı
         try:
             st.error("Binance API bilgileri bulunamadı. Lütfen `.streamlit/secrets.toml` dosyasını kontrol edin.")
         except Exception:
@@ -40,14 +36,13 @@ def get_binance_klines(symbol="BTCUSDT", interval="1h", limit=1000):
         df = df[['Open', 'High', 'Low', 'Close', 'Volume']].astype(float)
         return df
     except Exception as e:
-        # Worker script'lerinin çökmemesi için st.error try-except bloğuna alındı
         try:
             st.error(f"{symbol} için Binance'ten veri çekilirken hata oluştu: {e}")
         except Exception:
              print(f"HATA: {symbol} için Binance'ten veri çekilirken hata oluştu: {e}")
         return pd.DataFrame()
 
-
+# ... (dosyanın geri kalan fonksiyonları aynı kalacak) ...
 def calculate_fibonacci_levels(df):
     """Son 100 barın en yüksek ve en düşük değerlerine göre Fibonacci seviyelerini hesaplar."""
     if df.empty or len(df) < 2:

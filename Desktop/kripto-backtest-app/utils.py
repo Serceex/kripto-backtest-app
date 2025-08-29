@@ -1,16 +1,20 @@
 # utils.py (Yeniden Düzenlenmiş, Modüler ve Hataları Giderilmiş Hali)
 
 import streamlit as st
-from binance.client import Client
 import pandas as pd
 import numpy as np
 import requests
-from binance_client import shared_client
 
-
-
-@st.cache_data(ttl=600) # Sonuçları 10 dakika (600 saniye) boyunca önbellekte tut
-def get_binance_klines(symbol="BTCUSDT", interval="1h", limit=1000):
+# Önceki adımdaki `binance_client.py` dosyasından paylaşılan istemciyi içe aktarıyoruz
+try:
+    from binance_client import shared_client
+    client = shared_client
+except ImportError:
+    st.error("Kritik Hata: `binance_client.py` dosyası bulunamadı. Lütfen önceki adımdaki dosyayı oluşturduğunuzdan emin olun.")
+    client = None
+except Exception as e:
+    st.error(f"Binance istemcisi yüklenirken bir hata oluştu: {e}")
+    client = None
 
 
 @st.cache_data(ttl=600) # Sonuçları 10 dakika (600 saniye) boyunca önbellekte tut

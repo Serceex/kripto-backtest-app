@@ -7,6 +7,7 @@ import itertools
 import random
 import threading
 import os
+import logging
 from datetime import datetime
 from stable_baselines3 import PPO
 from market_regime import get_market_regime
@@ -587,7 +588,12 @@ if "last_signal" not in st.session_state: st.session_state.last_signal = "Henüz
 if "backtest_results" not in st.session_state: st.session_state.backtest_results = pd.DataFrame()
 
 
-def update_price_live(symbol, interval, placeholder):
+
+def update_price_live(symbol, interval, placeholder, strategy_params):
+    """
+    Belirli bir sembol için canlı fiyat takibi yapar, sinyal üretir ve ekranda gösterir.
+    (TÜM HATALARI GİDERİLMİŞ VERSİYON)
+    """
     signal_text_map = {
         "Al": "🟢 AL",
         "Sat": "🔴 SAT",
@@ -595,42 +601,36 @@ def update_price_live(symbol, interval, placeholder):
         "Bekle": "⏸️ BEKLE"
     }
     last_signal_sent = None
-    while st.session_state.live_running:
+
+    while st.session_state.get('live_running', False):
         try:
-            df_latest = get_binance_klines(symbol=symbol, interval=interval, limit=20)
+            # 1. Adım: En güncel veriyi çek
+            # Not: Göstergelerin doğru hesaplanabilmesi için limit artırıldı.
+            df_latest = get_binance_klines(symbol=symbol, interval=interval, limit=200)
+
             if df_latest is None or df_latest.empty:
                 placeholder.warning(f"{symbol} için canlı veri alınamıyor.")
                 time.sleep(5)
                 continue
 
-            df = generate_all_indicators(
-                df,
-                strategy_params["rsi_period"],
-                strategy_params["macd_fast"],
-                strategy_params["macd_slow"],
-                strategy_params["macd_signal"],
-                strategy_params["adx_period"]
-            )
+            # 2. Adım: Gelen veriyle göstergeleri hesapla
+            df_with_indicators = generate_all_indicators(df_latest, **strategy_params)
 
-            df_temp = generate_signals(df_temp,
-                                       use_rsi=st.session_state.get('use_rsi', True),
-                                       rsi_buy=st.session_state.get('rsi_buy', 30),
-                                       rsi_sell=st.session_state.get('rsi_sell', 70),
-                                       use_macd=st.session_state.get('use_macd', True),
-                                       use_bb=st.session_state.get('use_bb', True),
-                                       use_adx=st.session_state.get('use_adx', True),
-                                       adx_threshold=st.session_state.get('adx', 25),
-                                       signal_mode=signal_mode,
-                                       signal_direction=signal_direction,
-                                       use_puzzle_bot=st.session_state.get('use_puzzle_bot', False))
+            # 3. Adım: Göstergeleri kullanarak sinyalleri üret
+            # Önceki tanımsız 'df_temp' hatası giderildi.
+            df_with_signals = generate_signals(df_with_indicators, **strategy_params)
 
-            last_price = df_latest['Close'].iloc[-1]
-            last_signal = df_temp['Signal'].iloc[-1]
+            # 4. Adım: Son sinyali ve fiyatı al
+            last_price = df_with_signals['Close'].iloc[-1]
+            last_signal = df_with_signals['Signal'].iloc[-1]
 
-            if st.session_state.get('use_telegram',
-                                    False) and last_signal != last_signal_sent and last_signal != "Bekle":
+            # Telegram bildirimi ve ekranı güncelleme (Bu kısım zaten doğruydu)
+            if strategy_params.get('telegram_enabled',
+                                   False) and last_signal != last_signal_sent and last_signal != "Bekle":
                 message = f"📡 {symbol} için yeni sinyal: *{signal_text_map.get(last_signal, last_signal)}* | Fiyat: {last_price:.2f} USDT"
-                send_telegram_message(message)
+                send_telegram_message(message,
+                                      token=strategy_params.get('telegram_token'),
+                                      chat_id=strategy_params.get('telegram_chat_id'))
                 last_signal_sent = last_signal
 
             placeholder.markdown(f"""
@@ -640,7 +640,7 @@ def update_price_live(symbol, interval, placeholder):
             """)
             st.session_state.last_signal = f"{symbol}: {signal_text_map.get(last_signal, 'Bekle')} @ {last_price:.2f}"
 
-            time.sleep(3)
+            time.sleep(3)  # Sık API isteği yapmamak için bekleme
         except Exception as e:
             placeholder.warning(f"⚠️ Canlı veri hatası: {e}")
             break
@@ -670,6 +670,43 @@ def get_latest_signal(symbol, interval, strategy_params):
     return df['Signal'].iloc[-1]
 
 
+@st.cache_data(ttl=60)  # Tüm sinyalleri 60 saniye önbellekte tut
+def get_all_latest_signals():
+    """
+    Tüm aktif stratejiler ve semboller için en güncel sinyalleri tek seferde,
+    verimli bir şekilde hesaplar ve bir sözlük olarak döndürür.
+    """
+    logging.info("Tüm stratejiler için güncel sinyaller hesaplanıyor...")
+    all_strategies = get_all_strategies()
+    latest_signals = {}
+
+    for strategy in all_strategies:
+        strategy_id = strategy['id']
+        params = strategy.get('strategy_params', {})
+        interval = strategy.get('interval', '1h')
+
+        for symbol in strategy.get('symbols', []):
+            # Anahtar olarak (strateji_id, sembol) kullanıyoruz
+            key = (strategy_id, symbol)
+
+            df = get_binance_klines(symbol=symbol, interval=interval, limit=200)
+            if df is None or df.empty:
+                latest_signals[key] = "Veri Yok"
+                continue
+
+            df = generate_all_indicators(df, **params)
+            df = generate_signals(df, **params)
+
+            if params.get('use_mta', False):
+                df_higher = get_binance_klines(symbol=symbol, interval=params.get('higher_timeframe', '4h'), limit=1000)
+                if df_higher is not None and not df_higher.empty:
+                    df = add_higher_timeframe_trend(df, df_higher, params.get('trend_ema_period', 50))
+                    df = filter_signals_with_trend(df)
+
+            latest_signals[key] = df['Signal'].iloc[-1]
+
+    logging.info("Sinyal hesaplaması tamamlandı.")
+    return latest_signals
 
 
 def run_portfolio_backtest(symbols, interval, strategy_params):
@@ -1454,7 +1491,7 @@ if page == "🔬 Kontrol Merkezi":
             if open_positions_df.empty:
                 st.info("Mevcutta açık pozisyon bulunmuyor.")
             else:
-                all_strategies = {s['id']: s for s in get_all_strategies()}
+                all_current_signals = get_all_latest_signals()
 
                 symbols_for_prices = open_positions_df['Sembol'].unique().tolist()
                 live_prices = get_current_prices(symbols_for_prices)

@@ -155,26 +155,58 @@ def get_all_rl_models_info():
             return [dict(row) for row in cursor.fetchall()]
 
 
-def add_or_update_strategy(strategy_config):
-    rl_model_id = strategy_config.get('rl_model_id')
-    if rl_model_id is not None:
-        try:
-            rl_model_id = int(rl_model_id)
-        except (ValueError, TypeError):
-            rl_model_id = None
 
-    params_json = json.dumps(strategy_config.get("strategy_params", {}))
-    symbols_json = json.dumps(strategy_config.get("symbols", []))
-    sql = """
-        INSERT INTO strategies (id, name, status, symbols, interval, strategy_params, orchestrator_status, is_trading_enabled, rl_model_id)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name, status = EXCLUDED.status, symbols = EXCLUDED.symbols, interval = EXCLUDED.interval,
-            strategy_params = EXCLUDED.strategy_params, orchestrator_status = EXCLUDED.orchestrator_status,
-            is_trading_enabled = EXCLUDED.is_trading_enabled, rl_model_id = EXCLUDED.rl_model_id;
+def add_or_update_strategy(strategy_config):
     """
+    Bir stratejiyi ekler veya günceller. Güncelleme sırasında, stratejiden
+    kaldırılan sembollerin eski pozisyon kayıtlarını otomatik olarak temizler.
+    """
+    strategy_id = strategy_config.get('id')
+    new_symbols = set(strategy_config.get("symbols", []))
+
     with get_db_connection() as conn:
-        with conn.cursor() as cursor:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cursor:
+
+            # 1. Adım: Veritabanındaki mevcut sembol listesini al
+            cursor.execute("SELECT symbols FROM strategies WHERE id = %s", (strategy_id,))
+            result = cursor.fetchone()
+
+            if result and result['symbols']:
+                current_symbols = set(result['symbols'])
+
+                # 2. Adım: Hangi sembollerin kaldırıldığını bul
+                removed_symbols = current_symbols - new_symbols
+
+                if removed_symbols:
+                    print(
+                        f"--- [DATABASE] Temizlik: Strateji '{strategy_id}' için kaldırılan semboller tespit edildi: {removed_symbols}")
+                    # 3. Adım: Kaldırılan her sembol için pozisyon kaydını sil
+                    # psycopg2'nin tuple'larla güvenli bir şekilde çoklu değer işlemesi için
+                    # execute_batch veya döngü kullanmak daha güvenlidir.
+                    for symbol_to_remove in removed_symbols:
+                        cursor.execute("DELETE FROM positions WHERE strategy_id = %s AND symbol = %s",
+                                       (strategy_id, symbol_to_remove))
+                    print(f"--- [DATABASE] '{strategy_id}' için eski pozisyon kayıtları temizlendi.")
+
+
+            # 4. Adım: Stratejiyi her zamanki gibi ekle veya güncelle
+            rl_model_id = strategy_config.get('rl_model_id')
+            if rl_model_id is not None:
+                try:
+                    rl_model_id = int(rl_model_id)
+                except (ValueError, TypeError):
+                    rl_model_id = None
+
+            params_json = json.dumps(strategy_config.get("strategy_params", {}))
+            symbols_json = json.dumps(strategy_config.get("symbols", []))
+            sql = """
+                INSERT INTO strategies (id, name, status, symbols, interval, strategy_params, orchestrator_status, is_trading_enabled, rl_model_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name, status = EXCLUDED.status, symbols = EXCLUDED.symbols, interval = EXCLUDED.interval,
+                    strategy_params = EXCLUDED.strategy_params, orchestrator_status = EXCLUDED.orchestrator_status,
+                    is_trading_enabled = EXCLUDED.is_trading_enabled, rl_model_id = EXCLUDED.rl_model_id;
+            """
             cursor.execute(sql, (
                 strategy_config.get('id'), strategy_config.get('name'),
                 strategy_config.get('status', 'running'), symbols_json,
@@ -184,6 +216,7 @@ def add_or_update_strategy(strategy_config):
                 rl_model_id
             ))
         conn.commit()
+
 
 
 def remove_strategy(strategy_id):

@@ -1291,9 +1291,13 @@ if page == "🔬 Kontrol Merkezi":
                     status_emoji = "▶️" if strategy_status == 'running' else "⏸️"
                     is_rl_agent = "🤖" if strategy.get('rl_model_id') else ""
 
-                    with st.expander(
-                            f"{status_emoji} **{strategy_name}** {is_rl_agent} (`{strategy.get('interval')}`, `{len(strategy.get('symbols', []))}` sembol)"):
+                    symbols_list = strategy.get('symbols', [])
+                    # Sembol listesini virgülle ayırarak metne dönüştür, eğer liste boşsa "Sembol Yok" yaz
+                    symbols_display_text = ', '.join(symbols_list) if symbols_list else "Sembol Yok"
 
+                    with st.expander(
+                            f"{status_emoji} **{strategy_name}** {is_rl_agent} (`{strategy.get('interval')}`, `{symbols_display_text}`)"):
+                       
                         live_metrics = all_metrics_data.get(strategy_id, default_metrics)
 
                         perf_col1, perf_col2, perf_col3, perf_col4 = st.columns(4)

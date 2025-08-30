@@ -9,6 +9,7 @@ from datetime import datetime
 import numpy as np
 import toml
 import io
+import streamlit as st
 
 DB_CONFIG = None
 
@@ -134,6 +135,7 @@ def save_rl_model(name, description, model_buffer):
         conn.commit()
     print(f"--- [DATABASE] RL Modeli '{name}' başarıyla kaydedildi/güncellendi. ---")
 
+
 def get_rl_model_by_id(model_id):
     """Bir RL modelini ID'sine göre veritabanından çeker."""
     with get_db_connection() as conn:
@@ -144,6 +146,7 @@ def get_rl_model_by_id(model_id):
                 return io.BytesIO(result['model_data'])
     return None
 
+@st.cache_data(ttl=15)
 def get_all_rl_models_info():
     """Tüm RL modellerinin bilgilerini (ID ve İsim) listeler."""
     with get_db_connection() as conn:
@@ -189,6 +192,7 @@ def remove_strategy(strategy_id):
         conn.commit()
     print(f"--- [DATABASE] Strateji (ID: {strategy_id}) silindi. ---")
 
+@st.cache_data(ttl=15)
 def get_all_strategies():
     result = []
     with get_db_connection() as conn:
@@ -230,6 +234,7 @@ def log_alarm_db(strategy_id, symbol, signal, price):
                          (strategy_id, timestamp, symbol, signal, price))
         conn.commit()
 
+@st.cache_data(ttl=60)
 def get_alarm_history_db(limit=50):
     with get_db_connection() as conn:
         query = """
@@ -240,6 +245,7 @@ def get_alarm_history_db(limit=50):
         df = pd.read_sql_query(query, conn, params=(limit,))
     return df
 
+@st.cache_data(ttl=15)
 def get_all_open_positions():
     with get_db_connection() as conn:
         query = """
@@ -280,7 +286,7 @@ def get_and_clear_pending_actions(strategy_id):
         conn.commit()
         return actions
 
-
+@st.cache_data(ttl=30)
 def get_live_closed_trades_metrics(strategy_id=None):
     from database import get_all_strategies
     default_metrics = {

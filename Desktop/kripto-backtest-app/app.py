@@ -330,16 +330,20 @@ symbols_selection = st.multiselect(
         "ZILUSDT", "DASHUSDT", "SANDUSDT", "KAVAUSDT", "COMPUSDT", "LUNAUSDT", "ENJUSDT",
         "BATUSDT", "NANOUSDT", "1INCHUSDT", "ZRXUSDT", "CELRUSDT", "HNTUSDT", "FTTUSDT", "GALAUSDT"
     ],
-    default=st.session_state.symbols_key
+    key='symbols_key'  # ÖNEMLİ: Widget'ı session_state'e bağlayan anahtar
 )
-#rerun_if_changed(symbols_selection, 'symbols_key')
-symbols = st.session_state.symbols_key
 
+# Bu widget artık durumunu doğrudan st.session_state['interval_key'] üzerinden yönetecek.
 timeframe_options = ["15m", "1h", "4h"]
-timeframe_index = timeframe_options.index(st.session_state.interval_key)
-interval_selection = st.selectbox("⏳ Zaman Dilimi Seçin", options=timeframe_options, index=timeframe_index)
-#rerun_if_changed(interval_selection, 'interval_key')
+st.selectbox("⏳ Zaman Dilimi Seçin",
+             options=timeframe_options,
+             key='interval_key')  # ÖNEMLİ: Widget'ı session_state'e bağlayan anahtar
+
+# Değişkenleri doğrudan ve her zaman güncel olan session_state'den alalım.
+symbols = st.session_state.symbols_key
 interval = st.session_state.interval_key
+
+
 
 results_section = st.container()
 optimize_section = st.container()
@@ -1221,8 +1225,8 @@ if page == "🔬 Kontrol Merkezi":
                                 "id": st.session_state.editing_strategy_id,
                                 "name": st.session_state.editing_strategy_name,
                                 "status": "running",
-                                "symbols": symbols,
-                                "interval": interval,
+                                "symbols": st.session_state.symbols_key,
+                                "interval": st.session_state.interval_key,
                                 "strategy_params": strategy_params,
                                 "rl_model_id": selected_model_id
                             }

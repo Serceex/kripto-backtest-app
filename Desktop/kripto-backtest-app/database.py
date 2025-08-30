@@ -185,12 +185,29 @@ def add_or_update_strategy(strategy_config):
             ))
         conn.commit()
 
+
 def remove_strategy(strategy_id):
+    """
+    Bir stratejiyi ve o stratejiye ait TÜM ilişkili verileri
+    (pozisyonlar, alarmlar vb.) veritabanından tamamen siler.
+    """
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
+            # 1. Adım: İlişkili pozisyonları sil
+            cursor.execute("DELETE FROM positions WHERE strategy_id = %s", (strategy_id,))
+
+            # 2. Adım: İlişkili alarm geçmişini sil
+            cursor.execute("DELETE FROM alarms WHERE strategy_id = %s", (strategy_id,))
+
+            # 3. Adım: İlişkili manuel işlemleri sil (varsa)
+            cursor.execute("DELETE FROM manual_actions WHERE strategy_id = %s", (strategy_id,))
+
+            # 4. Adım: Ana strateji kaydını sil
             cursor.execute("DELETE FROM strategies WHERE id = %s", (strategy_id,))
-        conn.commit()
-    print(f"--- [DATABASE] Strateji (ID: {strategy_id}) silindi. ---")
+
+        conn.commit()  # Tüm silme işlemlerini tek seferde onayla
+
+    print(f"--- [DATABASE] Strateji (ID: {strategy_id}) ve tüm ilişkili verileri başarıyla silindi. ---")
 
 @st.cache_data(ttl=15)
 def get_all_strategies():

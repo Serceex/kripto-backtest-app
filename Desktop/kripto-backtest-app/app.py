@@ -1297,7 +1297,7 @@ if page == "🔬 Kontrol Merkezi":
 
                     with st.expander(
                             f"{status_emoji} **{strategy_name}** {is_rl_agent} (`{strategy.get('interval')}`, `{symbols_display_text}`)"):
-                       
+
                         live_metrics = all_metrics_data.get(strategy_id, default_metrics)
 
                         perf_col1, perf_col2, perf_col3, perf_col4 = st.columns(4)

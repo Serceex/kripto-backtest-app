@@ -1491,7 +1491,7 @@ if page == "🔬 Kontrol Merkezi":
             if open_positions_df.empty:
                 st.info("Mevcutta açık pozisyon bulunmuyor.")
             else:
-                all_current_signals = get_all_latest_signals()
+                all_strategies = {s['id']: s for s in get_all_strategies()}
 
                 symbols_for_prices = open_positions_df['Sembol'].unique().tolist()
                 live_prices = get_current_prices(symbols_for_prices)

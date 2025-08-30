@@ -311,53 +311,47 @@ class StrategyRunner:
 
                 # --- Mevcut açık pozisyonlar için SL/TP kontrolü ---
 
-                open_positions_from_db = get_positions_for_strategy(self.id)
-                open_position = open_positions_from_db.get(symbol)
+                symbol_data = self.portfolio_data.get(symbol)
 
-                if open_position and open_position.get('position'):
-                    # DÜZELTME: Artık yerel hafızadan değil, veritabanından gelen veriyi kullanıyoruz.
-                    pos_type = open_position['position']
-                    sl_price = open_position.get('stop_loss_price')
-                    tp1_price = open_position.get('tp1_price')
-                    tp2_price = open_position.get('tp2_price')
-                    tp1_hit = open_position.get('tp1_hit', False)
-                    tp2_hit = open_position.get('tp2_hit', False)
+                if symbol_data and symbol_data.get('position'):
+                    pos_type = symbol_data.get('position')
+                    sl_price = symbol_data.get('stop_loss_price')
+                    tp1_price = symbol_data.get('tp1_price')
+                    tp2_price = symbol_data.get('tp2_price')
 
                     # LONG Pozisyon için kontrol
                     if pos_type == 'Long':
-                        # Stop-Loss kontrolü
+                        # Stop-Loss kontrolü (Değişiklik yok)
                         if sl_price and low_price <= sl_price:
                             self._close_position(symbol, sl_price, "Stop-Loss")
-                            return  # Pozisyon kapandığı için döngüden çık
+                            return
 
-                        # Take-Profit 1 kontrolü (henüz TP1 vurulmadıysa)
-                        if tp1_price and not open_position.get('tp1_hit', False) and high_price >= tp1_price:
+                        # Take-Profit 1 kontrolü (Değişiklik yok)
+                        if tp1_price and not symbol_data.get('tp1_hit', False) and high_price >= tp1_price:
                             tp1_size_pct = self.params.get('tp1_size_pct', 50)
                             self._close_position(symbol, tp1_price, "Take-Profit 1", size_pct_to_close=tp1_size_pct)
 
-                        # Take-Profit 2 kontrolü (TP1 vurulduysa)
-                        if open_position.get('tp1_hit', False) and tp2_price and not open_position.get('tp2_hit',
-                                                                                                       False) and high_price >= tp2_price:
-                            tp2_size_pct = self.params.get('tp2_size_pct', 50)
-                            self._close_position(symbol, tp2_price, "Take-Profit 2", size_pct_to_close=tp2_size_pct)
+                        # Take-Profit 2 kontrolü 'elif' ile daha güvenli hale getirildi
+                        elif tp2_price and symbol_data.get('tp1_hit', False) and not symbol_data.get('tp2_hit',
+                                                                                                     False) and high_price >= tp2_price:
+                            self._close_position(symbol, tp2_price, "Take-Profit 2", size_pct_to_close=100)
 
-                    # SHORT Pozisyon için kontrol
+                        # SHORT Pozisyon için kontrol (Aynı mantık)
                     elif pos_type == 'Short':
-                        # Stop-Loss kontrolü
+                        # Stop-Loss kontrolü (Değişiklik yok)
                         if sl_price and high_price >= sl_price:
                             self._close_position(symbol, sl_price, "Stop-Loss")
-                            return  # Pozisyon kapandığı için döngüden çık
+                            return
 
-                        # Take-Profit 1 kontrolü (henüz TP1 vurulmadıysa)
-                        if tp1_price and not open_position.get('tp1_hit', False) and low_price <= tp1_price:
+                        # Take-Profit 1 kontrolü (Değişiklik yok)
+                        if tp1_price and not symbol_data.get('tp1_hit', False) and low_price <= tp1_price:
                             tp1_size_pct = self.params.get('tp1_size_pct', 50)
                             self._close_position(symbol, tp1_price, "Take-Profit 1", size_pct_to_close=tp1_size_pct)
 
-                        # Take-Profit 2 kontrolü (TP1 vurulduysa)
-                        if open_position.get('tp1_hit', False) and tp2_price and not open_position.get('tp2_hit',
-                                                                                                       False) and low_price <= tp2_price:
-                            tp2_size_pct = self.params.get('tp2_size_pct', 50)
-                            self._close_position(symbol, tp2_price, "Take-Profit 2", size_pct_to_close=tp2_size_pct)
+                        # Take-Profit 2 kontrolü 'elif' ile daha güvenli hale getirildi
+                        elif tp2_price and symbol_data.get('tp1_hit', False) and not symbol_data.get('tp2_hit',
+                                                                                                     False) and low_price <= tp2_price:
+                            self._close_position(symbol, tp2_price, "Take-Profit 2", size_pct_to_close=100)
 
             # Mum kapanışındaki sinyal mantığı (değişiklik yok)
             is_kline_closed = kline.get('x', False)

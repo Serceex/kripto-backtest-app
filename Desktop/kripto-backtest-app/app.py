@@ -237,11 +237,11 @@ for key, value in DEFAULTS.items():
         st.session_state[key] = value
 
 
-def rerun_if_changed(widget_value, session_state_key):
-    """Widget değeri değiştiyse session_state'i günceller ve rerun yapar."""
-    if widget_value != st.session_state[session_state_key]:
-        st.session_state[session_state_key] = widget_value
-        st.rerun()
+#def rerun_if_changed(widget_value, session_state_key):
+    #   """Widget değeri değiştiyse session_state'i günceller ve rerun yapar."""
+       # if widget_value != st.session_state[session_state_key]:
+        #       st.session_state[session_state_key] = widget_value
+#        st.rerun()
 
 
 # --- KENAR ÇUBUĞU WIDGET'LARI ---
@@ -263,7 +263,7 @@ with st.sidebar.expander("📊 Grafik Gösterge Seçenekleri", expanded=False):
 
 with st.sidebar.expander("⏳ Çoklu Zaman Dilimi Analizi (MTA)", expanded=True):
     use_mta_selection = st.checkbox("Ana Trend Filtresini Kullan", value=st.session_state.use_mta_key, help="...")
-    rerun_if_changed(use_mta_selection, 'use_mta_key')
+    #rerun_if_changed(use_mta_selection, 'use_mta_key')
     use_mta = st.session_state.use_mta_key
 
     if use_mta:
@@ -278,12 +278,12 @@ with st.sidebar.expander("⏳ Çoklu Zaman Dilimi Analizi (MTA)", expanded=True)
 
         higher_timeframe_selection = st.selectbox("Ana Trend için Üst Zaman Dilimi", options=higher_tf_options,
                                                   index=default_index)
-        rerun_if_changed(higher_timeframe_selection, 'higher_timeframe_key')
+        #rerun_if_changed(higher_timeframe_selection, 'higher_timeframe_key')
         higher_timeframe = st.session_state.higher_timeframe_key
 
         trend_ema_period_selection = st.slider("Trend EMA Periyodu", 20, 200, st.session_state.trend_ema_period_key,
                                                help="...")
-        rerun_if_changed(trend_ema_period_selection, 'trend_ema_period_key')
+        #rerun_if_changed(trend_ema_period_selection, 'trend_ema_period_key')
         trend_ema_period = st.session_state.trend_ema_period_key
     else:
         higher_timeframe = None
@@ -292,26 +292,26 @@ with st.sidebar.expander("⏳ Çoklu Zaman Dilimi Analizi (MTA)", expanded=True)
 with st.sidebar.expander("🔧 Diğer Parametreler", expanded=False):
     st.subheader("🧩 Puzzle Strateji Botu")
     use_puzzle_bot_selection = st.checkbox("Puzzle Strateji Botunu Kullan", value=st.session_state.puzzle_bot)
-    rerun_if_changed(use_puzzle_bot_selection, 'puzzle_bot')
+    #rerun_if_changed(use_puzzle_bot_selection, 'puzzle_bot')
     use_puzzle_bot = st.session_state.puzzle_bot
 
     st.subheader("📡 Telegram Bildirimleri")
     use_telegram_selection = st.checkbox("Telegram Bildirimlerini Aç", value=st.session_state.telegram_alerts)
-    rerun_if_changed(use_telegram_selection, 'telegram_alerts')
+    #rerun_if_changed(use_telegram_selection, 'telegram_alerts')
     use_telegram = st.session_state.telegram_alerts
 
     st.subheader("🤖 ML Tahmin Parametreleri")
     use_ml_selection = st.checkbox("Makine Öğrenmesi Tahmini Kullan", value=st.session_state.ml_toggle)
-    rerun_if_changed(use_ml_selection, 'ml_toggle')
+    #rerun_if_changed(use_ml_selection, 'ml_toggle')
     use_ml = st.session_state.ml_toggle
 
     if use_ml:
         forward_window_selection = st.slider("📈 Gelecek Bar (target)", 1, 20, st.session_state.ml_forward_window)
-        rerun_if_changed(forward_window_selection, 'ml_forward_window')
+        #(forward_window_selection, 'ml_forward_window')
         forward_window = st.session_state.ml_forward_window
 
         target_thresh_selection = st.slider("🎯 Target Eşik (%)", 0.1, 5.0, st.session_state.ml_threshold, step=0.1)
-        rerun_if_changed(target_thresh_selection, 'ml_threshold')
+        #rerun_if_changed(target_thresh_selection, 'ml_threshold')
         target_thresh = st.session_state.ml_threshold
     else:
         forward_window, target_thresh = None, None
@@ -332,13 +332,13 @@ symbols_selection = st.multiselect(
     ],
     default=st.session_state.symbols_key
 )
-rerun_if_changed(symbols_selection, 'symbols_key')
+#rerun_if_changed(symbols_selection, 'symbols_key')
 symbols = st.session_state.symbols_key
 
 timeframe_options = ["15m", "1h", "4h"]
 timeframe_index = timeframe_options.index(st.session_state.interval_key)
 interval_selection = st.selectbox("⏳ Zaman Dilimi Seçin", options=timeframe_options, index=timeframe_index)
-rerun_if_changed(interval_selection, 'interval_key')
+#rerun_if_changed(interval_selection, 'interval_key')
 interval = st.session_state.interval_key
 
 results_section = st.container()
@@ -354,39 +354,39 @@ with st.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=False):
     col1, col2 = st.columns(2)
     with col1:
         use_rsi_selection = st.checkbox("RSI", value=st.session_state.use_rsi)
-        rerun_if_changed(use_rsi_selection, 'use_rsi')
+        #rerun_if_changed(use_rsi_selection, 'use_rsi')
         use_rsi = st.session_state.use_rsi
 
         use_macd_selection = st.checkbox("MACD", value=st.session_state.use_macd)
-        rerun_if_changed(use_macd_selection, 'use_macd')
+        #rerun_if_changed(use_macd_selection, 'use_macd')
         use_macd = st.session_state.use_macd
 
         use_ma_cross_selection = st.checkbox("Hareketli Ortalama Kesişimi (MA Cross)",
                                              value=st.session_state.use_ma_cross)
-        rerun_if_changed(use_ma_cross_selection, 'use_ma_cross')
+        #rerun_if_changed(use_ma_cross_selection, 'use_ma_cross')
         use_ma_cross = st.session_state.use_ma_cross
 
 
     with col2:
         use_adx_selection = st.checkbox("ADX Filtresi", value=st.session_state.use_adx,
                                         help="Trendin gücünü ölçer. Diğer sinyalleri teyit etmek için kullanılır.")
-        rerun_if_changed(use_adx_selection, 'use_adx')
+        #rerun_if_changed(use_adx_selection, 'use_adx')
         use_adx = st.session_state.use_adx
 
     st.subheader("Aşırı Alım/Satım ve Hacim")
     col3, col4 = st.columns(2)
     with col3:
         use_bb_selection = st.checkbox("Bollinger Bantları", value=st.session_state.use_bb)
-        rerun_if_changed(use_bb_selection, 'use_bb')
+        #rerun_if_changed(use_bb_selection, 'use_bb')
         use_bb = st.session_state.use_bb
 
         use_stoch_selection = st.checkbox("Stochastic", value=st.session_state.use_stoch)
-        rerun_if_changed(use_stoch_selection, 'use_stoch')
+        #rerun_if_changed(use_stoch_selection, 'use_stoch')
         use_stoch = st.session_state.use_stoch
     with col4:
         use_vwap_selection = st.checkbox("VWAP Kesişimi", value=st.session_state.use_vwap,
                                          help="Fiyatın Hacim Ağırlıklı Ortalama Fiyatı (VWAP) kesişimlerini sinyal olarak kullanır.")
-        rerun_if_changed(use_vwap_selection, 'use_vwap')
+        #rerun_if_changed(use_vwap_selection, 'use_vwap')
         use_vwap = st.session_state.use_vwap
 
     # --- Sinyal Detay Ayarları ---
@@ -401,17 +401,17 @@ with st.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=False):
                 st.markdown("**RSI Ayarları**")
                 rsi_period_selection = st.number_input("RSI Periyodu", 2, 100, st.session_state.rsi_period,
                                                        key="main_rsi_period")
-                rerun_if_changed(rsi_period_selection, 'rsi_period')
+                #rerun_if_changed(rsi_period_selection, 'rsi_period')
                 rsi_period = st.session_state.rsi_period
 
                 rsi_buy_selection = st.slider("RSI Alış Eşiği", 0, 50, st.session_state.rsi_buy_key, 1,
                                               key="main_rsi_buy")
-                rerun_if_changed(rsi_buy_selection, 'rsi_buy_key')
+                #rerun_if_changed(rsi_buy_selection, 'rsi_buy_key')
                 rsi_buy = st.session_state.rsi_buy_key
 
                 rsi_sell_selection = st.slider("RSI Satış Eşiği", 50, 100, st.session_state.rsi_sell_key, 1,
                                                key="main_rsi_sell")
-                rerun_if_changed(rsi_sell_selection, 'rsi_sell_key')
+                #rerun_if_changed(rsi_sell_selection, 'rsi_sell_key')
                 rsi_sell = st.session_state.rsi_sell_key
         else:
             rsi_buy, rsi_sell, rsi_period = 30, 70, 14
@@ -422,7 +422,7 @@ with st.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=False):
                 adx_threshold_selection = st.slider("ADX Trend Teyit Eşiği", 10, 50, st.session_state.adx_threshold_key,
                                                     help="Sadece ADX bu değerin üzerindeyken diğer sinyalleri işleme al.",
                                                     key="main_adx")
-                rerun_if_changed(adx_threshold_selection, 'adx_threshold_key')
+                #rerun_if_changed(adx_threshold_selection, 'adx_threshold_key')
                 adx_threshold = st.session_state.adx_threshold_key
         else:
             adx_threshold = 25
@@ -443,17 +443,17 @@ with st.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=False):
                 st.markdown("**MACD Ayarları**")
                 macd_fast_selection = st.slider("MACD Hızlı Periyot", 5, 20, st.session_state.macd_fast,
                                                 key="main_macd_fast")
-                rerun_if_changed(macd_fast_selection, 'macd_fast')
+                #rerun_if_changed(macd_fast_selection, 'macd_fast')
                 macd_fast = st.session_state.macd_fast
 
                 macd_slow_selection = st.slider("MACD Yavaş Periyot", 10, 40, st.session_state.macd_slow,
                                                 key="main_macd_slow")
-                rerun_if_changed(macd_slow_selection, 'macd_slow')
+                #rerun_if_changed(macd_slow_selection, 'macd_slow')
                 macd_slow = st.session_state.macd_slow
 
                 macd_signal_selection = st.slider("MACD Sinyal Periyodu", 5, 15, st.session_state.macd_signal,
                                                   key="main_macd_signal")
-                rerun_if_changed(macd_signal_selection, 'macd_signal')
+                #rerun_if_changed(macd_signal_selection, 'macd_signal')
                 macd_signal = st.session_state.macd_signal
         else:
             macd_fast, macd_slow, macd_signal = 12, 26, 9
@@ -473,12 +473,12 @@ with st.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=False):
                 st.markdown("**MA Kesişimi Ayarları**")
                 ma_fast_period_selection = st.slider("Hızlı MA Periyodu", 5, 100, st.session_state.ma_fast_period,
                                                      key="main_ma_fast")
-                rerun_if_changed(ma_fast_period_selection, 'ma_fast_period')
+                #rerun_if_changed(ma_fast_period_selection, 'ma_fast_period')
                 ma_fast_period = st.session_state.ma_fast_period
 
                 ma_slow_period_selection = st.slider("Yavaş MA Periyodu", 10, 200, st.session_state.ma_slow_period,
                                                      key="main_ma_slow")
-                rerun_if_changed(ma_slow_period_selection, 'ma_slow_period')
+                #rerun_if_changed(ma_slow_period_selection, 'ma_slow_period')
                 ma_slow_period = st.session_state.ma_slow_period
 
                 if ma_fast_period >= ma_slow_period:
@@ -494,53 +494,53 @@ with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
         signal_mode_options = ["Long Only", "Short Only", "Long & Short"]
         signal_mode_index = signal_mode_options.index(st.session_state.signal_mode_key)
         signal_mode = st.selectbox("Sinyal Modu", signal_mode_options, index=signal_mode_index)
-        rerun_if_changed(signal_mode, 'signal_mode_key')
+        #rerun_if_changed(signal_mode, 'signal_mode_key')
 
         signal_logic_options = ["AND (Teyitli)", "OR (Hızlı)"]
         signal_logic_index = signal_logic_options.index(st.session_state.signal_logic_key)
         signal_logic = st.selectbox("Sinyal Mantığı", signal_logic_options, index=signal_logic_index, help="...")
-        rerun_if_changed(signal_logic, 'signal_logic_key')
+        #rerun_if_changed(signal_logic, 'signal_logic_key')
 
         cooldown_bars = st.slider("İşlem Arası Bekleme (bar)", 0, 10, st.session_state.cooldown_bars_key)
-        rerun_if_changed(cooldown_bars, 'cooldown_bars_key')
+        #rerun_if_changed(cooldown_bars, 'cooldown_bars_key')
 
         commission_pct = st.slider("İşlem Başına Komisyon (%)", 0.0, 0.5, st.session_state.commission_pct_key,
                                    step=0.01, help="...")
-        rerun_if_changed(commission_pct, 'commission_pct_key')
+        #rerun_if_changed(commission_pct, 'commission_pct_key')
 
     with col2:
         st.markdown("**Zarar Durdur (Stop-Loss)**")
         sl_type_options = ["Yüzde (%)", "ATR"]
         sl_type_index = sl_type_options.index(st.session_state.sl_type_key)
         sl_type = st.radio("Stop-Loss Türü", sl_type_options, index=sl_type_index, horizontal=True)
-        rerun_if_changed(sl_type, 'sl_type_key')
+        #rerun_if_changed(sl_type, 'sl_type_key')
 
         if sl_type == "Yüzde (%)":
             stop_loss_pct = st.slider("Stop Loss (%)", 0.0, 10.0, st.session_state.stop_loss_pct_key, step=0.1)
-            rerun_if_changed(stop_loss_pct, 'stop_loss_pct_key')
+            #rerun_if_changed(stop_loss_pct, 'stop_loss_pct_key')
             atr_multiplier = 0
         else:
             atr_multiplier = st.slider("ATR Çarpanı", 1.0, 5.0, st.session_state.atr_multiplier_key, step=0.1,
                                        help="...")
-            rerun_if_changed(atr_multiplier, 'atr_multiplier_key')
+            #rerun_if_changed(atr_multiplier, 'atr_multiplier_key')
             stop_loss_pct = 0
 
     with col3:
         st.markdown("**Kademeli Kâr Al (Take-Profit)**")
         move_sl_to_be = st.checkbox("TP1 sonrası Stop'u Girişe Çek", value=st.session_state.move_sl_to_be, help="...")
-        rerun_if_changed(move_sl_to_be, 'move_sl_to_be')
+        #rerun_if_changed(move_sl_to_be, 'move_sl_to_be')
 
         tp1_pct = st.slider("TP1 Kâr (%)", 0.0, 20.0, st.session_state.tp1_pct_key, step=0.1)
-        rerun_if_changed(tp1_pct, 'tp1_pct_key')
+        #rerun_if_changed(tp1_pct, 'tp1_pct_key')
 
         tp1_size_pct = st.slider("TP1 Pozisyon Kapatma (%)", 0, 100, st.session_state.tp1_size_key, help="...")
-        rerun_if_changed(tp1_size_pct, 'tp1_size_key')
+        #rerun_if_changed(tp1_size_pct, 'tp1_size_key')
 
         tp2_pct = st.slider("TP2 Kâr (%)", 0.0, 50.0, st.session_state.tp2_pct_key, step=0.1)
-        rerun_if_changed(tp2_pct, 'tp2_pct_key')
+        #rerun_if_changed(tp2_pct, 'tp2_pct_key')
 
         tp2_size_pct = st.slider("TP2 Pozisyon Kapatma (%)", 0, 100, st.session_state.tp2_size_key, help="...")
-        rerun_if_changed(tp2_size_pct, 'tp2_size_key')
+        #rerun_if_changed(tp2_size_pct, 'tp2_size_key')
 
 try:
     telegram_token = st.secrets["telegram"]["token"]
@@ -1612,13 +1612,30 @@ if page == "🔬 Kontrol Merkezi":
         with tab5:
             st.subheader("🔔 Son Alarmlar")
             st.info("Tüm stratejilerden gelen, pozisyon açma/kapama ve diğer önemli olayları içeren kayıt defteri.")
-            alarm_history = get_alarm_history_db(limit=100)
+            alarm_history = get_alarm_history_db(limit=500)  # Daha fazla veri çekebilirsiniz
+
             if alarm_history is not None and not alarm_history.empty:
-                st.dataframe(alarm_history, use_container_width=True, height=600)
+
+                # --- YENİ KOD BAŞLANGICI: SAYFALAMA MANTIĞI ---
+                items_per_page = 25
+                total_items = len(alarm_history)
+                total_pages = (total_items // items_per_page) + (1 if total_items % items_per_page > 0 else 0)
+
+                # Sayfa seçimi için bir slider veya number_input kullan
+                page_number = st.number_input('Sayfa', min_value=1, max_value=total_pages, value=1, step=1)
+
+                start_index = (page_number - 1) * items_per_page
+                end_index = start_index + items_per_page
+
+                # Sadece ilgili sayfadaki veriyi göster
+                st.dataframe(alarm_history.iloc[start_index:end_index], use_container_width=True)
+
+                st.caption(
+                    f"Toplam {total_items} kayıttan {start_index + 1}-{min(end_index, total_items)} arası gösteriliyor.")
+                # --- YENİ KOD SONU ---
+
             else:
                 st.info("Veritabanında henüz kayıtlı bir alarm yok.")
-
-        # app.py dosyasındaki "with tab6:" ile başlayan mevcut bloğu silip bunu yapıştırın
 
         with tab6:
             st.header("🧬 Strateji Gen Havuzu ve Evrimsel Optimizasyon")

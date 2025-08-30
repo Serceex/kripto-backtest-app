@@ -229,7 +229,7 @@ DEFAULTS = {
     'cooldown_bars_key': 3, 'commission_pct_key': 0.1, 'sl_type_key': "ATR",
     'stop_loss_pct_key': 2.0, 'atr_multiplier_key': 2.0, 'move_sl_to_be': True,
     'tp1_pct_key': 5.0, 'tp1_size_key': 50, 'tp2_pct_key': 10.0, 'tp2_size_key': 50,
- 'use_stoch': False, 'use_vwap': False, 'stoch_k_period': 14, 'stoch_d_period': 3,
+ 'use_stoch': False, 'use_vwap': False, 'stoch_k_period': 14, 'stoch_d_period': 3, 'bb_period': 20, 'bb_std': 2.0,
     'stoch_buy_level': 20, 'stoch_sell_level': 80, 'use_ma_cross': False, 'ma_fast_period': 20, 'ma_slow_period': 50
 }
 for key, value in DEFAULTS.items():
@@ -252,8 +252,8 @@ with st.sidebar.expander("📊 Grafik Gösterge Seçenekleri", expanded=False):
     show_ema = st.checkbox("EMA Göster", value=False)
     ema_period = st.slider("EMA Periyodu", 5, 200, 20)
     show_bbands = st.checkbox("Bollinger Bands Göster", value=False)
-    bb_period = st.slider("BB Periyodu", 5, 60, 20)
-    bb_std = st.slider("BB Std Sapma", 1.0, 3.0, 2.0, step=0.1)
+    st.slider("BB Periyodu", 5, 60, key='bb_period')
+    st.slider("BB Std Sapma", 1.0, 3.0, step=0.1, key='bb_std')
     rsi_buy_chart = st.slider("📥 RSI Al Eşiği", 10, 50, 30)
     rsi_sell_chart = st.slider("📤 RSI Sat Eşiği", 50, 90, 70)
     show_vwap = st.checkbox("VWAP Göster", value=False)
@@ -350,6 +350,8 @@ optimize_section = st.container()
 
 
 # Sinyal Kriterleri için ana açılır menü
+# app.py dosyasındaki "Sinyal Kriterleri Seçenekleri" expander'ını bununla değiştirin
+
 with st.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=False):
     st.write(
         "Stratejinizde kullanılacak temel al/sat sinyallerini buradan seçin. Seçtiğiniz her göstergenin detaylı ayarlarını aşağıdan yapabilirsiniz.")
@@ -357,41 +359,23 @@ with st.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=False):
     st.subheader("Trend ve Momentum")
     col1, col2 = st.columns(2)
     with col1:
-        use_rsi_selection = st.checkbox("RSI", value=st.session_state.use_rsi)
-        #rerun_if_changed(use_rsi_selection, 'use_rsi')
-        use_rsi = st.session_state.use_rsi
-
-        use_macd_selection = st.checkbox("MACD", value=st.session_state.use_macd)
-        #rerun_if_changed(use_macd_selection, 'use_macd')
-        use_macd = st.session_state.use_macd
-
-        use_ma_cross_selection = st.checkbox("Hareketli Ortalama Kesişimi (MA Cross)",
-                                             value=st.session_state.use_ma_cross)
-        #rerun_if_changed(use_ma_cross_selection, 'use_ma_cross')
-        use_ma_cross = st.session_state.use_ma_cross
-
+        # Checkbox'ların durumunu doğrudan session_state'e 'key' ile bağlıyoruz
+        st.checkbox("RSI", key='use_rsi')
+        st.checkbox("MACD", key='use_macd')
+        st.checkbox("Hareketli Ortalama Kesişimi (MA Cross)", key='use_ma_cross')
 
     with col2:
-        use_adx_selection = st.checkbox("ADX Filtresi", value=st.session_state.use_adx,
-                                        help="Trendin gücünü ölçer. Diğer sinyalleri teyit etmek için kullanılır.")
-        #rerun_if_changed(use_adx_selection, 'use_adx')
-        use_adx = st.session_state.use_adx
+        st.checkbox("ADX Filtresi", key='use_adx',
+                    help="Trendin gücünü ölçer. Diğer sinyalleri teyit etmek için kullanılır.")
+        st.checkbox("Stochastic", key='use_stoch')  # Stochastic buraya taşındı
 
     st.subheader("Aşırı Alım/Satım ve Hacim")
     col3, col4 = st.columns(2)
     with col3:
-        use_bb_selection = st.checkbox("Bollinger Bantları", value=st.session_state.use_bb)
-        #rerun_if_changed(use_bb_selection, 'use_bb')
-        use_bb = st.session_state.use_bb
-
-        use_stoch_selection = st.checkbox("Stochastic", value=st.session_state.use_stoch)
-        #rerun_if_changed(use_stoch_selection, 'use_stoch')
-        use_stoch = st.session_state.use_stoch
+        st.checkbox("Bollinger Bantları", key='use_bb')
     with col4:
-        use_vwap_selection = st.checkbox("VWAP Kesişimi", value=st.session_state.use_vwap,
-                                         help="Fiyatın Hacim Ağırlıklı Ortalama Fiyatı (VWAP) kesişimlerini sinyal olarak kullanır.")
-        #rerun_if_changed(use_vwap_selection, 'use_vwap')
-        use_vwap = st.session_state.use_vwap
+        st.checkbox("VWAP Kesişimi", key='use_vwap',
+                    help="Fiyatın Hacim Ağırlıklı Ortalama Fiyatı (VWAP) kesişimlerini sinyal olarak kullanır.")
 
     # --- Sinyal Detay Ayarları ---
     st.markdown("---")
@@ -400,95 +384,45 @@ with st.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=False):
     detay_col1, detay_col2 = st.columns(2)
 
     with detay_col1:
-        if use_rsi:
+        # Koşullu bloklar artık doğrudan session_state'deki güncel değeri kontrol ediyor
+        if st.session_state.use_rsi:
             with st.container(border=True):
                 st.markdown("**RSI Ayarları**")
-                rsi_period_selection = st.number_input("RSI Periyodu", 2, 100, st.session_state.rsi_period,
-                                                       key="main_rsi_period")
-                #rerun_if_changed(rsi_period_selection, 'rsi_period')
-                rsi_period = st.session_state.rsi_period
+                st.number_input("RSI Periyodu", 2, 100, key="rsi_period")
+                st.slider("RSI Alış Eşiği", 0, 50, key="rsi_buy_key")
+                st.slider("RSI Satış Eşiği", 50, 100, key="rsi_sell_key")
 
-                rsi_buy_selection = st.slider("RSI Alış Eşiği", 0, 50, st.session_state.rsi_buy_key, 1,
-                                              key="main_rsi_buy")
-                #rerun_if_changed(rsi_buy_selection, 'rsi_buy_key')
-                rsi_buy = st.session_state.rsi_buy_key
-
-                rsi_sell_selection = st.slider("RSI Satış Eşiği", 50, 100, st.session_state.rsi_sell_key, 1,
-                                               key="main_rsi_sell")
-                #rerun_if_changed(rsi_sell_selection, 'rsi_sell_key')
-                rsi_sell = st.session_state.rsi_sell_key
-        else:
-            rsi_buy, rsi_sell, rsi_period = 30, 70, 14
-
-        if use_adx:
+        if st.session_state.use_adx:
             with st.container(border=True):
                 st.markdown("**ADX Ayarları**")
-                adx_threshold_selection = st.slider("ADX Trend Teyit Eşiği", 10, 50, st.session_state.adx_threshold_key,
-                                                    help="Sadece ADX bu değerin üzerindeyken diğer sinyalleri işleme al.",
-                                                    key="main_adx")
-                #rerun_if_changed(adx_threshold_selection, 'adx_threshold_key')
-                adx_threshold = st.session_state.adx_threshold_key
-        else:
-            adx_threshold = 25
+                st.slider("ADX Trend Teyit Eşiği", 10, 50, key="adx_threshold_key",
+                          help="Sadece ADX bu değerin üzerindeyken diğer sinyalleri işleme al.")
 
-        if use_vwap:
-            with st.container(border=True):
-                st.markdown("**VWAP Ayarları**")
-                vwap_cross_logic = st.radio("VWAP Sinyal Mantığı",
-                                            ["Fiyat > VWAP ise AL", "Fiyat < VWAP ise SAT"], index=0,
-                                            help="Fiyatın VWAP'a göre konumunu sinyal olarak belirler.",
-                                            key="main_vwap")
-        else:
-            vwap_cross_logic = "Fiyat > VWAP ise AL"
+        # VWAP ve MA Cross için ayrı ayar olmadığından, bu bloklar boş kalabilir veya bilgilendirme eklenebilir.
 
     with detay_col2:
-        if use_macd:
+        if st.session_state.use_macd:
             with st.container(border=True):
                 st.markdown("**MACD Ayarları**")
-                macd_fast_selection = st.slider("MACD Hızlı Periyot", 5, 20, st.session_state.macd_fast,
-                                                key="main_macd_fast")
-                #rerun_if_changed(macd_fast_selection, 'macd_fast')
-                macd_fast = st.session_state.macd_fast
+                st.slider("MACD Hızlı Periyot", 5, 20, key="macd_fast")
+                st.slider("MACD Yavaş Periyot", 10, 40, key="macd_slow")
+                st.slider("MACD Sinyal Periyodu", 5, 15, key="macd_signal")
 
-                macd_slow_selection = st.slider("MACD Yavaş Periyot", 10, 40, st.session_state.macd_slow,
-                                                key="main_macd_slow")
-                #rerun_if_changed(macd_slow_selection, 'macd_slow')
-                macd_slow = st.session_state.macd_slow
-
-                macd_signal_selection = st.slider("MACD Sinyal Periyodu", 5, 15, st.session_state.macd_signal,
-                                                  key="main_macd_signal")
-                #rerun_if_changed(macd_signal_selection, 'macd_signal')
-                macd_signal = st.session_state.macd_signal
-        else:
-            macd_fast, macd_slow, macd_signal = 12, 26, 9
-
-        if use_stoch:
+        if st.session_state.use_stoch:
             with st.container(border=True):
                 st.markdown("**Stochastic Ayarları**")
-                stoch_k_period = st.slider("Stochastic K Periyodu", 5, 50, 14, key="main_stoch_k")
-                stoch_d_period = st.slider("Stochastic D Periyodu (Yavaşlatma)", 1, 10, 3, key="main_stoch_d")
-                stoch_buy_level = st.slider("Stoch Alış Seviyesi", 0, 50, 20, key="main_stoch_buy")
-                stoch_sell_level = st.slider("Stoch Satış Seviyesi", 50, 100, 80, key="main_stoch_sell")
-        else:
-            stoch_k_period, stoch_d_period, stoch_buy_level, stoch_sell_level = 14, 3, 20, 80
+                st.slider("Stochastic K Periyodu", 5, 50, key="stoch_k_period")
+                st.slider("Stochastic D Periyodu (Yavaşlatma)", 1, 10, key="stoch_d_period")
+                st.slider("Stoch Alış Seviyesi", 0, 50, key="stoch_buy_level")
+                st.slider("Stoch Satış Seviyesi", 50, 100, key="stoch_sell_level")
 
-        if use_ma_cross:
+        if st.session_state.use_ma_cross:
             with st.container(border=True):
                 st.markdown("**MA Kesişimi Ayarları**")
-                ma_fast_period_selection = st.slider("Hızlı MA Periyodu", 5, 100, st.session_state.ma_fast_period,
-                                                     key="main_ma_fast")
-                #rerun_if_changed(ma_fast_period_selection, 'ma_fast_period')
-                ma_fast_period = st.session_state.ma_fast_period
-
-                ma_slow_period_selection = st.slider("Yavaş MA Periyodu", 10, 200, st.session_state.ma_slow_period,
-                                                     key="main_ma_slow")
-                #rerun_if_changed(ma_slow_period_selection, 'ma_slow_period')
-                ma_slow_period = st.session_state.ma_slow_period
-
-                if ma_fast_period >= ma_slow_period:
+                st.slider("Hızlı MA Periyodu", 5, 100, key="ma_fast_period")
+                st.slider("Yavaş MA Periyodu", 10, 200, key="ma_slow_period")
+                if st.session_state.ma_fast_period >= st.session_state.ma_slow_period:
                     st.warning("Hızlı MA periyodu, yavaş MA periyodundan küçük olmalıdır.")
-        else:
-            ma_fast_period, ma_slow_period = 20, 50
 
 
 with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
@@ -555,35 +489,68 @@ except KeyError:
     telegram_chat_id = None
 
 strategy_params = {
-    'sma': sma_period, 'ema': ema_period, 'bb_period': bb_period, 'bb_std': bb_std,
-    'rsi_buy': rsi_buy, 'rsi_sell': rsi_sell, 'rsi_period': rsi_period,
-    'macd_fast': macd_fast, 'macd_slow': macd_slow, 'macd_signal': macd_signal,
-    'adx_period': 14, 'adx_threshold': adx_threshold,
-    'use_rsi': use_rsi, 'use_macd': use_macd, 'use_bb': use_bb, 'use_adx': use_adx,
-    'stop_loss_pct': stop_loss_pct,
-    'atr_multiplier': atr_multiplier,
-    'cooldown_bars': cooldown_bars,
-    'signal_mode': 'and' if signal_logic == "AND (Teyitli)" else 'or',
-    'signal_direction': {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[signal_mode],
-    'use_puzzle_bot': use_puzzle_bot, 'use_ml': use_ml, 'use_mta': use_mta,
-    'higher_timeframe': higher_timeframe, 'trend_ema_period': trend_ema_period,
-    'commission_pct': 0.1,
-    'tp1_pct': tp1_pct, 'tp1_size_pct': tp1_size_pct,
-    'tp2_pct': tp2_pct, 'tp2_size_pct': tp2_size_pct,
-    'move_sl_to_be': move_sl_to_be,
-    'telegram_enabled': use_telegram,
-    'telegram_token': telegram_token,
-    'telegram_chat_id': telegram_chat_id,
-    'use_stoch': use_stoch,
-    'stoch_k_period': stoch_k_period if use_stoch else 14,
-    'stoch_d_period': stoch_d_period if use_stoch else 3,
-    'stoch_buy_level': stoch_buy_level if use_stoch else 20,
-    'stoch_sell_level': stoch_sell_level if use_stoch else 80,
-    'use_vwap': use_vwap,
-    'use_ma_cross': use_ma_cross,
-    'ma_fast_period': ma_fast_period,
-    'ma_slow_period': ma_slow_period
+    # Grafikleme Parametreleri (Doğrudan session_state'den)
+    'sma': st.session_state.get('sma_period', 50),
+    'ema': st.session_state.get('ema_period', 20),
+    'bb_period': st.session_state.bb_period,
+    'bb_std': st.session_state.bb_std,
 
+    # Sinyal Kriterleri (Doğrudan session_state'den)
+    'use_rsi': st.session_state.use_rsi,
+    'rsi_period': st.session_state.rsi_period,
+    'rsi_buy': st.session_state.rsi_buy_key,
+    'rsi_sell': st.session_state.rsi_sell_key,
+
+    'use_macd': st.session_state.use_macd,
+    'macd_fast': st.session_state.macd_fast,
+    'macd_slow': st.session_state.macd_slow,
+    'macd_signal': st.session_state.macd_signal,
+
+    'use_bb': st.session_state.use_bb,
+
+    'use_adx': st.session_state.use_adx,
+    'adx_period': 14,  # Genellikle sabit bırakılır
+    'adx_threshold': st.session_state.adx_threshold_key,
+
+    'use_stoch': st.session_state.use_stoch,
+    'stoch_k_period': st.session_state.stoch_k_period,
+    'stoch_d_period': st.session_state.stoch_d_period,
+    'stoch_buy_level': st.session_state.stoch_buy_level,
+    'stoch_sell_level': st.session_state.stoch_sell_level,
+
+    'use_vwap': st.session_state.use_vwap,
+
+    'use_ma_cross': st.session_state.use_ma_cross,
+    'ma_fast_period': st.session_state.ma_fast_period,
+    'ma_slow_period': st.session_state.ma_slow_period,
+
+    # Gelişmiş Strateji Ayarları (Koşullu mantık içerir)
+    'stop_loss_pct': st.session_state.stop_loss_pct_key if st.session_state.sl_type_key == 'Yüzde (%)' else 0,
+    'atr_multiplier': st.session_state.atr_multiplier_key if st.session_state.sl_type_key == 'ATR' else 0,
+    'cooldown_bars': st.session_state.cooldown_bars_key,
+    'signal_mode': 'and' if st.session_state.signal_logic_key == "AND (Teyitli)" else 'or',
+    'signal_direction': {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[
+        st.session_state.signal_mode_key],
+    'commission_pct': st.session_state.commission_pct_key,
+
+    # Kademeli Kâr Alma
+    'tp1_pct': st.session_state.tp1_pct_key,
+    'tp1_size_pct': st.session_state.tp1_size_key,
+    'tp2_pct': st.session_state.tp2_pct_key,
+    'tp2_size_pct': st.session_state.tp2_size_key,
+    'move_sl_to_be': st.session_state.move_sl_to_be,
+
+    # Diğer Parametreler
+    'use_puzzle_bot': st.session_state.puzzle_bot,
+    'use_ml': st.session_state.ml_toggle,
+    'use_mta': st.session_state.use_mta_key,
+    'higher_timeframe': st.session_state.higher_timeframe_key if st.session_state.use_mta_key else None,
+    'trend_ema_period': st.session_state.trend_ema_period_key if st.session_state.use_mta_key else 50,
+
+    # Telegram Ayarları
+    'telegram_enabled': st.session_state.telegram_alerts,
+    'telegram_token': telegram_token,
+    'telegram_chat_id': telegram_chat_id
 }
 
 if "live_running" not in st.session_state: st.session_state.live_running = False
@@ -1893,34 +1860,46 @@ if page == "🧪 Deney Odası":
 
         if st.button("🚀 Portföy Backtest Başlat"):
             current_strategy_params = {
-                'sma': sma_period, 'ema': ema_period, 'bb_period': st.session_state.bb_period,
+                'sma': st.session_state.get('sma_period', 50),  # Grafikleme için, session_state'e eklenmemiş olabilir
+                'ema': st.session_state.get('ema_period', 20),  # Grafikleme için, session_state'e eklenmemiş olabilir
+                'bb_period': st.session_state.bb_period,
                 'bb_std': st.session_state.bb_std,
-                'rsi_buy': st.session_state.rsi_buy_key, 'rsi_sell': st.session_state.rsi_sell_key,
+                'rsi_buy': st.session_state.rsi_buy_key,
+                'rsi_sell': st.session_state.rsi_sell_key,
                 'rsi_period': st.session_state.rsi_period,
-                'macd_fast': st.session_state.macd_fast, 'macd_slow': st.session_state.macd_slow,
+                'macd_fast': st.session_state.macd_fast,
+                'macd_slow': st.session_state.macd_slow,
                 'macd_signal': st.session_state.macd_signal,
-                'adx_period': 14, 'adx_threshold': st.session_state.adx_threshold_key,
-                'use_rsi': st.session_state.use_rsi, 'use_macd': st.session_state.use_macd,
-                'use_bb': st.session_state.use_bb, 'use_adx': st.session_state.use_adx,
-                'stop_loss_pct': stop_loss_pct,
-                'atr_multiplier': atr_multiplier,
+                'adx_period': 14,  # Varsayılan, değiştirilebilir
+                'adx_threshold': st.session_state.adx_threshold_key,
+                'use_rsi': st.session_state.use_rsi,
+                'use_macd': st.session_state.use_macd,
+                'use_bb': st.session_state.use_bb,
+                'use_adx': st.session_state.use_adx,
+                'stop_loss_pct': st.session_state.stop_loss_pct_key if st.session_state.sl_type_key == 'Yüzde (%)' else 0,
+                'atr_multiplier': st.session_state.atr_multiplier_key if st.session_state.sl_type_key == 'ATR' else 0,
                 'cooldown_bars': st.session_state.cooldown_bars_key,
                 'signal_mode': 'and' if st.session_state.signal_logic_key == "AND (Teyitli)" else 'or',
                 'signal_direction': {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[
                     st.session_state.signal_mode_key],
-                'use_puzzle_bot': st.session_state.puzzle_bot, 'use_ml': st.session_state.ml_toggle,
+                'use_puzzle_bot': st.session_state.puzzle_bot,
+                'use_ml': st.session_state.ml_toggle,
                 'use_mta': st.session_state.use_mta_key,
                 'higher_timeframe': st.session_state.higher_timeframe_key,
                 'trend_ema_period': st.session_state.trend_ema_period_key,
                 'commission_pct': st.session_state.commission_pct_key,
-                'tp1_pct': st.session_state.tp1_pct_key, 'tp1_size_pct': st.session_state.tp1_size_key,
-                'tp2_pct': st.session_state.tp2_pct_key, 'tp2_size_pct': st.session_state.tp2_size_key,
+                'tp1_pct': st.session_state.tp1_pct_key,
+                'tp1_size_pct': st.session_state.tp1_size_key,
+                'tp2_pct': st.session_state.tp2_pct_key,
+                'tp2_size_pct': st.session_state.tp2_size_key,
                 'move_sl_to_be': st.session_state.move_sl_to_be,
                 'telegram_enabled': st.session_state.telegram_alerts,
                 'use_stoch': st.session_state.use_stoch,
-                'stoch_k_period': stoch_k_period, 'stoch_d_period': stoch_d_period,
-                'stoch_buy_level': stoch_buy_level, 'stoch_sell_level': stoch_sell_level,
-                'use_vwap': use_vwap, 
+                'stoch_k_period': st.session_state.stoch_k_period,
+                'stoch_d_period': st.session_state.stoch_d_period,
+                'stoch_buy_level': st.session_state.stoch_buy_level,
+                'stoch_sell_level': st.session_state.stoch_sell_level,
+                'use_vwap': st.session_state.use_vwap,
                 'use_ma_cross': st.session_state.use_ma_cross,
                 'ma_fast_period': st.session_state.ma_fast_period,
                 'ma_slow_period': st.session_state.ma_slow_period

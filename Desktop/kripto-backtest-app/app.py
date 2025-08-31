@@ -680,7 +680,7 @@ def get_all_latest_signals():
     return latest_signals
 
 
-def run_portfolio_backtest(symbols, interval, strategy_params):
+def run_portfolio_backtest(symbols, interval, current_strategy_params):
     """
     Kademeli Kâr Alma ve Stop'u Başa Çekme özelliklerini içeren,
     gerçekçi backtest fonksiyonu.

@@ -1904,7 +1904,7 @@ if page == "🧪 Deney Odası":
                 'ma_fast_period': st.session_state.ma_fast_period,
                 'ma_slow_period': st.session_state.ma_slow_period
             }
-            run_portfolio_backtest(symbols, interval, strategy_params)
+            run_portfolio_backtest(symbols, interval, current_strategy_params)
 
         if 'backtest_results' in st.session_state and not st.session_state['backtest_results'].empty:
             portfolio_results = st.session_state['backtest_results'].copy()

@@ -424,61 +424,41 @@ with st.expander("🔔 Sinyal Kriterleri Seçenekleri", expanded=False):
                 if st.session_state.ma_fast_period >= st.session_state.ma_slow_period:
                     st.warning("Hızlı MA periyodu, yavaş MA periyodundan küçük olmalıdır.")
 
+# Lütfen yaklaşık 593. satırdaki expander'ın tamamını bu blok ile değiştirin
 
 with st.expander("⚙️ Strateji Gelişmiş Ayarlar", expanded=False):
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("**Sinyal & İşlem Ayarları**")
-        signal_mode_options = ["Long Only", "Short Only", "Long & Short"]
-        signal_mode_index = signal_mode_options.index(st.session_state.signal_mode_key)
-        signal_mode = st.selectbox("Sinyal Modu", signal_mode_options, index=signal_mode_index)
-        #rerun_if_changed(signal_mode, 'signal_mode_key')
-
-        signal_logic_options = ["AND (Teyitli)", "OR (Hızlı)"]
-        signal_logic_index = signal_logic_options.index(st.session_state.signal_logic_key)
-        signal_logic = st.selectbox("Sinyal Mantığı", signal_logic_options, index=signal_logic_index, help="...")
-        #rerun_if_changed(signal_logic, 'signal_logic_key')
-
-        cooldown_bars = st.slider("İşlem Arası Bekleme (bar)", 0, 10, st.session_state.cooldown_bars_key)
-        #rerun_if_changed(cooldown_bars, 'cooldown_bars_key')
-
-        commission_pct = st.slider("İşlem Başına Komisyon (%)", 0.0, 0.5, st.session_state.commission_pct_key,
-                                   step=0.01, help="...")
-        #rerun_if_changed(commission_pct, 'commission_pct_key')
+        # DÜZELTME: 'key' parametreleri eklendi
+        st.selectbox("Sinyal Modu", ["Long Only", "Short Only", "Long & Short"], key='signal_mode_key')
+        st.selectbox("Sinyal Mantığı", ["AND (Teyitli)", "OR (Hızlı)"], key='signal_logic_key', help="...")
+        st.slider("İşlem Arası Bekleme (bar)", 0, 10, key='cooldown_bars_key')
+        st.slider("İşlem Başına Komisyon (%)", 0.0, 0.5, key='commission_pct_key', step=0.01, help="...")
 
     with col2:
         st.markdown("**Zarar Durdur (Stop-Loss)**")
-        sl_type_options = ["Yüzde (%)", "ATR"]
-        sl_type_index = sl_type_options.index(st.session_state.sl_type_key)
-        sl_type = st.radio("Stop-Loss Türü", sl_type_options, index=sl_type_index, horizontal=True)
-        #rerun_if_changed(sl_type, 'sl_type_key')
+        # DÜZELTME: 'key' parametresi eklendi
+        st.radio("Stop-Loss Türü", ["Yüzde (%)", "ATR"], key='sl_type_key', horizontal=True)
 
-        if sl_type == "Yüzde (%)":
-            stop_loss_pct = st.slider("Stop Loss (%)", 0.0, 10.0, st.session_state.stop_loss_pct_key, step=0.1)
-            #rerun_if_changed(stop_loss_pct, 'stop_loss_pct_key')
-            atr_multiplier = 0
+        if st.session_state.sl_type_key == "Yüzde (%)":
+            # DÜZELTME: 'key' parametresi eklendi
+            st.slider("Stop Loss (%)", 0.0, 10.0, key='stop_loss_pct_key', step=0.1)
         else:
-            atr_multiplier = st.slider("ATR Çarpanı", 1.0, 5.0, st.session_state.atr_multiplier_key, step=0.1,
-                                       help="...")
-            #rerun_if_changed(atr_multiplier, 'atr_multiplier_key')
-            stop_loss_pct = 0
+            # DÜZELTME: 'key' parametresi eklendi
+            st.slider("ATR Çarpanı", 1.0, 5.0, key='atr_multiplier_key', step=0.1, help="...")
 
     with col3:
         st.markdown("**Kademeli Kâr Al (Take-Profit)**")
-        move_sl_to_be = st.checkbox("TP1 sonrası Stop'u Girişe Çek", value=st.session_state.move_sl_to_be, help="...")
-        #rerun_if_changed(move_sl_to_be, 'move_sl_to_be')
+        # Bu zaten doğruydu, olduğu gibi kalıyor
+        st.checkbox("TP1 sonrası Stop'u Girişe Çek", value=st.session_state.move_sl_to_be, key='move_sl_to_be', help="...")
 
-        tp1_pct = st.slider("TP1 Kâr (%)", 0.0, 20.0, st.session_state.tp1_pct_key, step=0.1)
-        #rerun_if_changed(tp1_pct, 'tp1_pct_key')
+        # DÜZELTME: 'key' parametreleri eklendi
+        st.slider("TP1 Kâr (%)", 0.0, 20.0, key='tp1_pct_key', step=0.1)
+        st.slider("TP1 Pozisyon Kapatma (%)", 0, 100, key='tp1_size_key', help="...")
+        st.slider("TP2 Kâr (%)", 0.0, 50.0, key='tp2_pct_key', step=0.1)
+        st.slider("TP2 Pozisyon Kapatma (%)", 0, 100, key='tp2_size_key', help="...")
 
-        tp1_size_pct = st.slider("TP1 Pozisyon Kapatma (%)", 0, 100, st.session_state.tp1_size_key, help="...")
-        #rerun_if_changed(tp1_size_pct, 'tp1_size_key')
-
-        tp2_pct = st.slider("TP2 Kâr (%)", 0.0, 50.0, st.session_state.tp2_pct_key, step=0.1)
-        #rerun_if_changed(tp2_pct, 'tp2_pct_key')
-
-        tp2_size_pct = st.slider("TP2 Pozisyon Kapatma (%)", 0, 100, st.session_state.tp2_size_key, help="...")
-        #rerun_if_changed(tp2_size_pct, 'tp2_size_key')
 
 try:
     telegram_token = st.secrets["telegram"]["token"]

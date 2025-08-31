@@ -680,7 +680,7 @@ def get_all_latest_signals():
     return latest_signals
 
 
-def run_portfolio_backtest(symbols, interval, current_strategy_params):
+def run_portfolio_backtest(symbols, interval, strategy_params):
     """
     Kademeli Kâr Alma ve Stop'u Başa Çekme özelliklerini içeren,
     gerçekçi backtest fonksiyonu.
@@ -1859,52 +1859,8 @@ if page == "🧪 Deney Odası":
         st.session_state.selected_symbols = symbols
 
         if st.button("🚀 Portföy Backtest Başlat"):
-            current_strategy_params = {
-                'sma': st.session_state.get('sma_period', 50),  # Grafikleme için, session_state'e eklenmemiş olabilir
-                'ema': st.session_state.get('ema_period', 20),  # Grafikleme için, session_state'e eklenmemiş olabilir
-                'bb_period': st.session_state.bb_period,
-                'bb_std': st.session_state.bb_std,
-                'rsi_buy': st.session_state.rsi_buy_key,
-                'rsi_sell': st.session_state.rsi_sell_key,
-                'rsi_period': st.session_state.rsi_period,
-                'macd_fast': st.session_state.macd_fast,
-                'macd_slow': st.session_state.macd_slow,
-                'macd_signal': st.session_state.macd_signal,
-                'adx_period': 14,  # Varsayılan, değiştirilebilir
-                'adx_threshold': st.session_state.adx_threshold_key,
-                'use_rsi': st.session_state.use_rsi,
-                'use_macd': st.session_state.use_macd,
-                'use_bb': st.session_state.use_bb,
-                'use_adx': st.session_state.use_adx,
-                'stop_loss_pct': st.session_state.stop_loss_pct_key if st.session_state.sl_type_key == 'Yüzde (%)' else 0,
-                'atr_multiplier': st.session_state.atr_multiplier_key if st.session_state.sl_type_key == 'ATR' else 0,
-                'cooldown_bars': st.session_state.cooldown_bars_key,
-                'signal_mode': 'and' if st.session_state.signal_logic_key == "AND (Teyitli)" else 'or',
-                'signal_direction': {"Long Only": "Long", "Short Only": "Short", "Long & Short": "Both"}[
-                    st.session_state.signal_mode_key],
-                'use_puzzle_bot': st.session_state.puzzle_bot,
-                'use_ml': st.session_state.ml_toggle,
-                'use_mta': st.session_state.use_mta_key,
-                'higher_timeframe': st.session_state.higher_timeframe_key,
-                'trend_ema_period': st.session_state.trend_ema_period_key,
-                'commission_pct': st.session_state.commission_pct_key,
-                'tp1_pct': st.session_state.tp1_pct_key,
-                'tp1_size_pct': st.session_state.tp1_size_key,
-                'tp2_pct': st.session_state.tp2_pct_key,
-                'tp2_size_pct': st.session_state.tp2_size_key,
-                'move_sl_to_be': st.session_state.move_sl_to_be,
-                'telegram_enabled': st.session_state.telegram_alerts,
-                'use_stoch': st.session_state.use_stoch,
-                'stoch_k_period': st.session_state.stoch_k_period,
-                'stoch_d_period': st.session_state.stoch_d_period,
-                'stoch_buy_level': st.session_state.stoch_buy_level,
-                'stoch_sell_level': st.session_state.stoch_sell_level,
-                'use_vwap': st.session_state.use_vwap,
-                'use_ma_cross': st.session_state.use_ma_cross,
-                'ma_fast_period': st.session_state.ma_fast_period,
-                'ma_slow_period': st.session_state.ma_slow_period
-            }
-            run_portfolio_backtest(symbols, interval, current_strategy_params)
+
+            run_portfolio_backtest(symbols, interval, strategy_params)
 
         if 'backtest_results' in st.session_state and not st.session_state['backtest_results'].empty:
             portfolio_results = st.session_state['backtest_results'].copy()

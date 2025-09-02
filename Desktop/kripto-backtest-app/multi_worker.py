@@ -1,4 +1,3 @@
-# multi_worker.py (Tüm hataları giderilmiş, en stabil ve tam özellikli nihai hali)
 
 import json
 import time
@@ -110,7 +109,6 @@ class StrategyRunner:
 
         self._load_positions()
 
-
     def _load_positions(self):
         try:
             # Veritabanından pozisyonları tam detaylarıyla yükle
@@ -120,7 +118,8 @@ class StrategyRunner:
                 self.portfolio_data[symbol] = {
                     'position': pos_data.get('position'),
                     'entry_price': pos_data.get('entry_price', 0),
-                    'df': self.portfolio_data.get(symbol, {}).get('df')  # Mevcut DataFrame'i koru
+                    'df': self.portfolio_data.get(symbol, {}).get('df'),  # Mevcut DataFrame'i koru
+                    'last_signal': None
                 }
             logging.info(f"BİLGİ ({self.name}): Veritabanından başlangıç pozisyonları yüklendi.")
         except Exception as e:
@@ -140,7 +139,8 @@ class StrategyRunner:
                 if symbol not in self.portfolio_data:
                     self.portfolio_data[symbol] = {
                         'position': None, 'entry_price': 0, 'stop_loss_price': 0,
-                        'tp1_price': 0, 'tp2_price': 0, 'tp1_hit': False, 'tp2_hit': False
+                        'tp1_price': 0, 'tp2_price': 0, 'tp1_hit': False, 'tp2_hit': False,
+                        'last_signal': None
                     }
                 self.portfolio_data[symbol]['df'] = initial_df
                 ws_thread = threading.Thread(target=self._run_websocket, args=(symbol,), daemon=True)
@@ -461,10 +461,18 @@ class StrategyRunner:
                 price = last_row['Close']
 
                 current_position = self.portfolio_data.get(symbol, {}).get('position')
+                last_signal = self.portfolio_data.get(symbol, {}).get('last_signal')
+
+                # --- YENİ KONTROL ---
+                # Eğer pozisyon yoksa ve gelen sinyal bir öncekiyle aynı ise (ve "Bekle" değilse) işlemi tekrar yapma.
+                if current_position is None and raw_signal == last_signal and raw_signal != 'Bekle':
+                    return  # Fonksiyondan çıkarak mükerrer işlemi engelle
 
                 if (current_position == 'Long' and raw_signal == 'Short') or \
                         (current_position == 'Short' and raw_signal == 'Al'):
                     self._close_position(symbol, price, "Karşıt Sinyal", size_pct_to_close=100.0)
+                    self.portfolio_data[symbol]['last_signal'] = raw_signal  # Pozisyon kapanınca son sinyali güncelle
+
                 elif current_position is None:
                     if self.position_locks[symbol].acquire(blocking=False):
                         try:
@@ -480,6 +488,9 @@ class StrategyRunner:
                                         new_pos = 'Short'
                                     if new_pos:
                                         self._open_new_position(symbol, new_pos, price, final_df)
+                                        # --- YENİ GÜNCELLEME ---
+                                        # Pozisyon açıldıktan sonra son sinyali kaydet
+                                        self.portfolio_data[symbol]['last_signal'] = raw_signal
                         finally:
                             self.position_locks[symbol].release()
 

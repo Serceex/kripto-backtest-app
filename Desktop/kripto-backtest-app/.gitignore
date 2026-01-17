@@ -1,13 +1,41 @@
-# Python cache  
-__pycache__/  
-  
-# Sanal Ortam KlasîrÅ  
-venv/  
-  
-# öretilen Veri ve Log Dosyalarç  
-*.db  
-*.csv  
-*.json  
-  
-# IDE klasîrleri  
-.idea/ 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Firebase
+firebase-service-account-key.json
+*-firebase-key.json
+
+# RL Models (yerel)
+rl_models_local/
+*.zip
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# Tensorboard
+rl_tensorboard_logs/

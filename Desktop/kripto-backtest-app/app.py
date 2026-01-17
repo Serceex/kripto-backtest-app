@@ -221,18 +221,210 @@ def load_css():
 
 load_css()
 
-# Header
-st.title("🧪 Veritas Point Labs")
+# ============================================================================
+# KULLANICI DOSTU FİNANSAL ANALİST TASARIMI
+# ============================================================================
+
+# Custom CSS for professional look
+st.markdown("""
+<style>
+    /* Ana başlık stili */
+    .main-header {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        padding: 1.5rem 2rem;
+        border-radius: 10px;
+        margin-bottom: 1.5rem;
+        border-left: 4px solid #00d4aa;
+    }
+    .main-header h1 {
+        color: #ffffff;
+        font-size: 1.8rem;
+        margin: 0;
+        font-weight: 700;
+    }
+    .main-header p {
+        color: #8892b0;
+        font-size: 0.9rem;
+        margin: 0.5rem 0 0 0;
+    }
+    
+    /* KPI Kartları */
+    .kpi-container {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+        margin: 1.5rem 0;
+    }
+    .kpi-card {
+        background: linear-gradient(135deg, #1e3a5f 0%, #1a2744 100%);
+        border-radius: 12px;
+        padding: 1.25rem;
+        border: 1px solid #2d4a6f;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .kpi-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+    }
+    .kpi-label {
+        color: #8892b0;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.5rem;
+    }
+    .kpi-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        margin: 0;
+    }
+    .kpi-value.positive { color: #00d4aa; }
+    .kpi-value.negative { color: #ff6b6b; }
+    .kpi-value.neutral { color: #ffd93d; }
+    .kpi-change {
+        font-size: 0.8rem;
+        margin-top: 0.25rem;
+    }
+    .kpi-change.up { color: #00d4aa; }
+    .kpi-change.down { color: #ff6b6b; }
+    
+    /* Bilgi Kutuları */
+    .info-box {
+        background: #1e3a5f;
+        border-left: 4px solid #00d4aa;
+        padding: 1rem 1.25rem;
+        border-radius: 0 8px 8px 0;
+        margin: 1rem 0;
+    }
+    .info-box.warning {
+        border-left-color: #ffd93d;
+    }
+    .info-box.danger {
+        border-left-color: #ff6b6b;
+    }
+    .info-box h4 {
+        color: #ffffff;
+        margin: 0 0 0.5rem 0;
+        font-size: 0.9rem;
+    }
+    .info-box p {
+        color: #8892b0;
+        margin: 0;
+        font-size: 0.85rem;
+    }
+    
+    /* Bölüm Başlıkları */
+    .section-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin: 2rem 0 1rem 0;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid #2d4a6f;
+    }
+    .section-header h2 {
+        color: #ffffff;
+        font-size: 1.25rem;
+        margin: 0;
+        font-weight: 600;
+    }
+    .section-header .icon {
+        font-size: 1.5rem;
+    }
+    
+    /* Hızlı İpucu */
+    .quick-tip {
+        background: rgba(0, 212, 170, 0.1);
+        border: 1px solid rgba(0, 212, 170, 0.3);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        margin: 0.5rem 0;
+        font-size: 0.85rem;
+        color: #00d4aa;
+    }
+    
+    /* Tablo Stili */
+    .styled-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #1a2744;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    .styled-table th {
+        background: #1e3a5f;
+        color: #8892b0;
+        padding: 1rem;
+        text-align: left;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .styled-table td {
+        padding: 1rem;
+        border-bottom: 1px solid #2d4a6f;
+        color: #ffffff;
+    }
+    .styled-table tr:hover {
+        background: rgba(0, 212, 170, 0.05);
+    }
+    
+    /* Badge'ler */
+    .badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    .badge-long {
+        background: rgba(0, 212, 170, 0.2);
+        color: #00d4aa;
+    }
+    .badge-short {
+        background: rgba(255, 107, 107, 0.2);
+        color: #ff6b6b;
+    }
+    
+    /* Sidebar Stili */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0d1421 0%, #1a2744 100%);
+    }
+    [data-testid="stSidebar"] .stMarkdown h3 {
+        color: #00d4aa;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: 1.5rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Ana Başlık
+st.markdown("""
+<div class="main-header">
+    <h1>📊 Veritas Point Labs</h1>
+    <p>Profesyonel Kripto Backtest & Analiz Platformu</p>
+</div>
+""", unsafe_allow_html=True)
 
 
 if 'config' not in st.session_state:
     st.session_state.config = load_config()
 config = st.session_state.config
 
-st.sidebar.header("🔎 Sayfa Seçimi")
+# Sidebar - Profesyonel Navigasyon
+st.sidebar.markdown("""
+<div style="text-align: center; padding: 1rem 0; border-bottom: 1px solid #2d4a6f; margin-bottom: 1rem;">
+    <h2 style="color: #00d4aa; margin: 0; font-size: 1.1rem;">🎯 Kontrol Paneli</h2>
+</div>
+""", unsafe_allow_html=True)
+
 page = st.sidebar.radio(
-    "Sayfa",
-    ["🧪 Deney Odası", "🔬 Kontrol Merkezi"]
+    "📍 Modül Seçimi",
+    ["🧪 Deney Odası", "🔬 Kontrol Merkezi"],
+    help="Deney Odası: Backtest ve analiz | Kontrol Merkezi: Canlı izleme"
 )
 
 if "live_tracking" not in st.session_state:
@@ -1851,13 +2043,49 @@ if page == "🔬 Kontrol Merkezi":
 
 
 if page == "🧪 Deney Odası":
+    # Hızlı Başlangıç Rehberi
+    with st.expander("💡 Hızlı Başlangıç Rehberi", expanded=False):
+        st.markdown("""
+        ### 🚀 3 Adımda Backtest Yapın
+        
+        1. **Sembol Seçin** → Sol panelden test etmek istediğiniz kripto paraları seçin
+        2. **Strateji Ayarlayın** → "Sinyal Kriterleri" bölümünden göstergeleri aktifleştirin
+        3. **Backtest Başlatın** → Yeşil butona tıklayın ve sonuçları analiz edin
+        
+        ---
+        **📊 Önerilen Başlangıç Ayarları:**
+        - RSI (14) + MACD kombinasyonu genellikle iyi sonuç verir
+        - 1 saatlik zaman dilimi orta vadeli analiz için idealdir
+        - Stop-Loss için ATR çarpanı 2.0 güvenli bir başlangıçtır
+        """)
+    
     # Sekmeli yapıyı oluştur
     tab1, tab2, tab3 = st.tabs(["📊 Backtest Sonuçları", "📈 Grafik Analizi", "⚙️ Strateji Optimizasyonu"])
 
     # Sekme 1: Backtest Sonuçları
     with tab1:
         st.session_state.selected_symbols = symbols
-
+        
+        # Strateji Özeti
+        st.markdown("""
+        <div class="info-box">
+            <h4>📋 Mevcut Strateji Özeti</h4>
+            <p>Seçili semboller ve aktif göstergelerle backtest yapılacak</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Seçili sembolleri göster
+        if symbols:
+            symbol_tags = " ".join([f"`{s}`" for s in symbols[:5]])
+            if len(symbols) > 5:
+                symbol_tags += f" +{len(symbols)-5} daha"
+            st.markdown(f"**Seçili Semboller:** {symbol_tags}")
+        else:
+            st.warning("⚠️ Lütfen en az bir sembol seçin")
+        
+        st.markdown(f"**Zaman Dilimi:** `{interval}` | **Aktif Göstergeler:** RSI, MACD")
+        
+        # Ana Backtest Butonu
         if st.button("🚀 Portföy Backtest Başlat", type="primary"):
             run_portfolio_backtest(symbols, interval, strategy_params)
 
@@ -1868,30 +2096,169 @@ if page == "🧪 Deney Odası":
             if not analysis_df.empty:
                 performance_metrics, equity_curve, drawdown_series = analyze_backtest_results(analysis_df)
                 
-                # KPI Metrikleri
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Toplam Getiri (%)", f"{performance_metrics.get('Toplam Getiri (%)', 0):.2f}%")
-                with col2:
-                    st.metric("Sharpe Oranı", f"{performance_metrics.get('Sharpe Oranı (Yıllık)', 0):.2f}")
-                with col3:
-                    st.metric("Max Drawdown", f"{abs(performance_metrics.get('Maksimum Düşüş (Drawdown) (%)', 0)):.2f}%")
-                with col4:
-                    st.metric("Kazanç Oranı", f"{performance_metrics.get('Kazançlı İşlem Oranı (%)', 0):.1f}%")
+                # Profesyonel KPI Kartları
+                net_profit = performance_metrics.get('Toplam Getiri (%)', 0)
+                sharpe = performance_metrics.get('Sharpe Oranı (Yıllık)', 0)
+                max_dd = abs(performance_metrics.get('Maksimum Düşüş (Drawdown) (%)', 0))
+                win_rate = performance_metrics.get('Kazançlı İşlem Oranı (%)', 0)
+                total_trades = performance_metrics.get('Toplam İşlem', 0)
+                profit_factor = performance_metrics.get('Profit Factor', 0)
+                
+                # Renk belirleme
+                profit_class = "positive" if net_profit > 0 else "negative"
+                sharpe_class = "positive" if sharpe > 1 else ("neutral" if sharpe > 0 else "negative")
+                dd_class = "positive" if max_dd < 10 else ("neutral" if max_dd < 20 else "negative")
+                wr_class = "positive" if win_rate > 50 else ("neutral" if win_rate > 40 else "negative")
+                
+                st.markdown(f"""
+                <div class="section-header">
+                    <span class="icon">📈</span>
+                    <h2>Performans Özeti</h2>
+                </div>
+                <div class="kpi-container">
+                    <div class="kpi-card">
+                        <div class="kpi-label">Net Getiri</div>
+                        <div class="kpi-value {profit_class}">{'+' if net_profit > 0 else ''}{net_profit:.2f}%</div>
+                        <div class="kpi-change {'up' if net_profit > 0 else 'down'}">{'↑' if net_profit > 0 else '↓'} Toplam kar/zarar</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Sharpe Oranı</div>
+                        <div class="kpi-value {sharpe_class}">{sharpe:.2f}</div>
+                        <div class="kpi-change">{'✓ İyi' if sharpe > 1 else '⚠ Geliştirilebilir'}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Max Drawdown</div>
+                        <div class="kpi-value {dd_class}">-{max_dd:.2f}%</div>
+                        <div class="kpi-change">{'✓ Düşük risk' if max_dd < 10 else '⚠ Dikkat'}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Kazanç Oranı</div>
+                        <div class="kpi-value {wr_class}">{win_rate:.1f}%</div>
+                        <div class="kpi-change">{total_trades} işlem</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Ek Metrikler
+                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                with col_m1:
+                    st.metric("Profit Factor", f"{profit_factor:.2f}" if profit_factor else "N/A", 
+                              help="Brüt kar / Brüt zarar oranı. 1'den büyük olması karlılık gösterir.")
+                with col_m2:
+                    sortino = performance_metrics.get('Sortino Oranı (Yıllık)', 0)
+                    st.metric("Sortino Oranı", f"{sortino:.2f}", 
+                              help="Aşağı yönlü riske göre ayarlanmış getiri")
+                with col_m3:
+                    calmar = performance_metrics.get('Calmar Oranı', 0)
+                    st.metric("Calmar Oranı", f"{calmar:.2f}" if calmar else "N/A",
+                              help="Yıllık getiri / Max drawdown")
+                with col_m4:
+                    avg_trade = performance_metrics.get('Ortalama İşlem Getirisi (%)', 0)
+                    st.metric("Ort. İşlem", f"{avg_trade:.2f}%" if avg_trade else "N/A",
+                              help="İşlem başına ortalama getiri")
 
                 # Equity Curve
-                st.subheader("📈 Equity Curve")
+                st.markdown("""
+                <div class="section-header">
+                    <span class="icon">📊</span>
+                    <h2>Sermaye Eğrisi (Equity Curve)</h2>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("""
+                <div class="quick-tip">
+                    💡 <strong>İpucu:</strong> Düzgün yükselen bir eğri, tutarlı bir stratejiyi gösterir. 
+                    Ani düşüşler (drawdown) risk yönetiminin gözden geçirilmesi gerektiğine işaret edebilir.
+                </div>
+                """, unsafe_allow_html=True)
+                
                 if equity_curve is not None and drawdown_series is not None:
                     performance_fig = plot_performance_summary(equity_curve, drawdown_series)
                     st.plotly_chart(performance_fig, use_container_width=True)
 
                 # İşlem Listesi
-                st.subheader("📋 İşlem Listesi")
-                st.dataframe(portfolio_results, use_container_width=True, hide_index=True)
+                st.markdown("""
+                <div class="section-header">
+                    <span class="icon">📋</span>
+                    <h2>İşlem Geçmişi</h2>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Filtreleme seçenekleri
+                col_f1, col_f2, col_f3 = st.columns([1, 1, 2])
+                with col_f1:
+                    filter_type = st.selectbox("İşlem Türü", ["Tümü", "Sadece Kazançlı", "Sadece Zararlı"], key="trade_filter")
+                with col_f2:
+                    sort_by = st.selectbox("Sırala", ["Tarihe Göre", "Kâr/Zarara Göre"], key="trade_sort")
+                
+                # Filtreleme uygula
+                display_df = portfolio_results.copy()
+                
+                # Sütun adını kontrol et (farklı versiyonlar için)
+                pnl_column = 'Getiri (%)' if 'Getiri (%)' in display_df.columns else 'Kâr/Zarar (%)'
+                
+                if filter_type == "Sadece Kazançlı" and pnl_column in display_df.columns:
+                    display_df = display_df[display_df[pnl_column] > 0]
+                elif filter_type == "Sadece Zararlı" and pnl_column in display_df.columns:
+                    display_df = display_df[display_df[pnl_column] <= 0]
+                
+                if sort_by == "Kâr/Zarara Göre" and pnl_column in display_df.columns:
+                    display_df = display_df.sort_values(pnl_column, ascending=False)
+                
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                
+                # Özet istatistikler
+                st.markdown("---")
+                col_s1, col_s2, col_s3 = st.columns(3)
+                with col_s1:
+                    if pnl_column in portfolio_results.columns:
+                        winning = len(portfolio_results[portfolio_results[pnl_column] > 0])
+                    else:
+                        winning = 0
+                    st.success(f"✅ Kazançlı İşlem: {winning}")
+                with col_s2:
+                    if pnl_column in portfolio_results.columns:
+                        losing = len(portfolio_results[portfolio_results[pnl_column] <= 0])
+                    else:
+                        losing = 0
+                    st.error(f"❌ Zararlı İşlem: {losing}")
+                with col_s3:
+                    st.info(f"📊 Toplam: {len(portfolio_results)} işlem")
+                    
             else:
-                st.info("Backtest sonuçları burada görünecek. Lütfen 'Portföy Backtest Başlat' butonuna basın.")
+                st.markdown("""
+                <div class="info-box warning">
+                    <h4>⏳ Backtest Bekleniyor</h4>
+                    <p>Henüz backtest sonucu yok. Yukarıdaki "Portföy Backtest Başlat" butonuna tıklayarak analizi başlatın.</p>
+                </div>
+                """, unsafe_allow_html=True)
         else:
-            st.info("Backtest sonuçları burada görünecek. Lütfen 'Portföy Backtest Başlat' butonuna basın.")
+            st.markdown("""
+            <div class="info-box">
+                <h4>🎯 Başlamaya Hazır</h4>
+                <p>Sembollerinizi ve strateji parametrelerinizi seçtikten sonra "Portföy Backtest Başlat" butonuna tıklayın.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Örnek sonuç önizlemesi
+            st.markdown("### 📌 Beklenen Çıktılar")
+            col_ex1, col_ex2 = st.columns(2)
+            with col_ex1:
+                st.markdown("""
+                **Performans Metrikleri:**
+                - Net Getiri (%)
+                - Sharpe & Sortino Oranları
+                - Maximum Drawdown
+                - Kazanç Oranı
+                """)
+            with col_ex2:
+                st.markdown("""
+                **Detaylı Analiz:**
+                - Equity Curve grafiği
+                - İşlem bazlı kar/zarar
+                - Zaman bazlı performans
+                - Risk metrikleri
+                """)
 
     # Sekme 2: Detaylı Grafik Analizi
     with tab2:

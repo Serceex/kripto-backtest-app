@@ -161,8 +161,6 @@ def run_rl_backtest(model_id, backtest_df_raw):
     return pd.DataFrame(trades), df_with_actions
 
 
-initialize_db()
-
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 
@@ -197,7 +195,34 @@ def save_config(config):
 
 
 st.set_page_config(page_title="Veritas Point Labs", layout="wide", page_icon="logo.png",)
-st.title("⚛️ Veritas Point Labs")
+
+# MySQL veritabanını başlat (hata durumunda uygulama çalışmaya devam eder)
+try:
+    initialize_db()
+except Exception as e:
+    st.warning(f"⚠️ MySQL bağlantısı başlatılamadı: {e}")
+    st.info("Uygulama veritabanı olmadan çalışmaya devam edecek. Bazı özellikler kullanılamayabilir.")
+
+# Load custom CSS
+def load_css():
+    try:
+        css_path = os.path.join(os.path.dirname(__file__), 'assets', 'modern_theme.css')
+        with open(css_path, 'r', encoding='utf-8') as f:
+            css = f.read()
+        st.markdown(f'<style>{css}</style>', unsafe_allow_html=True)
+    except FileNotFoundError:
+        # Fallback: try relative path
+        try:
+            with open('assets/modern_theme.css', 'r', encoding='utf-8') as f:
+                css = f.read()
+            st.markdown(f'<style>{css}</style>', unsafe_allow_html=True)
+        except:
+            pass  # Silently fail if CSS not found
+
+load_css()
+
+# Header
+st.title("🧪 Veritas Point Labs")
 
 
 if 'config' not in st.session_state:
@@ -1826,20 +1851,14 @@ if page == "🔬 Kontrol Merkezi":
 
 
 if page == "🧪 Deney Odası":
-    st.header("📈 Portföy Analiz ve Optimizasyon Merkezi")
-
     # Sekmeli yapıyı oluştur
-    tab1, tab2, tab3 = st.tabs(["📊 Backtest Sonuçları", "📈 Grafik Analizi", " ⚙ Strateji Optimizasyonu"])
+    tab1, tab2, tab3 = st.tabs(["📊 Backtest Sonuçları", "📈 Grafik Analizi", "⚙️ Strateji Optimizasyonu"])
 
     # Sekme 1: Backtest Sonuçları
     with tab1:
-        st.info(
-            "Bu bölümde, kenar çubuğunda belirlediğiniz stratejiyi seçtiğiniz semboller üzerinde test edebilir ve genel performans metriklerini görebilirsiniz.")
-
         st.session_state.selected_symbols = symbols
 
-        if st.button("🚀 Portföy Backtest Başlat"):
-
+        if st.button("🚀 Portföy Backtest Başlat", type="primary"):
             run_portfolio_backtest(symbols, interval, strategy_params)
 
         if 'backtest_results' in st.session_state and not st.session_state['backtest_results'].empty:
@@ -1848,38 +1867,29 @@ if page == "🧪 Deney Odası":
 
             if not analysis_df.empty:
                 performance_metrics, equity_curve, drawdown_series = analyze_backtest_results(analysis_df)
-                st.subheader("📊 Portföy Performans Metrikleri")
-                metric_tooltips = {
-                    "Toplam İşlem": "Backtest süresince yapılan toplam alım-satım işlemi sayısı.",
-                    "Kazançlı İşlem Oranı (%)": "Toplam işlemlerin yüzde kaçının kâr ile sonuçlandığı.",
-                    "Toplam Getiri (%)": "Tüm işlemlerden elde edilen net kâr/zarar yüzdesi.",
-                    "Ortalama Kazanç (%)": "Sadece kârlı işlemlerin ortalama getiri yüzdesi.",
-                    "Ortalama Kayıp (%)": "Sadece zararlı işlemlerin ortalama getiri yüzdesi.",
-                    "Risk/Ödül Oranı (Payoff)": "Ortalama kazancın ortalama kayba oranı. 1'den büyük olması istenir.",
-                    "Maksimum Düşüş (Drawdown) (%)": "Stratejinin geçmişte yaşadığı en büyük tepeden-dibe sermaye erimesi yüzdesi.",
-                    "Sharpe Oranı (Yıllık)": "Stratejinin aldığı riske (volatiliteye) göre ne kadar getiri ürettiğini ölçer.",
-                    "Sortino Oranı (Yıllık)": "Sharpe Oranı'na benzer, ancak sadece aşağı yönlü (negatif) riski dikkate alır.",
-                    "Calmar Oranı": "Yıllıklandırılmış getirinin maksimum düşüşe oranıdır."
-                }
-
-                col1, col2 = st.columns(2)
-                metrics_list = list(performance_metrics.items())
-                mid_point = (len(metrics_list) + 1) // 2
-
+                
+                # KPI Metrikleri
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    for key, value in metrics_list[:mid_point]:
-                        st.metric(label=key, value=value, help=metric_tooltips.get(key, ""))
+                    st.metric("Toplam Getiri (%)", f"{performance_metrics.get('Toplam Getiri (%)', 0):.2f}%")
                 with col2:
-                    for key, value in metrics_list[mid_point:]:
-                        st.metric(label=key, value=value, help=metric_tooltips.get(key, ""))
+                    st.metric("Sharpe Oranı", f"{performance_metrics.get('Sharpe Oranı (Yıllık)', 0):.2f}")
+                with col3:
+                    st.metric("Max Drawdown", f"{abs(performance_metrics.get('Maksimum Düşüş (Drawdown) (%)', 0)):.2f}%")
+                with col4:
+                    st.metric("Kazanç Oranı", f"{performance_metrics.get('Kazançlı İşlem Oranı (%)', 0):.1f}%")
 
-                st.subheader("📈 Strateji Performans Grafiği")
+                # Equity Curve
+                st.subheader("📈 Equity Curve")
                 if equity_curve is not None and drawdown_series is not None:
                     performance_fig = plot_performance_summary(equity_curve, drawdown_series)
                     st.plotly_chart(performance_fig, use_container_width=True)
 
-            st.subheader("📋 Tüm İşlemler")
-            st.dataframe(portfolio_results, use_container_width=True)
+                # İşlem Listesi
+                st.subheader("📋 İşlem Listesi")
+                st.dataframe(portfolio_results, use_container_width=True, hide_index=True)
+            else:
+                st.info("Backtest sonuçları burada görünecek. Lütfen 'Portföy Backtest Başlat' butonuna basın.")
         else:
             st.info("Backtest sonuçları burada görünecek. Lütfen 'Portföy Backtest Başlat' butonuna basın.")
 
@@ -1963,4 +1973,3 @@ if page == "🧪 Deney Odası":
                 on_click=apply_selected_params,
                 args=(results_df.loc[selected_index],)
             )
-

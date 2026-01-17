@@ -1,7 +1,7 @@
-# database.py (Firebase Firestore Uyumlu)
+# database.py (MySQL Uyumlu)
 
-import firebase_admin
-from firebase_admin import credentials, firestore, storage
+import mysql.connector
+from mysql.connector import pooling
 import pandas as pd
 import json
 import os
@@ -9,299 +9,355 @@ from datetime import datetime
 import numpy as np
 import toml
 import io
+import time
 import streamlit as st
 from typing import Optional, Dict, List, Any
 
-# Firebase bağlantısı
-_db = None
-_bucket = None
+# MySQL bağlantı havuzu
+_connection_pool = None
 
-def initialize_firebase():
-    """Firebase Admin SDK'yı başlatır. Storage opsiyoneldir."""
-    global _db, _bucket
-    
-    if _db is not None:
-        return _db, _bucket
-    
+def get_mysql_config():
+    """MySQL yapılandırmasını döndürür."""
     try:
-        # Streamlit secrets'tan Firebase yapılandırmasını al
+        import streamlit as st
+        mysql_config = st.secrets["mysql"]
+        return {
+            'host': mysql_config.get("host", "localhost"),
+            'port': int(mysql_config.get("port", 3306)),
+            'database': mysql_config.get("database", "kripto_backtest"),
+            'user': mysql_config.get("user", "root"),
+            'password': mysql_config.get("password", "")
+        }
+    except:
+        # .streamlit/secrets.toml dosyasından oku
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        secrets_path = os.path.join(script_dir, '.streamlit', 'secrets.toml')
         try:
-            import streamlit as st
-            firebase_config = st.secrets["firebase"]
-            cred_path = firebase_config.get("credentials_path")
-            project_id = firebase_config.get("project_id")
-            storage_bucket = firebase_config.get("storage_bucket")
-        except:
-            # .streamlit/secrets.toml dosyasından oku
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            secrets_path = os.path.join(script_dir, '.streamlit', 'secrets.toml')
             with open(secrets_path, 'r', encoding='utf-8') as f:
                 secrets = toml.load(f)
-            firebase_config = secrets["firebase"]
-            cred_path = firebase_config.get("credentials_path")
-            project_id = firebase_config.get("project_id")
-            storage_bucket = firebase_config.get("storage_bucket")
-        
-        # Firebase Admin SDK'yı başlat
-        if not firebase_admin._apps:
-            if cred_path and os.path.exists(cred_path):
-                cred = credentials.Certificate(cred_path)
-                # Storage bucket opsiyonel, yoksa None olarak bırak
-                app_options = {}
-                if storage_bucket:
-                    app_options['storageBucket'] = storage_bucket
-                firebase_admin.initialize_app(cred, app_options)
-            elif project_id:
-                # Service account key JSON string olarak da verilebilir
-                cred_json = firebase_config.get("credentials_json")
-                if cred_json:
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                        f.write(json.dumps(cred_json))
-                        cred_path = f.name
-                    cred = credentials.Certificate(cred_path)
-                    app_options = {}
-                    if storage_bucket:
-                        app_options['storageBucket'] = storage_bucket
-                    firebase_admin.initialize_app(cred, app_options)
-                else:
-                    # Default credentials kullan (örneğin GOOGLE_APPLICATION_CREDENTIALS env var)
-                    app_options = {'projectId': project_id}
-                    if storage_bucket:
-                        app_options['storageBucket'] = storage_bucket
-                    firebase_admin.initialize_app(options=app_options)
-            else:
-                raise Exception("Firebase yapılandırması bulunamadı")
-        
-        _db = firestore.client()
-        # Storage bucket opsiyonel, yoksa None döndür
-        _bucket = storage.bucket() if storage_bucket else None
-        if _bucket:
-            print("--- [DEBUG] Firebase başarıyla başlatıldı (Firestore + Storage).")
-        else:
-            print("--- [DEBUG] Firebase başarıyla başlatıldı (Firestore - Storage kullanılmıyor).")
-        return _db, _bucket
-        
-    except Exception as e:
-        print(f"--- [KRİTİK HATA] Firebase başlatılamadı: {e} ---")
+            mysql_config = secrets.get("mysql", {})
+            return {
+                'host': mysql_config.get("host", "localhost"),
+                'port': int(mysql_config.get("port", 3306)),
+                'database': mysql_config.get("database", "kripto_backtest"),
+                'user': mysql_config.get("user", "root"),
+                'password': mysql_config.get("password", "")
+            }
+        except Exception as e:
+            print(f"--- [HATA] MySQL yapılandırması okunamadı: {e} ---")
+            return {
+                'host': 'localhost',
+                'port': 3306,
+                'database': 'kripto_backtest',
+                'user': 'root',
+                'password': '619619'
+            }
+
+def initialize_mysql():
+    """MySQL bağlantı havuzunu başlatır."""
+    global _connection_pool
+    
+    if _connection_pool is not None:
+        return _connection_pool
+    
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
         try:
-            import streamlit as st
-            st.error(f"FIREBASE BAĞLANTI HATASI: {e}")
-            st.info("Lütfen .streamlit/secrets.toml dosyanızdaki Firebase yapılandırmasını kontrol edin.")
-        except:
-            pass
-        return None, None
+            config = get_mysql_config()
+            
+            # Önce veritabanının var olup olmadığını kontrol et
+            temp_conn = mysql.connector.connect(
+                host=config['host'],
+                port=config['port'],
+                user=config['user'],
+                password=config['password']
+            )
+            cursor = temp_conn.cursor()
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {config['database']} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+            cursor.close()
+            temp_conn.close()
+            
+            # Bağlantı havuzunu oluştur
+            _connection_pool = pooling.MySQLConnectionPool(
+                pool_name="kripto_pool",
+                pool_size=5,
+                pool_reset_session=True,
+                host=config['host'],
+                port=config['port'],
+                database=config['database'],
+                user=config['user'],
+                password=config['password'],
+                charset='utf8mb4',
+                collation='utf8mb4_unicode_ci',
+                autocommit=True
+            )
+            
+            print("--- [DEBUG] MySQL bağlantı havuzu başarıyla oluşturuldu.")
+            return _connection_pool
+            
+        except Exception as e:
+            retry_count += 1
+            if retry_count < max_retries:
+                print(f"--- [UYARI] MySQL bağlantı denemesi {retry_count}/{max_retries} başarısız, yeniden deneniyor... ---")
+                print(f"--- [HATA DETAYI] {e} ---")
+                time.sleep(1)
+            else:
+                import traceback
+                error_details = traceback.format_exc()
+                print(f"--- [KRİTİK HATA] MySQL bağlantısı kurulamadı: {e} ---")
+                print(f"--- [DETAYLI HATA] {error_details} ---")
+                try:
+                    st.error(f"MYSQL BAĞLANTI HATASI: {e}")
+                    st.info("Lütfen .streamlit/secrets.toml dosyanızdaki MySQL yapılandırmasını kontrol edin.")
+                    with st.expander("🔍 Detaylı Hata Bilgisi"):
+                        st.code(error_details)
+                except:
+                    pass
+                return None
+    
+    return None
 
-def get_db():
-    """Firestore veritabanı bağlantısını döndürür."""
-    db, _ = initialize_firebase()
-    return db
-
-def get_storage_bucket():
-    """Firebase Storage bucket'ını döndürür."""
-    _, bucket = initialize_firebase()
-    return bucket
+def get_connection():
+    """Bağlantı havuzundan bir bağlantı alır."""
+    pool = initialize_mysql()
+    if pool is None:
+        return None
+    try:
+        return pool.get_connection()
+    except Exception as e:
+        print(f"--- [HATA] MySQL bağlantısı alınamadı: {e} ---")
+        return None
 
 def initialize_db():
-    """Veritabanı koleksiyonlarını başlatır (Firestore otomatik oluşturur, bu fonksiyon sadece kontrol için)."""
+    """Veritabanı tablolarını oluşturur."""
     print("--- [DEBUG] initialize_db fonksiyonu çağrıldı.")
+    
+    conn = get_connection()
+    if conn is None:
+        raise Exception("MySQL bağlantısı kurulamadı.")
+    
     try:
-        db = get_db()
-        if db is None:
-            raise Exception("Firebase bağlantısı yok.")
+        cursor = conn.cursor()
         
-        # Firestore'da koleksiyonlar otomatik oluşturulur, bu yüzden sadece test ediyoruz
-        test_ref = db.collection('strategies').limit(1)
-        list(test_ref.stream())
+        # strategies tablosu
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS strategies (
+                id VARCHAR(100) PRIMARY KEY,
+                name VARCHAR(255),
+                status VARCHAR(50) DEFAULT 'running',
+                symbols JSON,
+                `interval` VARCHAR(20),
+                strategy_params JSON,
+                orchestrator_status VARCHAR(50) DEFAULT 'active',
+                is_trading_enabled BOOLEAN DEFAULT FALSE,
+                rl_model_id INT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """)
         
-        print("--- [DATABASE] Firebase Firestore başarıyla başlatıldı/doğrulandı. ---")
+        # positions tablosu
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS positions (
+                id VARCHAR(200) PRIMARY KEY,
+                strategy_id VARCHAR(100),
+                symbol VARCHAR(50),
+                position VARCHAR(20),
+                entry_price DECIMAL(20, 8) DEFAULT 0,
+                stop_loss_price DECIMAL(20, 8) DEFAULT 0,
+                tp1_price DECIMAL(20, 8) DEFAULT 0,
+                tp2_price DECIMAL(20, 8) DEFAULT 0,
+                tp1_hit BOOLEAN DEFAULT FALSE,
+                tp2_hit BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_strategy_id (strategy_id),
+                INDEX idx_symbol (symbol)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """)
+        
+        # alarms tablosu
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS alarms (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                strategy_id VARCHAR(100),
+                `timestamp` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                symbol VARCHAR(50),
+                `signal` VARCHAR(500),
+                price DECIMAL(20, 8),
+                INDEX idx_strategy_id (strategy_id),
+                INDEX idx_timestamp (`timestamp`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """)
+        
+        # manual_actions tablosu
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS manual_actions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                strategy_id VARCHAR(100),
+                symbol VARCHAR(50),
+                action VARCHAR(100),
+                `timestamp` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status VARCHAR(50) DEFAULT 'pending',
+                INDEX idx_strategy_id (strategy_id),
+                INDEX idx_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """)
+        
+        # rl_models tablosu
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS rl_models (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) UNIQUE,
+                description TEXT,
+                model_data LONGBLOB,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """)
+        
+        conn.commit()
+        print("--- [DATABASE] MySQL tabloları başarıyla oluşturuldu/doğrulandı. ---")
+        
     except Exception as e:
-        print(f"--- [KRİTİK HATA] Veritabanı başlatılamadı: {e} ---")
+        print(f"--- [KRİTİK HATA] Tablolar oluşturulamadı: {e} ---")
+        raise
+    finally:
+        cursor.close()
+        conn.close()
 
 def save_rl_model(name, description, model_buffer):
-    """Eğitilmiş bir RL modelini Firebase Storage'a veya yerel dosya sistemine kaydeder."""
+    """Eğitilmiş bir RL modelini veritabanına kaydeder."""
+    conn = get_connection()
+    if conn is None:
+        raise Exception("MySQL bağlantısı yok.")
+    
     try:
-        db = get_db()
-        bucket = get_storage_bucket()
-        storage_path = None
-        storage_type = None
+        cursor = conn.cursor()
+        model_buffer.seek(0)
+        model_data = model_buffer.read()
         
-        # Önce Firebase Storage'ı dene
-        if bucket is not None:
-            try:
-                blob = bucket.blob(f"rl_models/{name}.zip")
-                model_buffer.seek(0)  # Buffer'ı başa al
-                blob.upload_from_file(model_buffer, content_type='application/zip')
-                storage_path = f"rl_models/{name}.zip"
-                storage_type = "firebase_storage"
-                print(f"--- [DATABASE] RL Modeli Firebase Storage'a kaydedildi: {storage_path}")
-            except Exception as storage_error:
-                print(f"--- [UYARI] Firebase Storage'a kaydedilemedi, yerel dosya sistemine kaydediliyor: {storage_error}")
-                bucket = None  # Storage kullanılamıyor, yerel dosya sistemine geç
+        cursor.execute("""
+            INSERT INTO rl_models (name, description, model_data)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            description = VALUES(description),
+            model_data = VALUES(model_data),
+            created_at = CURRENT_TIMESTAMP
+        """, (name, description, model_data))
         
-        # Firebase Storage yoksa veya başarısız olduysa yerel dosya sistemine kaydet
-        if bucket is None:
-            # Yerel models klasörünü oluştur
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            models_dir = os.path.join(script_dir, 'rl_models_local')
-            os.makedirs(models_dir, exist_ok=True)
-            
-            # Model dosyasını yerel olarak kaydet
-            local_path = os.path.join(models_dir, f"{name}.zip")
-            model_buffer.seek(0)  # Buffer'ı başa al
-            with open(local_path, 'wb') as f:
-                f.write(model_buffer.read())
-            
-            storage_path = local_path
-            storage_type = "local_file"
-            print(f"--- [DATABASE] RL Modeli yerel dosya sistemine kaydedildi: {storage_path}")
+        conn.commit()
+        print(f"--- [DATABASE] RL Modeli '{name}' başarıyla kaydedildi. ---")
         
-        # Firestore'da model metadata'sını kaydet
-        model_ref = db.collection('rl_models').document(name)
-        model_ref.set({
-            'name': name,
-            'description': description,
-            'storage_path': storage_path,
-            'storage_type': storage_type,
-            'created_at': firestore.SERVER_TIMESTAMP
-        }, merge=True)
-        
-        print(f"--- [DATABASE] RL Modeli '{name}' başarıyla kaydedildi/güncellendi. ---")
     except Exception as e:
         print(f"--- [HATA] RL Modeli kaydedilemedi: {e} ---")
         raise
+    finally:
+        cursor.close()
+        conn.close()
 
 def get_rl_model_by_id(model_id):
-    """Bir RL modelini ID'sine göre Firebase Storage'dan veya yerel dosya sisteminden çeker."""
+    """Bir RL modelini ID'sine göre veritabanından çeker."""
+    conn = get_connection()
+    if conn is None:
+        return None
+    
     try:
-        db = get_db()
+        cursor = conn.cursor(dictionary=True)
         
-        # Önce Firestore'dan model bilgisini al
-        model_ref = db.collection('rl_models').document(str(model_id))
-        model_doc = model_ref.get()
+        # Önce ID ile dene
+        cursor.execute("SELECT model_data FROM rl_models WHERE id = %s", (model_id,))
+        result = cursor.fetchone()
         
-        if not model_doc.exists:
-            # ID ile değil, name ile arama yap
-            models = db.collection('rl_models').where('name', '==', str(model_id)).limit(1).stream()
-            model_doc = next(models, None)
-            if not model_doc:
-                return None
+        if not result:
+            # Name ile dene
+            cursor.execute("SELECT model_data FROM rl_models WHERE name = %s", (str(model_id),))
+            result = cursor.fetchone()
         
-        model_data = model_doc.to_dict()
-        storage_path = model_data.get('storage_path')
-        storage_type = model_data.get('storage_type', 'firebase_storage')
+        if result and result['model_data']:
+            model_buffer = io.BytesIO(result['model_data'])
+            return model_buffer
         
-        if not storage_path:
-            return None
+        return None
         
-        model_buffer = io.BytesIO()
-        
-        # Storage tipine göre modeli yükle
-        if storage_type == 'firebase_storage':
-            bucket = get_storage_bucket()
-            if bucket is None:
-                print("--- [UYARI] Firebase Storage kullanılamıyor, yerel dosya sisteminden yükleniyor...")
-                # Yerel dosya sistemine fallback
-                if os.path.exists(storage_path):
-                    with open(storage_path, 'rb') as f:
-                        model_buffer.write(f.read())
-                    model_buffer.seek(0)
-                    return model_buffer
-                return None
-            
-            blob = bucket.blob(storage_path)
-            blob.download_to_file(model_buffer)
-            model_buffer.seek(0)
-        elif storage_type == 'local_file':
-            # Yerel dosya sisteminden yükle
-            if os.path.exists(storage_path):
-                with open(storage_path, 'rb') as f:
-                    model_buffer.write(f.read())
-                model_buffer.seek(0)
-            else:
-                print(f"--- [HATA] Yerel model dosyası bulunamadı: {storage_path}")
-                return None
-        else:
-            # Eski format için fallback (storage_type belirtilmemiş)
-            bucket = get_storage_bucket()
-            if bucket:
-                try:
-                    blob = bucket.blob(storage_path)
-                    blob.download_to_file(model_buffer)
-                    model_buffer.seek(0)
-                except:
-                    # Storage başarısız olursa yerel dosyayı dene
-                    if os.path.exists(storage_path):
-                        with open(storage_path, 'rb') as f:
-                            model_buffer.write(f.read())
-                        model_buffer.seek(0)
-                    else:
-                        return None
-            else:
-                # Yerel dosyayı dene
-                if os.path.exists(storage_path):
-                    with open(storage_path, 'rb') as f:
-                        model_buffer.write(f.read())
-                    model_buffer.seek(0)
-                else:
-                    return None
-        
-        return model_buffer
     except Exception as e:
         print(f"--- [HATA] RL Modeli alınamadı: {e} ---")
         return None
+    finally:
+        cursor.close()
+        conn.close()
 
 @st.cache_data(ttl=15)
 def get_all_rl_models_info():
-    """Tüm RL modellerinin bilgilerini (ID ve İsim) listeler."""
+    """Tüm RL modellerinin bilgilerini listeler."""
+    conn = get_connection()
+    if conn is None:
+        return []
+    
     try:
-        db = get_db()
-        models_ref = db.collection('rl_models').order_by('created_at', direction=firestore.Query.DESCENDING).stream()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT id, name, description, created_at
+            FROM rl_models
+            ORDER BY created_at DESC
+        """)
         
-        result = []
-        for doc in models_ref:
-            data = doc.to_dict()
-            result.append({
-                'id': doc.id,
-                'name': data.get('name', doc.id),
-                'description': data.get('description', ''),
-                'created_at': data.get('created_at')
-            })
-        return result
+        results = cursor.fetchall()
+        return [
+            {
+                'id': row['id'],
+                'name': row['name'],
+                'description': row['description'] or '',
+                'created_at': row['created_at']
+            }
+            for row in results
+        ]
+        
     except Exception as e:
         print(f"--- [HATA] RL Modelleri listelenemedi: {e} ---")
         return []
+    finally:
+        cursor.close()
+        conn.close()
 
 def add_or_update_strategy(strategy_config):
-    """
-    Bir stratejiyi ekler veya günceller. Güncelleme sırasında, stratejiden
-    kaldırılan sembollerin eski pozisyon kayıtlarını otomatik olarak temizler.
-    """
+    """Bir stratejiyi ekler veya günceller."""
+    conn = get_connection()
+    if conn is None:
+        raise Exception("MySQL bağlantısı yok.")
+    
     try:
-        db = get_db()
+        cursor = conn.cursor(dictionary=True)
         strategy_id = strategy_config.get('id')
         new_symbols = set(strategy_config.get("symbols", []))
         
         # Mevcut stratejiyi kontrol et
-        strategy_ref = db.collection('strategies').document(strategy_id)
-        strategy_doc = strategy_ref.get()
+        cursor.execute("SELECT symbols FROM strategies WHERE id = %s", (strategy_id,))
+        existing = cursor.fetchone()
         
-        if strategy_doc.exists:
-            current_data = strategy_doc.to_dict()
-            current_symbols = set(current_data.get('symbols', []))
+        if existing:
+            current_symbols_json = existing.get('symbols')
+            if current_symbols_json:
+                if isinstance(current_symbols_json, str):
+                    current_symbols = set(json.loads(current_symbols_json))
+                else:
+                    current_symbols = set(current_symbols_json)
+            else:
+                current_symbols = set()
+            
             removed_symbols = current_symbols - new_symbols
             
             if removed_symbols:
-                print(f"--- [DATABASE] Temizlik: Strateji '{strategy_id}' için kaldırılan semboller tespit edildi: {removed_symbols}")
-                # Kaldırılan semboller için pozisyonları sil
-                positions_ref = db.collection('positions')
+                print(f"--- [DATABASE] Temizlik: Strateji '{strategy_id}' için kaldırılan semboller: {removed_symbols}")
                 for symbol_to_remove in removed_symbols:
-                    positions_query = positions_ref.where('strategy_id', '==', strategy_id).where('symbol', '==', symbol_to_remove).stream()
-                    for pos_doc in positions_query:
-                        pos_doc.reference.delete()
+                    cursor.execute(
+                        "DELETE FROM positions WHERE strategy_id = %s AND symbol = %s",
+                        (strategy_id, symbol_to_remove)
+                    )
                 print(f"--- [DATABASE] '{strategy_id}' için eski pozisyon kayıtları temizlendi.")
         
-        # Stratejiyi ekle veya güncelle
+        # RL model ID'sini kontrol et
         rl_model_id = strategy_config.get('rl_model_id')
         if rl_model_id is not None:
             try:
@@ -309,271 +365,398 @@ def add_or_update_strategy(strategy_config):
             except (ValueError, TypeError):
                 rl_model_id = None
         
-        strategy_data = {
-            'id': strategy_id,
-            'name': strategy_config.get('name'),
-            'status': strategy_config.get('status', 'running'),
-            'symbols': strategy_config.get('symbols', []),
-            'interval': strategy_config.get('interval'),
-            'strategy_params': strategy_config.get('strategy_params', {}),
-            'orchestrator_status': strategy_config.get('orchestrator_status', 'active'),
-            'is_trading_enabled': strategy_config.get('is_trading_enabled', False),
-            'rl_model_id': rl_model_id
-        }
+        # Stratejiyi ekle veya güncelle
+        cursor.execute("""
+            INSERT INTO strategies (id, name, status, symbols, `interval`, strategy_params, orchestrator_status, is_trading_enabled, rl_model_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            name = VALUES(name),
+            status = VALUES(status),
+            symbols = VALUES(symbols),
+            `interval` = VALUES(`interval`),
+            strategy_params = VALUES(strategy_params),
+            orchestrator_status = VALUES(orchestrator_status),
+            is_trading_enabled = VALUES(is_trading_enabled),
+            rl_model_id = VALUES(rl_model_id)
+        """, (
+            strategy_id,
+            strategy_config.get('name'),
+            strategy_config.get('status', 'running'),
+            json.dumps(list(new_symbols)),
+            strategy_config.get('interval'),
+            json.dumps(strategy_config.get('strategy_params', {})),
+            strategy_config.get('orchestrator_status', 'active'),
+            strategy_config.get('is_trading_enabled', False),
+            rl_model_id
+        ))
         
-        strategy_ref.set(strategy_data, merge=True)
+        conn.commit()
         print(f"--- [DATABASE] Strateji '{strategy_id}' başarıyla kaydedildi/güncellendi. ---")
         
     except Exception as e:
         print(f"--- [HATA] Strateji kaydedilemedi: {e} ---")
         raise
+    finally:
+        cursor.close()
+        conn.close()
 
 def remove_strategy(strategy_id):
-    """
-    Bir stratejiyi ve o stratejiye ait TÜM ilişkili verileri
-    (pozisyonlar, alarmlar vb.) veritabanından tamamen siler.
-    """
+    """Bir stratejiyi ve ilişkili verileri siler."""
+    conn = get_connection()
+    if conn is None:
+        raise Exception("MySQL bağlantısı yok.")
+    
     try:
-        db = get_db()
+        cursor = conn.cursor()
         
-        # İlişkili pozisyonları sil
-        positions_ref = db.collection('positions')
-        positions_query = positions_ref.where('strategy_id', '==', strategy_id).stream()
-        for pos_doc in positions_query:
-            pos_doc.reference.delete()
-        
-        # İlişkili alarmları sil
-        alarms_ref = db.collection('alarms')
-        alarms_query = alarms_ref.where('strategy_id', '==', strategy_id).stream()
-        for alarm_doc in alarms_query:
-            alarm_doc.reference.delete()
-        
-        # İlişkili manuel işlemleri sil
-        actions_ref = db.collection('manual_actions')
-        actions_query = actions_ref.where('strategy_id', '==', strategy_id).stream()
-        for action_doc in actions_query:
-            action_doc.reference.delete()
+        # İlişkili verileri sil
+        cursor.execute("DELETE FROM positions WHERE strategy_id = %s", (strategy_id,))
+        cursor.execute("DELETE FROM alarms WHERE strategy_id = %s", (strategy_id,))
+        cursor.execute("DELETE FROM manual_actions WHERE strategy_id = %s", (strategy_id,))
         
         # Ana strateji kaydını sil
-        strategy_ref = db.collection('strategies').document(strategy_id)
-        strategy_ref.delete()
+        cursor.execute("DELETE FROM strategies WHERE id = %s", (strategy_id,))
         
-        print(f"--- [DATABASE] Strateji (ID: {strategy_id}) ve tüm ilişkili verileri başarıyla silindi. ---")
+        conn.commit()
+        print(f"--- [DATABASE] Strateji (ID: {strategy_id}) ve tüm ilişkili verileri silindi. ---")
+        
     except Exception as e:
         print(f"--- [HATA] Strateji silinemedi: {e} ---")
         raise
+    finally:
+        cursor.close()
+        conn.close()
 
 @st.cache_data(ttl=15)
 def get_all_strategies():
     """Tüm stratejileri döndürür."""
+    conn = get_connection()
+    if conn is None:
+        return []
+    
     try:
-        db = get_db()
-        strategies_ref = db.collection('strategies').stream()
-        result = []
-        for doc in strategies_ref:
-            data = doc.to_dict()
-            data['id'] = doc.id
-            result.append(data)
-        return result
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM strategies")
+        
+        results = []
+        for row in cursor.fetchall():
+            strategy = dict(row)
+            # JSON alanlarını parse et
+            if strategy.get('symbols'):
+                if isinstance(strategy['symbols'], str):
+                    strategy['symbols'] = json.loads(strategy['symbols'])
+            else:
+                strategy['symbols'] = []
+            
+            if strategy.get('strategy_params'):
+                if isinstance(strategy['strategy_params'], str):
+                    strategy['strategy_params'] = json.loads(strategy['strategy_params'])
+            else:
+                strategy['strategy_params'] = {}
+            
+            results.append(strategy)
+        
+        return results
+        
     except Exception as e:
         print(f"--- [HATA] Stratejiler alınamadı: {e} ---")
         return []
+    finally:
+        cursor.close()
+        conn.close()
 
 def update_position(strategy_id, symbol, position, entry_price, sl_price=0, tp1_price=0, tp2_price=0, tp1_hit=False, tp2_hit=False):
     """Bir pozisyonu ekler veya günceller."""
+    conn = get_connection()
+    if conn is None:
+        print("--- [UYARI] MySQL bağlantısı yok, pozisyon güncellenemedi. ---")
+        return
+    
     try:
-        db = get_db()
+        cursor = conn.cursor()
         position_id = f"{strategy_id}_{symbol}"
-        position_ref = db.collection('positions').document(position_id)
         
-        position_data = {
-            'strategy_id': strategy_id,
-            'symbol': symbol,
-            'position': position,
-            'entry_price': entry_price,
-            'stop_loss_price': sl_price,
-            'tp1_price': tp1_price,
-            'tp2_price': tp2_price,
-            'tp1_hit': tp1_hit,
-            'tp2_hit': tp2_hit
-        }
+        cursor.execute("""
+            INSERT INTO positions (id, strategy_id, symbol, position, entry_price, stop_loss_price, tp1_price, tp2_price, tp1_hit, tp2_hit)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+            position = VALUES(position),
+            entry_price = VALUES(entry_price),
+            stop_loss_price = VALUES(stop_loss_price),
+            tp1_price = VALUES(tp1_price),
+            tp2_price = VALUES(tp2_price),
+            tp1_hit = VALUES(tp1_hit),
+            tp2_hit = VALUES(tp2_hit)
+        """, (position_id, strategy_id, symbol, position, entry_price, sl_price, tp1_price, tp2_price, tp1_hit, tp2_hit))
         
-        position_ref.set(position_data, merge=True)
+        conn.commit()
+        
     except Exception as e:
         print(f"--- [HATA] Pozisyon güncellenemedi: {e} ---")
         raise
+    finally:
+        cursor.close()
+        conn.close()
 
 def get_positions_for_strategy(strategy_id):
     """Bir strateji için tüm pozisyonları döndürür."""
+    conn = get_connection()
+    if conn is None:
+        return {}
+    
     try:
-        db = get_db()
-        positions_ref = db.collection('positions')
-        positions_query = positions_ref.where('strategy_id', '==', strategy_id).stream()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM positions WHERE strategy_id = %s", (strategy_id,))
         
         positions = {}
-        for doc in positions_query:
-            data = doc.to_dict()
-            positions[data['symbol']] = data
+        for row in cursor.fetchall():
+            positions[row['symbol']] = {
+                'strategy_id': row['strategy_id'],
+                'symbol': row['symbol'],
+                'position': row['position'],
+                'entry_price': float(row['entry_price']) if row['entry_price'] else 0,
+                'stop_loss_price': float(row['stop_loss_price']) if row['stop_loss_price'] else 0,
+                'tp1_price': float(row['tp1_price']) if row['tp1_price'] else 0,
+                'tp2_price': float(row['tp2_price']) if row['tp2_price'] else 0,
+                'tp1_hit': bool(row['tp1_hit']),
+                'tp2_hit': bool(row['tp2_hit'])
+            }
+        
         return positions
+        
     except Exception as e:
         print(f"--- [HATA] Pozisyonlar alınamadı: {e} ---")
         return {}
+    finally:
+        cursor.close()
+        conn.close()
 
 def log_alarm_db(strategy_id, symbol, signal, price):
     """Bir alarm/sinyal kaydı oluşturur."""
+    conn = get_connection()
+    if conn is None:
+        print("--- [UYARI] MySQL bağlantısı yok, alarm kaydedilemedi. ---")
+        return
+    
     try:
-        db = get_db()
-        alarm_ref = db.collection('alarms').document()
-        alarm_ref.set({
-            'strategy_id': strategy_id,
-            'timestamp': firestore.SERVER_TIMESTAMP,
-            'symbol': symbol,
-            'signal': signal,
-            'price': price
-        })
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO alarms (strategy_id, symbol, `signal`, price)
+            VALUES (%s, %s, %s, %s)
+        """, (strategy_id, symbol, signal, price))
+        
+        conn.commit()
+        
     except Exception as e:
         print(f"--- [HATA] Alarm kaydedilemedi: {e} ---")
+    finally:
+        cursor.close()
+        conn.close()
 
 @st.cache_data(ttl=60)
 def get_alarm_history_db(limit=50):
     """Alarm geçmişini döndürür."""
+    conn = get_connection()
+    if conn is None:
+        return pd.DataFrame(columns=['Zaman', 'Sembol', 'Sinyal', 'Fiyat'])
+    
     try:
-        db = get_db()
-        alarms_ref = db.collection('alarms').order_by('timestamp', direction=firestore.Query.DESCENDING).limit(limit).stream()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT `timestamp`, symbol, `signal`, price
+            FROM alarms
+            ORDER BY `timestamp` DESC
+            LIMIT %s
+        """, (limit,))
         
-        alarms = []
-        for doc in alarms_ref:
-            data = doc.to_dict()
-            alarms.append({
-                'Zaman': data.get('timestamp'),
-                'Sembol': data.get('symbol'),
-                'Sinyal': data.get('signal'),
-                'Fiyat': data.get('price')
-            })
+        results = cursor.fetchall()
         
-        return pd.DataFrame(alarms) if alarms else pd.DataFrame(columns=['Zaman', 'Sembol', 'Sinyal', 'Fiyat'])
+        if results:
+            df = pd.DataFrame(results)
+            df.columns = ['Zaman', 'Sembol', 'Sinyal', 'Fiyat']
+            return df
+        
+        return pd.DataFrame(columns=['Zaman', 'Sembol', 'Sinyal', 'Fiyat'])
+        
     except Exception as e:
         print(f"--- [HATA] Alarm geçmişi alınamadı: {e} ---")
         return pd.DataFrame(columns=['Zaman', 'Sembol', 'Sinyal', 'Fiyat'])
+    finally:
+        cursor.close()
+        conn.close()
 
 @st.cache_data(ttl=15)
 def get_all_open_positions():
     """Tüm açık pozisyonları döndürür."""
+    conn = get_connection()
+    if conn is None:
+        return pd.DataFrame()
+    
     try:
-        db = get_db()
-        positions_ref = db.collection('positions')
-        positions_query = positions_ref.where('position', '!=', '').where('position', '!=', None).stream()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT p.*, s.name as strategy_name
+            FROM positions p
+            LEFT JOIN strategies s ON p.strategy_id = s.id
+            WHERE p.position IS NOT NULL AND p.position != ''
+        """)
         
-        positions = []
-        for doc in positions_query:
-            pos_data = doc.to_dict()
-            if pos_data.get('position'):
-                # Strateji bilgisini al
-                strategy_ref = db.collection('strategies').document(pos_data['strategy_id'])
-                strategy_doc = strategy_ref.get()
-                strategy_name = strategy_doc.to_dict().get('name', '') if strategy_doc.exists else ''
-                
-                positions.append({
-                    'strategy_id': pos_data['strategy_id'],
-                    'Strateji Adı': strategy_name,
-                    'Sembol': pos_data['symbol'],
-                    'Pozisyon': pos_data['position'],
-                    'Giriş Fiyatı': pos_data.get('entry_price', 0),
-                    'Stop Loss': pos_data.get('stop_loss_price', 0),
-                    'TP1': pos_data.get('tp1_price', 0),
-                    'TP2': pos_data.get('tp2_price', 0)
-                })
+        results = cursor.fetchall()
         
-        return pd.DataFrame(positions) if positions else pd.DataFrame()
+        if results:
+            positions = []
+            for row in results:
+                if row['position']:
+                    positions.append({
+                        'strategy_id': row['strategy_id'],
+                        'Strateji Adı': row['strategy_name'] or '',
+                        'Sembol': row['symbol'],
+                        'Pozisyon': row['position'],
+                        'Giriş Fiyatı': float(row['entry_price']) if row['entry_price'] else 0,
+                        'Stop Loss': float(row['stop_loss_price']) if row['stop_loss_price'] else 0,
+                        'TP1': float(row['tp1_price']) if row['tp1_price'] else 0,
+                        'TP2': float(row['tp2_price']) if row['tp2_price'] else 0
+                    })
+            
+            return pd.DataFrame(positions) if positions else pd.DataFrame()
+        
+        return pd.DataFrame()
+        
     except Exception as e:
         print(f"--- [HATA] Açık pozisyonlar alınamadı: {e} ---")
         return pd.DataFrame()
+    finally:
+        cursor.close()
+        conn.close()
 
 def update_strategy_status(strategy_id, status, is_orchestrator_decision=False):
     """Bir stratejinin durumunu günceller."""
+    conn = get_connection()
+    if conn is None:
+        print("--- [UYARI] MySQL bağlantısı yok, strateji durumu güncellenemedi. ---")
+        return
+    
     try:
-        db = get_db()
-        strategy_ref = db.collection('strategies').document(strategy_id)
+        cursor = conn.cursor()
         
         if is_orchestrator_decision:
-            strategy_ref.update({'orchestrator_status': status})
+            cursor.execute("UPDATE strategies SET orchestrator_status = %s WHERE id = %s", (status, strategy_id))
         else:
-            strategy_ref.update({'status': status})
+            cursor.execute("UPDATE strategies SET status = %s WHERE id = %s", (status, strategy_id))
+        
+        conn.commit()
+        
     except Exception as e:
         print(f"--- [HATA] Strateji durumu güncellenemedi: {e} ---")
         raise
+    finally:
+        cursor.close()
+        conn.close()
 
 def issue_manual_action(strategy_id, symbol, action):
     """Manuel bir işlem kaydı oluşturur."""
+    conn = get_connection()
+    if conn is None:
+        print("--- [UYARI] MySQL bağlantısı yok, manuel işlem kaydedilemedi. ---")
+        return
+    
     try:
-        db = get_db()
-        action_ref = db.collection('manual_actions').document()
-        action_ref.set({
-            'strategy_id': strategy_id,
-            'symbol': symbol,
-            'action': action,
-            'timestamp': firestore.SERVER_TIMESTAMP,
-            'status': 'pending'
-        })
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO manual_actions (strategy_id, symbol, action)
+            VALUES (%s, %s, %s)
+        """, (strategy_id, symbol, action))
+        
+        conn.commit()
+        
     except Exception as e:
         print(f"--- [HATA] Manuel işlem kaydedilemedi: {e} ---")
         raise
+    finally:
+        cursor.close()
+        conn.close()
 
 def get_and_clear_pending_actions(strategy_id):
     """Bekleyen manuel işlemleri alır ve tamamlandı olarak işaretler."""
+    conn = get_connection()
+    if conn is None:
+        return []
+    
     try:
-        db = get_db()
-        actions_ref = db.collection('manual_actions')
-        actions_query = actions_ref.where('strategy_id', '==', strategy_id).where('status', '==', 'pending').stream()
+        cursor = conn.cursor(dictionary=True)
         
+        # Bekleyen işlemleri al
+        cursor.execute("""
+            SELECT id, symbol, action
+            FROM manual_actions
+            WHERE strategy_id = %s AND status = 'pending'
+        """, (strategy_id,))
+        
+        results = cursor.fetchall()
         actions = []
-        for doc in actions_query:
-            data = doc.to_dict()
+        
+        for row in results:
             actions.append({
-                'id': doc.id,
-                'symbol': data.get('symbol'),
-                'action': data.get('action')
+                'id': row['id'],
+                'symbol': row['symbol'],
+                'action': row['action']
             })
             # Durumu güncelle
-            doc.reference.update({'status': 'completed'})
+            cursor.execute("UPDATE manual_actions SET status = 'completed' WHERE id = %s", (row['id'],))
         
+        conn.commit()
         return actions
+        
     except Exception as e:
         print(f"--- [HATA] Bekleyen işlemler alınamadı: {e} ---")
         return []
+    finally:
+        cursor.close()
+        conn.close()
 
 @st.cache_data(ttl=30)
 def get_live_closed_trades_metrics(strategy_id=None):
     """Canlı kapanan işlemlerin metriklerini hesaplar."""
-    from database import get_all_strategies
-    
     default_metrics = {
         "Toplam İşlem": 0, "Başarı Oranı (%)": 0.0, "Toplam Getiri (%)": 0.0,
         "Ortalama Kazanç (%)": 0.0, "Ortalama Kayıp (%)": 0.0, "Profit Factor": 0.0
     }
     
+    conn = get_connection()
+    if conn is None:
+        return default_metrics
+    
     try:
+        cursor = conn.cursor(dictionary=True)
+        
+        # Tüm stratejileri al
         all_strategies = {s['id']: s for s in get_all_strategies()}
-        db = get_db()
         
         # Alarmları al
-        alarms_ref = db.collection('alarms')
         if strategy_id:
-            alarms_query = alarms_ref.where('strategy_id', '==', strategy_id).order_by('timestamp', direction=firestore.Query.ASCENDING).stream()
+            cursor.execute("""
+                SELECT strategy_id, symbol, `signal`, price, `timestamp`
+                FROM alarms
+                WHERE strategy_id = %s
+                ORDER BY `timestamp` ASC
+            """, (strategy_id,))
         else:
-            alarms_query = alarms_ref.order_by('timestamp', direction=firestore.Query.ASCENDING).stream()
+            cursor.execute("""
+                SELECT strategy_id, symbol, `signal`, price, `timestamp`
+                FROM alarms
+                ORDER BY `timestamp` ASC
+            """)
         
         alarms = []
-        for doc in alarms_query:
-            data = doc.to_dict()
-            signal = data.get('signal', '')
+        for row in cursor.fetchall():
+            signal = row.get('signal', '')
             if any(keyword in signal for keyword in ['Yeni', 'Kapatıldı', 'Stop-Loss', 'Karşıt Sinyal']):
                 alarms.append({
-                    'strategy_id': data.get('strategy_id'),
-                    'symbol': data.get('symbol'),
+                    'strategy_id': row['strategy_id'],
+                    'symbol': row['symbol'],
                     'signal': signal,
-                    'price': data.get('price'),
-                    'timestamp': data.get('timestamp')
+                    'price': float(row['price']) if row['price'] else 0,
+                    'timestamp': row['timestamp']
                 })
         
         if not alarms:
@@ -645,48 +828,29 @@ def get_live_closed_trades_metrics(strategy_id=None):
             "Ortalama Kayıp (%)": round(avg_loss, 2),
             "Profit Factor": round(profit_factor, 2)
         }
+        
     except Exception as e:
         print(f"--- [HATA] Metrikler hesaplanamadı: {e} ---")
         return default_metrics
+    finally:
+        cursor.close()
+        conn.close()
 
 def remove_rl_model_by_id(model_id):
     """Veritabanından bir RL modelini ID'sine göre siler."""
+    conn = get_connection()
+    if conn is None:
+        raise Exception("MySQL bağlantısı yok.")
+    
     try:
-        db = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM rl_models WHERE id = %s OR name = %s", (model_id, str(model_id)))
+        conn.commit()
+        print(f"--- [DATABASE] RL Modeli (ID: {model_id}) başarıyla silindi. ---")
         
-        # Firestore'dan model bilgisini al
-        model_ref = db.collection('rl_models').document(str(model_id))
-        model_doc = model_ref.get()
-        
-        if model_doc.exists:
-            model_data = model_doc.to_dict()
-            storage_path = model_data.get('storage_path')
-            storage_type = model_data.get('storage_type', 'firebase_storage')
-            
-            # Storage tipine göre dosyayı sil
-            if storage_type == 'firebase_storage':
-                bucket = get_storage_bucket()
-                if storage_path and bucket:
-                    try:
-                        blob = bucket.blob(storage_path)
-                        blob.delete()
-                        print(f"--- [DATABASE] Firebase Storage'dan model dosyası silindi: {storage_path}")
-                    except Exception as e:
-                        print(f"--- [UYARI] Firebase Storage'dan silinemedi: {e}")
-            elif storage_type == 'local_file':
-                # Yerel dosyayı sil
-                if storage_path and os.path.exists(storage_path):
-                    try:
-                        os.remove(storage_path)
-                        print(f"--- [DATABASE] Yerel model dosyası silindi: {storage_path}")
-                    except Exception as e:
-                        print(f"--- [UYARI] Yerel dosya silinemedi: {e}")
-            
-            # Firestore'dan kaydı sil
-            model_ref.delete()
-            print(f"--- [DATABASE] RL Modeli (ID: {model_id}) başarıyla silindi. ---")
-        else:
-            print(f"--- [UYARI] RL Modeli (ID: {model_id}) bulunamadı. ---")
     except Exception as e:
         print(f"--- [HATA] RL Modeli silinemedi: {e} ---")
         raise
+    finally:
+        cursor.close()
+        conn.close()
